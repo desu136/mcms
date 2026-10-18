@@ -1,119 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { AuthProvider, useAuth } from './auth/AuthContext';
+import { LoginPage } from './pages/LoginPage';
+import { DashboardPage } from './pages/DashboardPage';
 
-declare global {
-  interface Window {
-    mcmsDesktop?: {
-      getSyncStatus: () => Promise<{
-        ready: boolean;
-        pendingOperations: number;
-        cursor: string | null;
-      }>;
-      getVersion: () => Promise<string>;
-    };
-  }
-}
+function AppRouter() {
+  const { isAuthenticated, isLoading } = useAuth();
 
-export function App() {
-  const [syncStatus, setSyncStatus] = useState<{
-    ready: boolean;
-    pendingOperations: number;
-    cursor: string | null;
-  }>({
-    ready: false,
-    pendingOperations: 0,
-    cursor: null,
-  });
-
-  useEffect(() => {
-    if (window.mcmsDesktop) {
-      window.mcmsDesktop.getSyncStatus().then(setSyncStatus).catch(console.error);
-    }
-  }, []);
-
-  return (
-    <div style={{ padding: '32px', maxWidth: '900px', margin: '0 auto' }}>
-      <header
-        style={{ borderBottom: '1px solid #334155', paddingBottom: '16px', marginBottom: '24px' }}
-      >
-        <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 8px 0', color: '#38bdf8' }}>
-          MCMS Clinical Workstation (Desktop)
-        </h1>
-        <p style={{ margin: 0, color: '#94a3b8', fontSize: '14px' }}>
-          Electron + React + TypeScript + Local SQLite Architecture
-        </p>
-      </header>
-
+  if (isLoading) {
+    return (
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-          gap: '16px',
+          minHeight: '100vh',
+          background: '#0f172a',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
         <div
           style={{
-            background: '#1e293b',
-            padding: '20px',
-            borderRadius: '8px',
-            border: '1px solid #334155',
+            width: 36,
+            height: 36,
+            border: '3px solid #1e293b',
+            borderTopColor: '#38bdf8',
+            borderRadius: '50%',
+            animation: 'spin 0.7s linear infinite',
           }}
-        >
-          <div style={{ fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase' }}>
-            Local SQLite Storage
-          </div>
-          <div
-            style={{
-              fontSize: '18px',
-              fontWeight: 'bold',
-              marginTop: '8px',
-              color: syncStatus.ready ? '#4ade80' : '#f87171',
-            }}
-          >
-            {syncStatus.ready ? 'SQLite Engine Active' : 'Initializing / Browser Mode'}
-          </div>
-          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-            Dedicated local database for workstation resilience
-          </div>
-        </div>
-
-        <div
-          style={{
-            background: '#1e293b',
-            padding: '20px',
-            borderRadius: '8px',
-            border: '1px solid #334155',
-          }}
-        >
-          <div style={{ fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase' }}>
-            Pending Outbound Queue
-          </div>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '8px', color: '#f8fafc' }}>
-            {syncStatus.pendingOperations} operations
-          </div>
-          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-            Sync cursor: {syncStatus.cursor ?? 'Initial (none)'}
-          </div>
-        </div>
-
-        <div
-          style={{
-            background: '#1e293b',
-            padding: '20px',
-            borderRadius: '8px',
-            border: '1px solid #334155',
-          }}
-        >
-          <div style={{ fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase' }}>
-            Security Architecture
-          </div>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '8px', color: '#38bdf8' }}>
-            Isolated Preload Bridge
-          </div>
-          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-            contextIsolation: true &bull; sandbox: true
-          </div>
-        </div>
+        />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
-    </div>
+    );
+  }
+
+  return isAuthenticated ? <DashboardPage /> : <LoginPage />;
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <AppRouter />
+    </AuthProvider>
   );
 }
