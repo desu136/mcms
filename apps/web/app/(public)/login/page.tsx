@@ -130,24 +130,31 @@ function LoginForm() {
           </button>
         </form>
 
-        {/* Quick Demo Fill Buttons */}
-        <div className="mt-6 pt-5 border-t border-slate-800/80">
-          <span className="text-xs text-slate-500 font-medium block mb-2.5 uppercase tracking-wider">
-            Quick Test Accounts (Pre-configured)
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {DEMO_ACCOUNTS.map((acc) => (
-              <button
-                key={acc.email}
-                type="button"
-                onClick={() => handleQuickFill(acc.email)}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 hover:text-white border border-slate-700/60 transition"
-              >
-                {acc.label}
-              </button>
-            ))}
+        {/* Quick Demo Fill Buttons (Development Only) */}
+        {(process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_ENABLE_DEMO_ACCOUNTS === 'true') && (
+          <div className="mt-6 pt-5 border-t border-slate-800/80">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                Quick Test Accounts
+              </span>
+              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-mono">
+                DEV ONLY
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {DEMO_ACCOUNTS.map((acc) => (
+                <button
+                  key={acc.email}
+                  type="button"
+                  onClick={() => handleQuickFill(acc.email)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 hover:text-white border border-slate-700/60 transition cursor-pointer"
+                >
+                  {acc.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Footer info */}

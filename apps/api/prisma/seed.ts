@@ -135,7 +135,14 @@ const SEED_USERS = [
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEV_SEED !== 'true') {
+    throw new Error(
+      'REFUSING TO SEED: NODE_ENV is "production". Seed users contain development credentials and must NEVER be used in production. Set ALLOW_DEV_SEED=true only if intentional.',
+    );
+  }
+
   console.log('\n🌱 Starting MCMS database seed...\n');
+  console.log('⚠️  DEVELOPMENT SEED: Default credentials should only be used in local dev.\n');
 
   // 1. Upsert all permissions
   console.log('📋 Seeding permissions...');

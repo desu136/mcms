@@ -20,8 +20,13 @@ export class McmsApiClient {
   private readonly http: KyInstance;
 
   constructor(private readonly config: McmsApiClientConfig) {
+    const sanitizedBase = config.baseUrl.replace(/\/+$/, '');
+    const prefixUrl = sanitizedBase.endsWith(API_PREFIX)
+      ? sanitizedBase
+      : `${sanitizedBase}${API_PREFIX}`;
+
     this.http = ky.create({
-      prefixUrl: `${config.baseUrl}${API_PREFIX}`,
+      prefixUrl,
       timeout: 30_000,
       retry: {
         limit: 2,
@@ -52,7 +57,7 @@ export class McmsApiClient {
   // ─── Health ────────────────────────────────────────────────────────────────
 
   async health(): Promise<HealthCheckResponse> {
-    return this.http.get('../health').json<HealthCheckResponse>();
+    return this.http.get('health').json<HealthCheckResponse>();
   }
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
