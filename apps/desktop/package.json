@@ -1,0 +1,40 @@
+{
+  "name": "@mcms/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "MCMS Desktop Application powered by Electron, React, TypeScript, and SQLite",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:preload": "tsc -p tsconfig.preload.json",
+    "build:renderer": "vite build",
+    "build": "pnpm build:main && pnpm build:preload && pnpm build:renderer",
+    "dev": "concurrently \"tsc -p tsconfig.main.json --watch\" \"tsc -p tsconfig.preload.json --watch\" \"vite\"",
+    "start": "electron dist/main/main.js",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@mcms/api-client": "workspace:*",
+    "@mcms/contracts": "workspace:*",
+    "@mcms/domain": "workspace:*",
+    "@mcms/sync-core": "workspace:*",
+    "better-sqlite3": "^11.8.1",
+    "lucide-react": "^1.16.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@mcms/config": "workspace:*",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "electron": "^34.2.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}

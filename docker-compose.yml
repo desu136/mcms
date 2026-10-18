@@ -1,0 +1,32 @@
+services:
+  postgres:
+    build:
+      context: ./infrastructure
+      dockerfile: Dockerfile
+    image: mcms-postgres:16
+    container_name: mcms_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mcms_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-mcms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
+    ports:
+      - '${POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-mcms_user} -d ${POSTGRES_DB:-mcms_dev}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mcms-network
+
+networks:
+  mcms-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: mcms_postgres_data

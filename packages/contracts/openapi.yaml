@@ -1,0 +1,404 @@
+openapi: 3.1.0
+info:
+  title: MCMS Clinic Management System API
+  version: 1.0.0
+  description: Authoritative OpenAPI specification for MCMS shared across TypeScript and Flutter/Dart clients.
+
+servers:
+  - url: http://localhost:3001/api/v1
+    description: Local Development Server
+
+paths:
+  /health:
+    get:
+      summary: API Health Check
+      description: Returns service health status and database connectivity.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Health check response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheckResponse'
+
+  /auth/login:
+    post:
+      summary: User Login
+      description: Authenticate user credentials and return access and refresh tokens.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /auth/refresh:
+    post:
+      summary: Refresh Access Token
+      description: Issues a new access token using a valid refresh token.
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Tokens refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /sync/push:
+    post:
+      summary: Push Offline Sync Operations
+      description: Submits client offline mutation operations with deterministic operation IDs and cursors.
+      operationId: syncPush
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPushRequest'
+      responses:
+        '200':
+          description: Sync push processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPushResponse'
+
+  /sync/pull:
+    post:
+      summary: Pull Changes From Server
+      description: Pulls latest delta changes after the specified cursor.
+      operationId: syncPull
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPullRequest'
+      responses:
+        '200':
+          description: Sync pull response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPullResponse'
+
+components:
+  schemas:
+    UserRole:
+      type: string
+      enum:
+        - SUPER_ADMIN
+        - CLINIC_ADMIN
+        - DOCTOR
+        - NURSE
+        - RECEPTIONIST
+        - PATIENT
+
+    SyncStatus:
+      type: string
+      enum:
+        - SYNCED
+        - PENDING_PUSH
+        - PENDING_PULL
+        - CONFLICT
+        - ERROR
+
+    HealthStatus:
+      type: string
+      enum:
+        - ok
+        - degraded
+        - error
+
+    HealthCheckResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - version
+        - services
+      properties:
+        status:
+          $ref: '#/components/schemas/HealthStatus'
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        services:
+          type: object
+          required:
+            - database
+          properties:
+            database:
+              $ref: '#/components/schemas/HealthStatus'
+            redis:
+              $ref: '#/components/schemas/HealthStatus'
+
+    AuthenticatedUser:
+      type: object
+      required:
+        - id
+        - email
+        - displayName
+        - role
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    LoginResponse:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+        - user
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/AuthenticatedUser'
+
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+
+    RefreshTokenResponse:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+
+    ApiErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+        - timestamp
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+
+    SyncOperation:
+      type: object
+      required:
+        - operationId
+        - entityType
+        - entityId
+        - operation
+        - clientTimestamp
+        - baseVersion
+      properties:
+        operationId:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+        operation:
+          type: string
+          enum: [CREATE, UPDATE, DELETE]
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
+        clientTimestamp:
+          type: string
+          format: date-time
+        baseVersion:
+          type: integer
+
+    SyncAcknowledgementStatus:
+      type: string
+      enum:
+        - ACCEPTED
+        - REJECTED
+        - CONFLICT
+        - DUPLICATE
+
+    SyncAcknowledgement:
+      type: object
+      required:
+        - operationId
+        - status
+      properties:
+        operationId:
+          type: string
+        status:
+          $ref: '#/components/schemas/SyncAcknowledgementStatus'
+        newCursor:
+          type: string
+          nullable: true
+        serverVersion:
+          type: integer
+          nullable: true
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+    SyncPushRequest:
+      type: object
+      required:
+        - operations
+      properties:
+        cursor:
+          type: string
+          nullable: true
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOperation'
+
+    SyncPushResponse:
+      type: object
+      required:
+        - acknowledgements
+        - newCursor
+      properties:
+        acknowledgements:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncAcknowledgement'
+        newCursor:
+          type: string
+
+    SyncPullRequest:
+      type: object
+      required:
+        - entityTypes
+      properties:
+        cursor:
+          type: string
+          nullable: true
+        entityTypes:
+          type: array
+          items:
+            type: string
+        limit:
+          type: integer
+          default: 50
+
+    SyncServerEvent:
+      type: object
+      required:
+        - operationId
+        - entityType
+        - entityId
+        - operation
+        - serverTimestamp
+        - cursor
+      properties:
+        operationId:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+        operation:
+          type: string
+          enum: [CREATE, UPDATE, DELETE]
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
+        serverTimestamp:
+          type: string
+          format: date-time
+        cursor:
+          type: string
+
+    SyncPullResponse:
+      type: object
+      required:
+        - events
+        - newCursor
+        - hasMore
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncServerEvent'
+        newCursor:
+          type: string
+        hasMore:
+          type: boolean

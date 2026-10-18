@@ -1,0 +1,33 @@
+{
+  "name": "@mcms/api-client",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Typed HTTP API client for the MCMS backend, usable from web and desktop",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --project tsconfig.json --watch",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@mcms/contracts": "workspace:*",
+    "@mcms/domain": "workspace:*",
+    "ky": "^1.7.4"
+  },
+  "devDependencies": {
+    "@mcms/config": "workspace:*",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.3"
+  }
+}

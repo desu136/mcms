@@ -1,0 +1,38 @@
+{
+  "name": "mcms",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Clinic Management System — Production Monorepo",
+  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "clean": "turbo run clean && rimraf node_modules",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,yaml,yml,md}\" --ignore-path .prettierignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,yaml,yml,md}\" --ignore-path .prettierignore",
+    "db:migrate": "turbo run db:migrate --filter=@mcms/api",
+    "db:migrate:dev": "turbo run db:migrate:dev --filter=@mcms/api",
+    "db:seed": "turbo run db:seed --filter=@mcms/api",
+    "db:studio": "turbo run db:studio --filter=@mcms/api",
+    "db:reset": "turbo run db:reset --filter=@mcms/api",
+    "infra:up": "docker compose -f infrastructure/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infrastructure/docker-compose.yml down",
+    "infra:logs": "docker compose -f infrastructure/docker-compose.yml logs -f",
+    "infra:reset": "docker compose -f infrastructure/docker-compose.yml down -v"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.3"
+  }
+}

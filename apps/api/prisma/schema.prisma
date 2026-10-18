@@ -1,0 +1,192 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum SyncOpType {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+  PENDING_VERIFICATION
+}
+
+// ─── Core Identity ────────────────────────────────────────────────────────────
+
+model User {
+  id              String        @id @default(uuid())
+  email           String        @unique
+  passwordHash    String        @map("password_hash")
+  displayName     String        @map("display_name")
+  accountStatus   AccountStatus @default(ACTIVE) @map("account_status")
+  failedLoginCount Int          @default(0) @map("failed_login_count")
+  lockedAt        DateTime?     @map("locked_at")
+  lastLoginAt     DateTime?     @map("last_login_at")
+  lastLoginIp     String?       @map("last_login_ip")
+  passwordChangedAt DateTime?   @map("password_changed_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  deletedAt       DateTime?     @map("deleted_at")
+
+  // Relations
+  sessions        AuthSession[]
+  auditLogs       AuditLog[]
+  userRoles       UserRole[]
+  staffProfile    StaffProfile?
+  passwordResets  PasswordReset[]
+
+  @@index([email])
+  @@index([accountStatus])
+  @@map("users")
+}
+
+model StaffProfile {
+  id             String  @id @default(uuid())
+  userId         String  @unique @map("user_id")
+  employeeNumber String? @unique @map("employee_number")
+  jobTitle       String? @map("job_title")
+  department     String?
+  phoneNumber    String? @map("phone_number")
+  licenseNumber  String? @map("license_number")
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("staff_profiles")
+}
+
+// ─── Auth & Sessions ──────────────────────────────────────────────────────────
+
+model AuthSession {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  tokenFamily       String    @map("token_family") // refresh token rotation family
+  refreshTokenHash  String    @unique @map("refresh_token_hash")
+  accessTokenJti    String?   @unique @map("access_token_jti") // JWT ID for blocklisting
+  expiresAt         DateTime  @map("expires_at")
+  revokedAt         DateTime? @map("revoked_at")
+  ipAddress         String?   @map("ip_address")
+  userAgent         String?   @map("user_agent")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenFamily])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+model PasswordReset {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_resets")
+}
+
+// ─── RBAC ─────────────────────────────────────────────────────────────────────
+
+model Role {
+  id           String           @id @default(uuid())
+  name         String           @unique
+  description  String           @default("")
+  isSystemRole Boolean          @default(false) @map("is_system_role")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  slug        String           @unique // e.g. "users:create"
+  name        String
+  module      String           // e.g. "users", "appointments"
+  description String           @default("")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  grantedAt DateTime @default(now()) @map("granted_at")
+  grantedBy String?  @map("granted_by") // userId of granter
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid())
+  roleId       String   @map("role_id")
+  permissionId String   @map("permission_id")
+  grantedAt    DateTime @default(now()) @map("granted_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ─── Audit & Sync ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String   // AuditEventType string value
+  resource   String   // e.g. "User", "Role"
+  resourceId String?  @map("resource_id")
+  payload    Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model SyncJournal {
+  id              String     @id @default(uuid())
+  operationId     String     @unique @map("operation_id")
+  entityType      String     @map("entity_type")
+  entityId        String     @map("entity_id")
+  operation       SyncOpType
+  payload         Json?
+  clientTimestamp DateTime   @map("client_timestamp")
+  serverTimestamp DateTime   @default(now()) @map("server_timestamp")
+  cursorPosition  BigInt     @default(autoincrement()) @map("cursor_position")
+
+  @@index([cursorPosition])
+  @@index([entityType, entityId])
+  @@map("sync_journal")
+}
