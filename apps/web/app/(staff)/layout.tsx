@@ -25,6 +25,7 @@ import {
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/doctor', label: 'Doctor Workspace', icon: Stethoscope },
   { href: '/patients', label: 'Patients', icon: Users },
   { href: '/appointments', label: 'Appointments', icon: CalendarDays },
   { href: '/doctors', label: 'Doctors', icon: Stethoscope },

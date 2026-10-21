@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from '../../../lib/auth/auth-context';
 import {
   Users,
@@ -204,6 +205,27 @@ export default function ClinicAdminDashboard() {
               <div className="text-xs text-gray-400">{dayStr}</div>
             </div>
           </div>
+        </div>
+
+        {/* Doctor Workspace Direct Switch Banner */}
+        <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md shadow-blue-500/20">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <Stethoscope className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="text-sm font-bold">Doctor Workspace Available</div>
+              <div className="text-xs text-blue-100">
+                View your personal schedule, consultation encounters, and patient charts
+              </div>
+            </div>
+          </div>
+          <Link
+            href="/doctor"
+            className="px-4 py-2 rounded-xl bg-white text-blue-600 font-bold text-xs hover:bg-blue-50 transition-colors shrink-0 shadow-sm text-center"
+          >
+            Open Doctor Dashboard →
+          </Link>
         </div>
 
         {/* Stat Cards */}
