@@ -1,11 +1,18 @@
 import React, { useState, FormEvent } from 'react';
 import { useAuth } from '../../auth/AuthContext';
-import { Activity } from 'lucide-react';
+import { Activity, Lock, Mail, CheckCircle2 } from 'lucide-react';
+
+const DEMO_ACCOUNTS = [
+  { label: 'Doctor', email: 'doctor@mcms.local', password: 'Doctor@123456' },
+  { label: 'Clinic Admin', email: 'clinic.admin@mcms.local', password: 'ClinicAdmin@123456' },
+  { label: 'Admin', email: 'admin@mcms.local', password: 'Admin@123456' },
+  { label: 'Nurse', email: 'nurse@mcms.local', password: 'Nurse@123456' },
+];
 
 export function LoginPage() {
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('doctor@mcms.local');
+  const [password, setPassword] = useState('Doctor@123456');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -16,160 +23,118 @@ export function LoginPage() {
     try {
       await login(email, password);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Login failed. Please check credentials or API server.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleQuickFill = (accEmail: string, accPass: string) => {
+    setEmail(accEmail);
+    setPassword(accPass);
+  };
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#0b1329',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: "'Inter', system-ui, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          background: 'rgba(21,30,51,0.8)',
-          border: '1px solid rgba(51,65,85,0.8)',
-          borderRadius: '16px',
-          padding: '44px 40px',
-          width: '420px',
-          boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '28px' }}>
-          <div
-            style={{
-              width: '44px',
-              height: '44px',
-              background: 'linear-gradient(135deg, #0284c7, #38bdf8)',
-              borderRadius: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#0b1329',
-              boxShadow: '0 4px 12px rgba(56,189,248,0.25)',
-            }}
-          >
-            <Activity size={24} strokeWidth={2.5} />
+    <div className="min-h-screen bg-[#0B1329] flex flex-col justify-center items-center p-4 relative overflow-hidden font-sans">
+      {/* Background Glows */}
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="w-full max-w-md bg-[#111C35]/90 border border-slate-800 rounded-3xl p-8 shadow-2xl relative z-10 backdrop-blur-xl">
+        {/* Brand Header */}
+        <div className="flex items-center gap-3.5 mb-6">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/25 shrink-0">
+            <Activity className="w-6 h-6 text-white stroke-[2.5]" />
           </div>
           <div>
-            <div style={{ color: '#f8fafc', fontSize: '18px', fontWeight: 800 }}>MCMS</div>
-            <div style={{ color: '#64748b', fontSize: '11px', marginTop: '1px' }}>Clinical Workstation</div>
+            <div className="text-xl font-black text-white tracking-tight leading-tight">MCMS</div>
+            <div className="text-xs text-slate-400 font-medium">Desktop Clinical Workstation</div>
           </div>
         </div>
 
-        <h1 style={{ fontSize: '22px', fontWeight: 800, color: '#f8fafc', marginBottom: '4px' }}>Welcome back</h1>
-        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '28px' }}>Sign in to access workstation</p>
+        <h1 className="text-2xl font-black text-white tracking-tight">Welcome Back</h1>
+        <p className="text-xs text-slate-400 mt-1 mb-6">
+          Sign in to access your offline-ready medical workstation.
+        </p>
 
         {error && (
-          <div
-            style={{
-              background: 'rgba(239,68,68,0.12)',
-              border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: '8px',
-              padding: '10px 14px',
-              fontSize: '13px',
-              color: '#fca5a5',
-              marginBottom: '20px',
-            }}
-          >
+          <div className="mb-5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '18px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
-              Email address
-            </label>
-            <input
-              type="email"
-              placeholder="doctor@clinic.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoFocus
-              style={{
-                width: '100%',
-                background: 'rgba(15,23,42,0.6)',
-                border: '1px solid #334155',
-                borderRadius: '8px',
-                padding: '10px 14px',
-                fontSize: '13px',
-                color: '#f8fafc',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
+        {/* Demo Quick Fill Buttons */}
+        <div className="mb-6">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+            Quick Demo Fill
           </div>
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
-              Password
-            </label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                background: 'rgba(15,23,42,0.6)',
-                border: '1px solid #334155',
-                borderRadius: '8px',
-                padding: '10px 14px',
-                fontSize: '13px',
-                color: '#f8fafc',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
+          <div className="flex flex-wrap gap-1.5">
+            {DEMO_ACCOUNTS.map((acc) => (
+              <button
+                key={acc.label}
+                type="button"
+                onClick={() => handleQuickFill(acc.email, acc.password)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  email === acc.email
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700/80'
+                }`}
+              >
+                {acc.label}
+              </button>
+            ))}
           </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-300 mb-1.5">Email address</label>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="email"
+                placeholder="doctor@mcms.local"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full pl-10 pr-3.5 py-2.5 bg-slate-900/80 border border-slate-700/80 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-300 mb-1.5">Password</label>
+            <div className="relative">
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full pl-10 pr-3.5 py-2.5 bg-slate-900/80 border border-slate-700/80 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+              />
+            </div>
+          </div>
+
           <button
             type="submit"
             disabled={isLoading}
-            style={{
-              width: '100%',
-              background: 'linear-gradient(135deg, #0284c7, #38bdf8)',
-              color: '#0b1329',
-              fontWeight: 700,
-              fontSize: '13px',
-              border: 'none',
-              borderRadius: '8px',
-              padding: '11px',
-              cursor: 'pointer',
-              opacity: isLoading ? 0.6 : 1,
-            }}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-extrabold text-xs shadow-lg shadow-blue-500/25 transition-all cursor-pointer disabled:opacity-50 mt-2"
           >
-            {isLoading ? 'Signing in…' : 'Sign In to Workstation'}
+            {isLoading ? 'Verifying Credentials...' : 'Sign In to Workstation'}
           </button>
         </form>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'rgba(15,23,42,0.6)',
-            border: '1px solid #1e293b',
-            borderRadius: '8px',
-            padding: '10px 14px',
-            marginTop: '24px',
-          }}
-        >
-          <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#4ade80' }} />
-          <span style={{ fontSize: '11px', color: '#64748b' }}>
-            Isolated Electron Session · SQLite Local
-          </span>
+        <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>SQLite Offline Engine Active</span>
+          </div>
+          <span className="font-mono text-slate-500">v0.0.1</span>
         </div>
       </div>
     </div>
   );
 }
+export default LoginPage;

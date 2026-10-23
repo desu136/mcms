@@ -1,5 +1,7 @@
 import React from 'react';
-import { LucideIcon, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { LucideIcon, TrendingUp, TrendingDown } from 'lucide-react';
+
+export type CardColor = 'blue' | 'emerald' | 'purple' | 'orange' | 'cyan' | 'amber' | 'rose';
 
 export interface DoctorStatCardProps {
   title: string;
@@ -10,15 +12,46 @@ export interface DoctorStatCardProps {
     trend?: 'up' | 'down' | 'neutral';
     label?: string;
   };
-  color?: 'blue' | 'emerald' | 'purple' | 'orange' | 'cyan';
+  color?: CardColor;
+  className?: string;
 }
 
-const colorMap = {
-  blue: { bg: 'rgba(56,189,248,0.12)', text: '#38bdf8', border: 'rgba(56,189,248,0.25)' },
-  emerald: { bg: 'rgba(74,222,128,0.12)', text: '#4ade80', border: 'rgba(74,222,128,0.25)' },
-  purple: { bg: 'rgba(192,132,252,0.12)', text: '#c084fc', border: 'rgba(192,132,252,0.25)' },
-  orange: { bg: 'rgba(251,146,60,0.12)', text: '#fb923c', border: 'rgba(251,146,60,0.25)' },
-  cyan: { bg: 'rgba(34,211,238,0.12)', text: '#22d3ee', border: 'rgba(34,211,238,0.25)' },
+const colorStyles: Record<CardColor, { bg: string; text: string; border: string }> = {
+  blue: {
+    bg: 'bg-blue-50',
+    text: 'text-blue-600',
+    border: 'border-blue-100',
+  },
+  emerald: {
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-600',
+    border: 'border-emerald-100',
+  },
+  purple: {
+    bg: 'bg-purple-50',
+    text: 'text-purple-600',
+    border: 'border-purple-100',
+  },
+  orange: {
+    bg: 'bg-orange-50',
+    text: 'text-orange-500',
+    border: 'border-orange-100',
+  },
+  cyan: {
+    bg: 'bg-cyan-50',
+    text: 'text-cyan-600',
+    border: 'border-cyan-100',
+  },
+  amber: {
+    bg: 'bg-amber-50',
+    text: 'text-amber-600',
+    border: 'border-amber-100',
+  },
+  rose: {
+    bg: 'bg-rose-50',
+    text: 'text-rose-500',
+    border: 'border-rose-100',
+  },
 };
 
 export function DoctorStatCard({
@@ -27,72 +60,47 @@ export function DoctorStatCard({
   icon: Icon,
   change,
   color = 'blue',
+  className = '',
 }: DoctorStatCardProps) {
-  const c = colorMap[color] || colorMap.blue;
+  const c = colorStyles[color] || colorStyles.blue;
 
   return (
     <div
-      style={{
-        background: 'rgba(21,30,51,0.65)',
-        border: '1px solid rgba(30,41,59,0.9)',
-        borderRadius: '14px',
-        padding: '14px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '14px',
-        transition: 'all 0.2s ease',
-      }}
+      className={`bg-white rounded-xl p-2 border border-slate-200/80 shadow-2xs hover:shadow-md transition-all flex items-center gap-2 min-w-0 ${className}`}
     >
       <div
-        style={{
-          width: '42px',
-          height: '42px',
-          borderRadius: '12px',
-          background: c.bg,
-          color: c.text,
-          border: `1px solid ${c.border}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
+        className={`w-7 h-7 rounded-lg ${c.bg} ${c.text} flex items-center justify-center shrink-0 border ${c.border}`}
       >
-        <Icon size={20} strokeWidth={2.2} />
+        <Icon className="w-3.5 h-3.5 stroke-[2.2]" />
       </div>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div
-          style={{
-            fontSize: '11px',
-            fontWeight: 600,
-            color: '#64748b',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] font-semibold text-slate-500 truncate leading-tight" title={title}>
           {title}
         </div>
-        <div style={{ fontSize: '20px', fontWeight: 800, color: '#f8fafc', lineHeight: 1.2, marginTop: '2px' }}>
+        <div className="text-base font-extrabold text-slate-800 tracking-tight leading-tight">
           {value}
         </div>
         {change && (
           <div
-            style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-              marginTop: '2px',
-              color: change.trend === 'down' ? '#f87171' : '#4ade80',
-            }}
+            className={`flex items-center gap-0.5 text-[9px] font-semibold leading-tight truncate ${
+              change.trend === 'down' ? 'text-rose-500' : 'text-emerald-600'
+            }`}
           >
-            {change.trend === 'down' ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}
-            <span>{change.value}</span>
-            {change.label && <span style={{ color: '#64748b', fontWeight: 400, marginLeft: '2px' }}>{change.label}</span>}
+            {change.trend === 'down' ? (
+              <TrendingDown className="w-2.5 h-2.5 shrink-0" />
+            ) : (
+              <TrendingUp className="w-2.5 h-2.5 shrink-0" />
+            )}
+            <span className="truncate">{change.value}</span>
+            {change.label && (
+              <span className="text-slate-400 font-normal truncate">
+                &nbsp;{change.label}
+              </span>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 }
+export default DoctorStatCard;
