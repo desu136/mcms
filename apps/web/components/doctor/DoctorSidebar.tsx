@@ -58,7 +58,7 @@ export default function DoctorSidebar({
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 left-0 h-full z-40 flex flex-col transition-all duration-300 ease-in-out
+        className={`fixed top-0 left-0 h-screen h-[100dvh] z-40 flex flex-col transition-all duration-300 ease-in-out
           bg-[#0D1527] text-white border-r border-slate-800/80 shadow-2xl
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           ${isCollapsed ? 'w-20' : 'w-64'}`}
@@ -91,8 +91,8 @@ export default function DoctorSidebar({
           </button>
         </div>
 
-        {/* Navigation Items */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
+        {/* Navigation Items — independently scrollable */}
+        <nav className="flex-1 min-h-0 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
           {navItems.map((item) => {
             const isActive =
               item.href === '/doctor'

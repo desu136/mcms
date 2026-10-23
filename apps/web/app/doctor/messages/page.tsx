@@ -28,6 +28,7 @@ import { INITIAL_PATIENTS, CURRENT_DOCTOR, PatientItem } from '../../../componen
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
 import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescriptionModal';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
+import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 
 interface ChatMessage {
   id: string;
@@ -431,29 +432,30 @@ export default function DoctorMessagesPage() {
     setSelectedPatientForDrawer(patient);
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-            <MessageSquare className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Messages</h1>
-            <p className="text-xs sm:text-sm text-slate-500 font-medium">
-              Communicate with patients, colleagues and staff.
-            </p>
-          </div>
+  const messagesHeader = (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+          <MessageSquare className="w-5 h-5" />
+        </div>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Messages</h1>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium">
+            Communicate with patients, colleagues and staff.
+          </p>
         </div>
       </div>
+    </div>
+  );
 
-      {/* 3-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+  return (
+    <DoctorPageShell header={messagesHeader} mainClassName="!space-y-0">
+      {/* 3-Column Layout — fills the shell's scrollable area */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full lg:min-h-0">
         {/* ============================================================== */}
         {/* COLUMN 1: CONVERSATION LIST (lg:col-span-3 or 4)               */}
         {/* ============================================================== */}
-        <div className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden flex flex-col h-[740px]">
+        <div className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden flex flex-col h-[640px] lg:h-full">
           {/* Category Tabs */}
           <div className="p-3 border-b border-slate-100 bg-slate-50/50">
             <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100/80 rounded-xl text-xs font-semibold">
@@ -593,7 +595,7 @@ export default function DoctorMessagesPage() {
         {/* ============================================================== */}
         {/* COLUMN 2: ACTIVE CHAT CONVERSATION (lg:col-span-5 or 6)        */}
         {/* ============================================================== */}
-        <div className="lg:col-span-5 xl:col-span-6 bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden flex flex-col h-[740px]">
+        <div className="lg:col-span-5 xl:col-span-6 bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden flex flex-col h-[640px] lg:h-full">
           {/* Chat Header */}
           <div className="p-3.5 sm:p-4 border-b border-slate-100 flex items-center justify-between gap-3 bg-white">
             <div className="flex items-center gap-3 min-w-0">
@@ -959,6 +961,6 @@ export default function DoctorMessagesPage() {
         onClose={() => setLabModalOpen(false)}
         defaultPatientId={activeConv.patientId}
       />
-    </div>
+    </DoctorPageShell>
   );
 }

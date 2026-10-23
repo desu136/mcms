@@ -1,7 +1,7 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
+import { LoginPage } from './pages/auth/LoginPage';
+import { DoctorLayout } from './components/doctor/DoctorLayout';
 
 function AppRouter() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -11,10 +11,11 @@ function AppRouter() {
       <div
         style={{
           minHeight: '100vh',
-          background: '#0f172a',
+          background: '#0b1329',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          fontFamily: "'Inter', system-ui, sans-serif",
         }}
       >
         <div
@@ -32,7 +33,7 @@ function AppRouter() {
     );
   }
 
-  return isAuthenticated ? <DashboardPage /> : <LoginPage />;
+  return isAuthenticated ? <DoctorLayout /> : <LoginPage />;
 }
 
 export function App() {

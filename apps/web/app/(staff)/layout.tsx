@@ -61,7 +61,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     : 'CA';
 
   return (
-    <div className="min-h-screen flex bg-[#F5F7FA] font-sans">
+    <div className="h-screen flex overflow-hidden bg-[#F5F7FA] font-sans">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -72,7 +72,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full w-64 bg-[#1A2035] flex flex-col z-30 transition-transform duration-300
+        className={`fixed top-0 left-0 h-full w-64 bg-[#1A2035] flex flex-col z-30 transition-transform duration-300 shrink-0
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:flex`}
       >
         {/* Logo */}
@@ -86,8 +86,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        {/* Nav — independently scrollable */}
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto min-h-0">
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
@@ -121,10 +121,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         </div>
       </aside>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* Main content shell */}
+      <div className="flex flex-col flex-1 min-w-0 min-h-0">
         {/* Top Header */}
-        <header className="h-16 bg-white border-b border-gray-100 px-6 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+        <header className="h-16 bg-white border-b border-gray-100 px-6 flex items-center justify-between z-10 shadow-sm shrink-0">
           <div className="flex items-center gap-4 flex-1">
             {/* Mobile menu button */}
             <button
@@ -188,9 +188,11 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           </div>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto">
-          {children}
+        {/* Page Content — independent scroll region */}
+        <main className="flex-1 overflow-y-auto min-h-0">
+          <div className="p-6">
+            {children}
+          </div>
         </main>
       </div>
     </div>

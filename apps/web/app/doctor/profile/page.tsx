@@ -28,6 +28,7 @@ import {
   Save,
 } from 'lucide-react';
 import { CURRENT_DOCTOR } from '../../../components/doctor/doctorMockData';
+import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 
 export default function DoctorProfilePage() {
   const [activeTab, setActiveTab] = useState<
@@ -73,31 +74,33 @@ export default function DoctorProfilePage() {
 
   const allDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  return (
-    <div className="space-y-5">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-            <User className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Profile & Professional Settings
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 font-medium">
-              Manage your profile, professional details, and account settings.
-            </p>
-          </div>
+  const profileHeader = (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+          <User className="w-5 h-5" />
         </div>
-
-        {savedMessage && (
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold animate-fadeIn">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            Changes saved successfully!
-          </div>
-        )}
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+            Profile &amp; Professional Settings
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium">
+            Manage your profile, professional details, and account settings.
+          </p>
+        </div>
       </div>
+
+      {savedMessage && (
+        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          Changes saved successfully!
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <DoctorPageShell header={profileHeader}>
 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
@@ -691,6 +694,6 @@ export default function DoctorProfilePage() {
           </div>
         </div>
       </div>
-    </div>
+    </DoctorPageShell>
   );
 }

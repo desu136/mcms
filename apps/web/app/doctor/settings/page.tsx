@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Settings, Bell, Lock, Globe, Shield, Save, CheckCircle2 } from 'lucide-react';
+import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 
 export default function DoctorSettingsPage() {
   const [saved, setSaved] = useState(false);
@@ -15,21 +16,24 @@ export default function DoctorSettingsPage() {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  return (
-    <div className="max-w-4xl space-y-6">
-      <div className="flex items-center gap-3.5">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center shadow-lg shadow-blue-500/25 shrink-0">
-          <Settings className="w-6 h-6 stroke-[2.2]" />
-        </div>
-        <div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800 tracking-tight">
-            Doctor Workspace Settings
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 font-medium">
-            Customize notification preferences, digital signature security, and consultation defaults.
-          </p>
-        </div>
+  const settingsHeader = (
+    <div className="flex items-center gap-3.5">
+      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+        <Settings className="w-5 h-5 stroke-[2.2]" />
       </div>
+      <div>
+        <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          Doctor Workspace Settings
+        </h1>
+        <p className="text-xs sm:text-sm text-slate-500 font-medium">
+          Customize notification preferences, digital signature security, and consultation defaults.
+        </p>
+      </div>
+    </div>
+  );
+
+  return (
+    <DoctorPageShell header={settingsHeader} maxWidth="max-w-4xl">
 
       <form onSubmit={handleSave} className="space-y-6">
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-6 space-y-6">
@@ -116,6 +120,6 @@ export default function DoctorSettingsPage() {
           </div>
         </div>
       </form>
-    </div>
+    </DoctorPageShell>
   );
 }

@@ -34,6 +34,8 @@ import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer'
 import DoctorPatientModal from '../../../components/doctor/DoctorPatientModal';
 import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescriptionModal';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
+import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
+import DoctorStatCard from '../../../components/doctor/DoctorStatCard';
 
 export default function DoctorPatientsPage() {
   const [patientsList, setPatientsList] = useState<PatientItem[]>(INITIAL_PATIENTS);
@@ -97,107 +99,369 @@ export default function DoctorPatientsPage() {
     setHighlightedPatient(newP);
   };
 
+  const headerContent = (
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+          <Users className="w-5 h-5" />
+        </div>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">
+            Patients
+          </h1>
+          <p className="text-xs text-slate-500 font-medium">
+            View and manage your patients information, medical history and care details.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
+        <button
+          onClick={() => setAddPatientModalOpen(true)}
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all"
+        >
+          <UserPlus className="w-4 h-4" />
+          <span>Add New Patient</span>
+        </button>
+
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
+          <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+          <div className="text-right">
+            <div className="text-xs font-bold text-slate-800">Oct 19, 2026</div>
+            <div className="text-[10px] text-slate-400 font-medium leading-none">Monday</div>
+          </div>
+          <div className="flex items-center gap-0.5 ml-2 border-l border-slate-200 pl-2 text-slate-400">
+            <button className="p-0.5 rounded hover:bg-slate-100">
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <button className="p-0.5 rounded hover:bg-slate-100">
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const kpisContent = (
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+      <DoctorStatCard
+        title="Total Patients"
+        value={248}
+        icon={Users}
+        color="blue"
+        change={{ value: '12%', trend: 'up', label: 'vs. last month' }}
+      />
+      <DoctorStatCard
+        title="Active Patients"
+        value={232}
+        icon={Users}
+        color="emerald"
+        change={{ value: '10%', trend: 'up', label: 'vs. last month' }}
+      />
+      <DoctorStatCard
+        title="New Patients"
+        value={18}
+        icon={Users}
+        color="purple"
+        change={{ value: '5%', trend: 'up', label: 'vs. last month' }}
+      />
+      <DoctorStatCard
+        title="Inactive Patients"
+        value={16}
+        icon={Users}
+        color="orange"
+        change={{ value: '3%', trend: 'down', label: 'vs. last month' }}
+      />
+    </div>
+  );
+
   return (
-    <div className="space-y-6">
-      {/* ─── Top Header & Add Patient Button ──────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center shadow-lg shadow-blue-500/25 shrink-0">
-            <Users className="w-6 h-6 stroke-[2.2]" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800 tracking-tight">
-              Patients
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 font-medium">
-              View and manage your patients information, medical history and care details.
-            </p>
-          </div>
-        </div>
-
-        {/* Action + Date */}
-        <div className="flex items-center gap-3 self-start md:self-auto flex-wrap">
-          <button
-            onClick={() => setAddPatientModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Add New Patient</span>
-          </button>
-
-          <div className="flex items-center gap-3 px-3.5 py-2 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
-            <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
-            <div className="text-right">
-              <div className="text-xs font-bold text-slate-800">Oct 19, 2026</div>
-              <div className="text-[10px] text-slate-400 font-medium leading-none">Monday</div>
-            </div>
-            <div className="flex items-center gap-0.5 ml-2 border-l border-slate-200 pl-2 text-slate-400">
-              <button className="p-0.5 rounded hover:bg-slate-100">
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-              <button className="p-0.5 rounded hover:bg-slate-100">
-                <ChevronRight className="w-3.5 h-3.5" />
+    <>
+      <DoctorPageShell
+        header={headerContent}
+        kpis={kpisContent}
+        rightPanel={
+          <>
+          {/* Patient Details Card (Matching screenshot) */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-600" />
+                <h3 className="text-sm font-bold text-slate-800">Patient Details</h3>
+              </div>
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="text-xs font-bold text-blue-600 hover:text-blue-700"
+              >
+                View All
               </button>
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* ─── 4 Patients KPI Stat Cards ────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs hover:shadow-md transition-shadow">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
-            <Users className="w-5 h-5" />
-          </div>
-          <div className="text-xs font-semibold text-slate-500">Total Patients</div>
-          <div className="text-3xl font-extrabold text-slate-800 tracking-tight mt-1">248</div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>12% vs. last month</span>
-          </div>
-        </div>
+            {/* Profile Avatar & Demographics */}
+            <div className="flex items-start gap-4 pb-4 border-b border-slate-100">
+              <img
+                src={highlightedPatient.avatar}
+                alt={highlightedPatient.name}
+                className="w-16 h-16 rounded-2xl object-cover ring-2 ring-blue-500/20 shadow-2xs"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-base font-bold text-slate-800 truncate">
+                    {highlightedPatient.name}
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shrink-0">
+                    ● Active
+                  </span>
+                </div>
+                <div className="text-xs text-blue-600 font-semibold mb-1">
+                  {highlightedPatient.pid}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {highlightedPatient.age} years / {highlightedPatient.gender}
+                </div>
+                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-1">
+                  <Phone className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{highlightedPatient.phone}</span>
+                </div>
+                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                  <Mail className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="truncate">{highlightedPatient.email}</span>
+                </div>
+                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="truncate">{highlightedPatient.address}</span>
+                </div>
+              </div>
+            </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs hover:shadow-md transition-shadow">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
-            <Users className="w-5 h-5" />
-          </div>
-          <div className="text-xs font-semibold text-slate-500">Active Patients</div>
-          <div className="text-3xl font-extrabold text-slate-800 tracking-tight mt-1">232</div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>10% vs. last month</span>
-          </div>
-        </div>
+            {/* Sub-tabs (Overview, Medical History, Appointments) */}
+            <div className="flex items-center gap-2 my-4 p-1 rounded-xl bg-slate-100/70 border border-slate-200/50">
+              {(['overview', 'medical', 'appointments'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setRightPanelTab(tab)}
+                  className={`flex-1 py-1.5 text-xs font-bold capitalize rounded-lg transition-all ${
+                    rightPanelTab === tab
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {tab === 'overview'
+                    ? 'Overview'
+                    : tab === 'medical'
+                    ? 'Medical History'
+                    : 'Appointments'}
+                </button>
+              ))}
+            </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs hover:shadow-md transition-shadow">
-          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-3">
-            <Users className="w-5 h-5" />
-          </div>
-          <div className="text-xs font-semibold text-slate-500">New Patients</div>
-          <div className="text-3xl font-extrabold text-slate-800 tracking-tight mt-1">18</div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>5% vs. last month</span>
-          </div>
-        </div>
+            {/* Sub-tab content */}
+            {rightPanelTab === 'overview' && (
+              <div className="space-y-3">
+                {/* Total Visits */}
+                <div className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] text-slate-400 font-medium">Total Visits</div>
+                    <div className="text-lg font-extrabold text-slate-800">{highlightedPatient.totalVisits}</div>
+                  </div>
+                  <FileText className="w-5 h-5 text-blue-500" />
+                </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs hover:shadow-md transition-shadow">
-          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center mb-3">
-            <Users className="w-5 h-5" />
-          </div>
-          <div className="text-xs font-semibold text-slate-500">Inactive Patients</div>
-          <div className="text-3xl font-extrabold text-slate-800 tracking-tight mt-1">16</div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-rose-500 font-semibold">
-            <TrendingDown className="w-3.5 h-3.5" />
-            <span>3% vs. last month</span>
-          </div>
-        </div>
-      </div>
+                {/* Last Visit + Next Appointment side-by-side */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/60">
+                    <div className="flex items-center gap-1 mb-1">
+                      <CalendarDays className="w-3 h-3 text-emerald-500" />
+                      <div className="text-[10px] text-slate-400 font-medium">Last Visit</div>
+                    </div>
+                    <div className="text-[11px] font-bold text-slate-800">{highlightedPatient.lastVisit}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">{highlightedPatient.department}</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl border border-blue-100 bg-blue-50/40">
+                    <div className="flex items-center gap-1 mb-1">
+                      <CalendarDays className="w-3 h-3 text-blue-500" />
+                      <div className="text-[10px] text-slate-400 font-medium">Next Appt.</div>
+                    </div>
+                    <div className="text-[11px] font-bold text-slate-800">{highlightedPatient.nextAppointment ? highlightedPatient.nextAppointment.split(' - ')[0] : 'None'}</div>
+                    <div className="text-[10px] text-blue-500 font-medium mt-0.5">Cardiology</div>
+                  </div>
+                </div>
+              </div>
+            )}
 
-      {/* ─── Main Two-Column Layout ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Filter Tabs, Multi-Filter Bar, Table & Pagination (7 cols) */}
-        <div className="lg:col-span-7 space-y-5">
+            {rightPanelTab === 'medical' && (
+              <div className="space-y-2">
+                {highlightedPatient.conditions.map((c, i) => (
+                  <div
+                    key={i}
+                    className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">{c.title}</div>
+                      <div className="text-[10px] text-slate-400">Diagnosed: {c.diagnosedDate}</div>
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        c.status === 'Active'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}
+                    >
+                      {c.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {rightPanelTab === 'appointments' && (
+              <div className="space-y-2 text-xs">
+                <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/50">
+                  <div className="font-bold text-blue-900">Upcoming Cardiology Consultation</div>
+                  <div className="text-slate-600 mt-0.5">
+                    {highlightedPatient.nextAppointment || 'Oct 25, 2026 - 09:00 AM'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Actions (Patients Card) */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5">
+            <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-600" />
+              Quick Actions
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => alert(`Scheduling appointment for ${highlightedPatient.name}`)}
+                className="p-3.5 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 text-center transition-all group"
+              >
+                <CalendarDays className="w-5 h-5 text-blue-600 mx-auto mb-1 group-hover:scale-110 transition-transform" />
+                <div className="text-xs font-bold text-slate-800">New Appointment</div>
+              </button>
+              <button
+                onClick={() => setPrescriptionModalOpen(true)}
+                className="p-3.5 rounded-xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/40 text-center transition-all group"
+              >
+                <Pill className="w-5 h-5 text-indigo-600 mx-auto mb-1 group-hover:scale-110 transition-transform" />
+                <div className="text-xs font-bold text-slate-800">Add Prescription</div>
+              </button>
+              <button
+                onClick={() => setLabModalOpen(true)}
+                className="p-3.5 rounded-xl border border-slate-200 hover:border-orange-500 hover:bg-orange-50/40 text-center transition-all group"
+              >
+                <FlaskConical className="w-5 h-5 text-orange-500 mx-auto mb-1 group-hover:scale-110 transition-transform" />
+                <div className="text-xs font-bold text-slate-800">Order Lab Test</div>
+              </button>
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="p-3.5 rounded-xl border border-slate-200 hover:border-cyan-500 hover:bg-cyan-50/40 text-center transition-all group"
+              >
+                <FileText className="w-5 h-5 text-cyan-600 mx-auto mb-1 group-hover:scale-110 transition-transform" />
+                <div className="text-xs font-bold text-slate-800">View Records</div>
+              </button>
+            </div>
+          </div>
+
+          {/* Recent Medical History Card (Matching screenshot) */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-600" />
+                <h3 className="text-sm font-bold text-slate-800">Recent Medical History</h3>
+              </div>
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="text-xs font-bold text-blue-600 hover:text-blue-700"
+              >
+                View All
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {[
+                {
+                  title: 'Hypertension',
+                  diagnosed: '2023-06-12',
+                  status: 'Active',
+                  color: 'orange',
+                  icon: Shield,
+                },
+                {
+                  title: 'Type 2 Diabetes',
+                  diagnosed: '2022-11-03',
+                  status: 'Active',
+                  color: 'blue',
+                  icon: Pill,
+                },
+                {
+                  title: 'High Cholesterol',
+                  diagnosed: '2023-08-14',
+                  status: 'Active',
+                  color: 'rose',
+                  icon: Heart,
+                },
+                {
+                  title: 'Allergy (Penicillin)',
+                  diagnosed: '2021-04-20',
+                  status: 'Resolved',
+                  color: 'cyan',
+                  icon: Shield,
+                },
+              ].map((item, i) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={i}
+                    className="p-3 rounded-xl border border-slate-100 bg-white hover:border-slate-200 flex items-center justify-between transition-colors shadow-2xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          item.color === 'orange'
+                            ? 'bg-orange-100 text-orange-600'
+                            : item.color === 'blue'
+                            ? 'bg-blue-100 text-blue-600'
+                            : item.color === 'rose'
+                            ? 'bg-rose-100 text-rose-600'
+                            : 'bg-cyan-100 text-cyan-600'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">{item.title}</div>
+                        <div className="text-[10px] text-slate-400">Diagnosed: {item.diagnosed}</div>
+                      </div>
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        item.status === 'Active'
+                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                          : 'bg-cyan-50 text-cyan-700 border border-cyan-100'
+                      }`}
+                    >
+                      {item.status}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setDrawerOpen(true)}
+              className="mt-4 w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-1.5"
+            >
+              <span>View Full Medical History</span>
+              <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+          </div>
+          </>
+        }
+        rightPanelWidth="lg:w-[300px] xl:w-[320px] 2xl:w-[340px]"
+      >
           {/* Filter Tabs */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
             {[
@@ -451,289 +715,7 @@ export default function DoctorPatientsPage() {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* ─── Right Column: Selected Patient Details & History Panel (5 cols) ─── */}
-        <div className="lg:col-span-5 space-y-6">
-          {/* Patient Details Card (Matching screenshot) */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-800">Patient Details</h3>
-              </div>
-              <button
-                onClick={() => setDrawerOpen(true)}
-                className="text-xs font-bold text-blue-600 hover:text-blue-700"
-              >
-                View All
-              </button>
-            </div>
-
-            {/* Profile Avatar & Demographics */}
-            <div className="flex items-start gap-4 pb-4 border-b border-slate-100">
-              <img
-                src={highlightedPatient.avatar}
-                alt={highlightedPatient.name}
-                className="w-16 h-16 rounded-2xl object-cover ring-2 ring-blue-500/20 shadow-2xs"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-base font-bold text-slate-800 truncate">
-                    {highlightedPatient.name}
-                  </h4>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shrink-0">
-                    ● Active
-                  </span>
-                </div>
-                <div className="text-xs text-blue-600 font-semibold mb-1">
-                  {highlightedPatient.pid}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {highlightedPatient.age} years / {highlightedPatient.gender}
-                </div>
-                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-1">
-                  <Phone className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{highlightedPatient.phone}</span>
-                </div>
-                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                  <Mail className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="truncate">{highlightedPatient.email}</span>
-                </div>
-                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="truncate">{highlightedPatient.address}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sub-tabs (Overview, Medical History, Appointments) */}
-            <div className="flex items-center gap-2 my-4 p-1 rounded-xl bg-slate-100/70 border border-slate-200/50">
-              {(['overview', 'medical', 'appointments'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setRightPanelTab(tab)}
-                  className={`flex-1 py-1.5 text-xs font-bold capitalize rounded-lg transition-all ${
-                    rightPanelTab === tab
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {tab === 'overview'
-                    ? 'Overview'
-                    : tab === 'medical'
-                    ? 'Medical History'
-                    : 'Appointments'}
-                </button>
-              ))}
-            </div>
-
-            {/* Sub-tab content */}
-            {rightPanelTab === 'overview' && (
-              <div className="space-y-3">
-                <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] text-slate-400 font-medium">Total Visits</div>
-                    <div className="text-lg font-extrabold text-slate-800">
-                      {highlightedPatient.totalVisits}
-                    </div>
-                  </div>
-                  <FileText className="w-5 h-5 text-blue-500" />
-                </div>
-
-                <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] text-slate-400 font-medium">Last Visit</div>
-                    <div className="text-xs font-bold text-slate-800">
-                      {highlightedPatient.lastVisit}
-                    </div>
-                    <div className="text-[10px] text-slate-500">{highlightedPatient.department}</div>
-                  </div>
-                  <CalendarDays className="w-5 h-5 text-emerald-500" />
-                </div>
-
-                <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] text-slate-400 font-medium">Next Appointment</div>
-                    <div className="text-xs font-bold text-slate-800">
-                      {highlightedPatient.nextAppointment || 'None Scheduled'}
-                    </div>
-                  </div>
-                  <CalendarDays className="w-5 h-5 text-cyan-500" />
-                </div>
-              </div>
-            )}
-
-            {rightPanelTab === 'medical' && (
-              <div className="space-y-2">
-                {highlightedPatient.conditions.map((c, i) => (
-                  <div
-                    key={i}
-                    className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="text-xs font-bold text-slate-800">{c.title}</div>
-                      <div className="text-[10px] text-slate-400">Diagnosed: {c.diagnosedDate}</div>
-                    </div>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        c.status === 'Active'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-blue-100 text-blue-700'
-                      }`}
-                    >
-                      {c.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {rightPanelTab === 'appointments' && (
-              <div className="space-y-2 text-xs">
-                <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/50">
-                  <div className="font-bold text-blue-900">Upcoming Cardiology Consultation</div>
-                  <div className="text-slate-600 mt-0.5">
-                    {highlightedPatient.nextAppointment || 'Oct 25, 2026 - 09:00 AM'}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Actions (Patients Card) */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5">
-            <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-600" />
-              Quick Actions
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => alert(`Scheduling appointment for ${highlightedPatient.name}`)}
-                className="p-3.5 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 text-center transition-all group"
-              >
-                <CalendarDays className="w-5 h-5 text-blue-600 mx-auto mb-1 group-hover:scale-110 transition-transform" />
-                <div className="text-xs font-bold text-slate-800">New Appointment</div>
-              </button>
-              <button
-                onClick={() => setPrescriptionModalOpen(true)}
-                className="p-3.5 rounded-xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/40 text-center transition-all group"
-              >
-                <Pill className="w-5 h-5 text-indigo-600 mx-auto mb-1 group-hover:scale-110 transition-transform" />
-                <div className="text-xs font-bold text-slate-800">Add Prescription</div>
-              </button>
-              <button
-                onClick={() => setLabModalOpen(true)}
-                className="p-3.5 rounded-xl border border-slate-200 hover:border-orange-500 hover:bg-orange-50/40 text-center transition-all group"
-              >
-                <FlaskConical className="w-5 h-5 text-orange-500 mx-auto mb-1 group-hover:scale-110 transition-transform" />
-                <div className="text-xs font-bold text-slate-800">Order Lab Test</div>
-              </button>
-              <button
-                onClick={() => setDrawerOpen(true)}
-                className="p-3.5 rounded-xl border border-slate-200 hover:border-cyan-500 hover:bg-cyan-50/40 text-center transition-all group"
-              >
-                <FileText className="w-5 h-5 text-cyan-600 mx-auto mb-1 group-hover:scale-110 transition-transform" />
-                <div className="text-xs font-bold text-slate-800">View Records</div>
-              </button>
-            </div>
-          </div>
-
-          {/* Recent Medical History Card (Matching screenshot) */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-800">Recent Medical History</h3>
-              </div>
-              <button
-                onClick={() => setDrawerOpen(true)}
-                className="text-xs font-bold text-blue-600 hover:text-blue-700"
-              >
-                View All
-              </button>
-            </div>
-
-            <div className="space-y-2.5">
-              {[
-                {
-                  title: 'Hypertension',
-                  diagnosed: '2023-06-12',
-                  status: 'Active',
-                  color: 'orange',
-                  icon: Shield,
-                },
-                {
-                  title: 'Type 2 Diabetes',
-                  diagnosed: '2022-11-03',
-                  status: 'Active',
-                  color: 'blue',
-                  icon: Pill,
-                },
-                {
-                  title: 'High Cholesterol',
-                  diagnosed: '2023-08-14',
-                  status: 'Active',
-                  color: 'rose',
-                  icon: Heart,
-                },
-                {
-                  title: 'Allergy (Penicillin)',
-                  diagnosed: '2021-04-20',
-                  status: 'Resolved',
-                  color: 'cyan',
-                  icon: Shield,
-                },
-              ].map((item, i) => {
-                const Icon = item.icon;
-                return (
-                  <div
-                    key={i}
-                    className="p-3 rounded-xl border border-slate-100 bg-white hover:border-slate-200 flex items-center justify-between transition-colors shadow-2xs"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                          item.color === 'orange'
-                            ? 'bg-orange-100 text-orange-600'
-                            : item.color === 'blue'
-                            ? 'bg-blue-100 text-blue-600'
-                            : item.color === 'rose'
-                            ? 'bg-rose-100 text-rose-600'
-                            : 'bg-cyan-100 text-cyan-600'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-800">{item.title}</div>
-                        <div className="text-[10px] text-slate-400">Diagnosed: {item.diagnosed}</div>
-                      </div>
-                    </div>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        item.status === 'Active'
-                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                          : 'bg-cyan-50 text-cyan-700 border border-cyan-100'
-                      }`}
-                    >
-                      {item.status}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={() => setDrawerOpen(true)}
-              className="mt-4 w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-1.5"
-            >
-              <span>View Full Medical History</span>
-              <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-          </div>
-        </div>
-      </div>
+      </DoctorPageShell>
 
       {/* Slide-over Patient Drawer */}
       <DoctorPatientDrawer
@@ -762,6 +744,6 @@ export default function DoctorPatientsPage() {
         onClose={() => setLabModalOpen(false)}
         defaultPatientId={highlightedPatient.id}
       />
-    </div>
+    </>
   );
 }

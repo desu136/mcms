@@ -29,6 +29,8 @@ import {
 import { INITIAL_PATIENTS, CURRENT_DOCTOR, PatientItem } from '../../../components/doctor/doctorMockData';
 import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescriptionModal';
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
+import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
+import DoctorStatCard from '../../../components/doctor/DoctorStatCard';
 
 interface PrescriptionItem {
   id: string;
@@ -294,105 +296,360 @@ export default function DoctorPrescriptionsPage() {
     setSelectedPatientForDrawer(p);
   };
 
+  const headerContent = (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs shadow-blue-500/25">
+          <Pill className="w-5 h-5" />
+        </div>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Prescriptions</h1>
+          <p className="text-xs text-slate-500 font-medium">
+            View and manage patient prescriptions, medication details, and refill information.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2.5">
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-2xs">
+          <Calendar className="w-4 h-4 text-blue-600" />
+          <span>Oct 19, 2026</span>
+          <span className="text-slate-400">Monday</span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs shadow-blue-500/25 transition-all cursor-pointer"
+        >
+          <Plus className="w-4 h-4" />
+          New Prescription
+        </button>
+      </div>
+    </div>
+  );
+
+  const kpisContent = (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <DoctorStatCard
+        title="Total Prescriptions"
+        value={48}
+        icon={Pill}
+        color="blue"
+        change={{ value: '12%', trend: 'up', label: 'vs. last month' }}
+      />
+      <DoctorStatCard
+        title="Active Prescriptions"
+        value={42}
+        icon={CheckCircle2}
+        color="emerald"
+        change={{ value: '16%', trend: 'up', label: 'vs. last month' }}
+      />
+      <DoctorStatCard
+        title="Refills Pending"
+        value={6}
+        icon={Clock}
+        color="purple"
+        change={{ value: '2%', trend: 'up', label: 'vs. last month' }}
+      />
+      <DoctorStatCard
+        title="Unique Patients"
+        value={28}
+        icon={Users}
+        color="amber"
+        change={{ value: '8%', trend: 'up', label: 'vs. last month' }}
+      />
+    </div>
+  );
+
   return (
-    <div className="space-y-5">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs shadow-blue-500/25">
-            <Pill className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Prescriptions</h1>
-            <p className="text-xs sm:text-sm text-slate-500 font-medium">
-              View and manage patient prescriptions, medication details, and refill information.
-            </p>
-          </div>
-        </div>
+    <>
+      <DoctorPageShell
+        header={headerContent}
+        kpis={kpisContent}
+        rightPanel={
+          <>
+          {/* Patient Details Card */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-blue-600" />
+                <h3 className="text-xs font-bold text-slate-800">Patient Details</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => openDrawerForPatient(activePatient.pid)}
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+              >
+                View All
+              </button>
+            </div>
 
-        <div className="flex items-center gap-2.5">
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-2xs">
-            <Calendar className="w-4 h-4 text-blue-600" />
-            <span>Oct 19, 2026</span>
-            <span className="text-slate-400">Monday</span>
+            <div className="pt-3 text-center">
+              <img
+                src={activePatient.avatar}
+                alt={activePatient.name}
+                className="w-16 h-16 rounded-full object-cover ring-3 ring-blue-100 shadow-2xs mx-auto mb-2"
+              />
+              <div className="flex items-center justify-center gap-1.5">
+                <h4 className="text-sm font-extrabold text-slate-800">{activePatient.name}</h4>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                  <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                  Active
+                </span>
+              </div>
+              <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
+                {activePatient.pid}
+              </p>
+
+              <div className="mt-4 space-y-2 text-left text-xs">
+                <div className="flex items-center gap-2.5 text-slate-600">
+                  <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="text-[11px]">
+                    {activePatient.age} years / {activePatient.gender}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5 text-slate-600">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="text-[11px]">{activePatient.phone}</span>
+                </div>
+                <div className="flex items-center gap-2.5 text-slate-600">
+                  <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="text-[11px] truncate">{activePatient.email}</span>
+                </div>
+                <div className="flex items-center gap-2.5 text-slate-600">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="text-[11px]">{activePatient.address}</span>
+                </div>
+              </div>
+
+              {/* Sub tabs in patient details */}
+              <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100/80 rounded-xl text-[10px] font-bold mt-4">
+                <button
+                  type="button"
+                  onClick={() => setSelectedRightTab('Overview')}
+                  className={`py-1 rounded-lg transition-all ${
+                    selectedRightTab === 'Overview'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRightTab('Medical History')}
+                  className={`py-1 rounded-lg transition-all ${
+                    selectedRightTab === 'Medical History'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Medical History
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRightTab('Appointments')}
+                  className={`py-1 rounded-lg transition-all ${
+                    selectedRightTab === 'Appointments'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Appointments
+                </button>
+              </div>
+
+              {/* Last Visit / Next Appointment */}
+              <div className="mt-3.5 space-y-2">
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-left">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                    <div>
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase">Last Visit</div>
+                      <div className="text-[11px] font-bold text-slate-800">{activePatient.lastVisitDate}</div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-semibold text-slate-500">{activePatient.lastVisitDept}</span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-100 flex items-center justify-between text-left">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                    <div>
+                      <div className="text-[10px] text-blue-500 font-semibold uppercase">Next Appointment</div>
+                      <div className="text-[11px] font-bold text-slate-800">{activePatient.nextAppointmentDate}</div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-semibold text-blue-700">{activePatient.nextAppointmentTime}</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs shadow-blue-500/25 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            New Prescription
-          </button>
-        </div>
-      </div>
+          {/* Quick Actions (4 tiles) */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+              <Pill className="w-4 h-4 text-blue-600" />
+              <h3 className="text-xs font-bold text-slate-800">Quick Actions</h3>
+            </div>
 
-      {/* 4 KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500">Total Prescriptions</p>
-            <h3 className="text-2xl font-black text-slate-900 mt-0.5">48</h3>
-            <p className="text-[11px] font-bold text-emerald-600 mt-1 flex items-center gap-1">
-              <span>↑ 12%</span>
-              <span className="text-slate-400 font-normal">vs. last month</span>
-            </p>
-          </div>
-          <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-            <Pill className="w-5 h-5" />
-          </div>
-        </div>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => setModalOpen(true)}
+                className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-center transition-all group cursor-pointer"
+              >
+                <Pill className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform mb-1.5" />
+                <span className="text-[11px] font-bold text-slate-700 leading-tight">
+                  New Prescription
+                </span>
+              </button>
 
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500">Active Prescriptions</p>
-            <h3 className="text-2xl font-black text-slate-900 mt-0.5">42</h3>
-            <p className="text-[11px] font-bold text-emerald-600 mt-1 flex items-center gap-1">
-              <span>↑ 16%</span>
-              <span className="text-slate-400 font-normal">vs. last month</span>
-            </p>
-          </div>
-          <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-        </div>
+              <button
+                type="button"
+                onClick={() => setModalOpen(true)}
+                className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-center transition-all group cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform mb-1.5" />
+                <span className="text-[11px] font-bold text-slate-700 leading-tight">
+                  Refill Request
+                </span>
+              </button>
 
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500">Refills Pending</p>
-            <h3 className="text-2xl font-black text-slate-900 mt-0.5">6</h3>
-            <p className="text-[11px] font-bold text-rose-500 mt-1 flex items-center gap-1">
-              <span>↑ 2%</span>
-              <span className="text-slate-400 font-normal">vs. last month</span>
-            </p>
-          </div>
-          <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 border border-purple-100">
-            <Clock className="w-5 h-5" />
-          </div>
-        </div>
+              <button
+                type="button"
+                onClick={() => openDrawerForPatient(activePatient.pid)}
+                className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-center transition-all group cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform mb-1.5" />
+                <span className="text-[11px] font-bold text-slate-700 leading-tight">
+                  View Medical Record
+                </span>
+              </button>
 
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500">Unique Patients</p>
-            <h3 className="text-2xl font-black text-slate-900 mt-0.5">28</h3>
-            <p className="text-[11px] font-bold text-emerald-600 mt-1 flex items-center gap-1">
-              <span>↑ 8%</span>
-              <span className="text-slate-400 font-normal">vs. last month</span>
-            </p>
+              <button
+                type="button"
+                onClick={() => handlePrint('RX-2026-048')}
+                className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-center transition-all group cursor-pointer"
+              >
+                <Printer className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform mb-1.5" />
+                <span className="text-[11px] font-bold text-slate-700 leading-tight">
+                  Print Prescription
+                </span>
+              </button>
+            </div>
           </div>
-          <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
-            <Users className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
 
-      {/* Main Grid: Table (Left) + Side Panel (Right) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* ============================================================== */}
-        {/* LEFT / CENTER: PRESCRIPTIONS DIRECTORY & TABLE (lg:col-span-9) */}
-        {/* ============================================================== */}
-        <div className="lg:col-span-9 space-y-3.5">
+          {/* Recent Prescriptions List */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-600" />
+                <h3 className="text-xs font-bold text-slate-800">Recent Prescriptions</h3>
+              </div>
+              <button
+                type="button"
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline"
+              >
+                View All
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-2.5">
+              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                    <Pill className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-800">Amoxicillin 500mg</div>
+                    <div className="text-[10px] text-slate-400">Oct 19, 2026 • 7 days</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
+                  Active
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                    <Pill className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-800">Metformin 500mg</div>
+                    <div className="text-[10px] text-slate-400">Oct 18, 2026 • 30 days</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
+                  Active
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                    <Pill className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-800">Atorvastatin 20mg</div>
+                    <div className="text-[10px] text-slate-400">Oct 18, 2026 • 30 days</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
+                  Active
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                    <Pill className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-800">Lisinopril 10mg</div>
+                    <div className="text-[10px] text-slate-400">Oct 17, 2026 • 30 days</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
+                  Active
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                    <Pill className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-800">Paracetamol 500mg</div>
+                    <div className="text-[10px] text-slate-400">Oct 16, 2026 • 5 days</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
+                  Completed
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Safe Medication Card */}
+          <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/80 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">Safe Medication</h4>
+              <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">
+                Always review allergies, interactions, and contraindications before prescribing.
+              </p>
+            </div>
+          </div>
+          </>
+        }
+        rightPanelWidth="lg:w-[350px] xl:w-[380px] 2xl:w-[420px]"
+      >
           {/* Sub Filter Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
             <button
@@ -698,291 +955,7 @@ export default function DoctorPrescriptionsPage() {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* ============================================================== */}
-        {/* RIGHT COLUMN: PATIENT DETAILS, ACTIONS, SAFE MEDICATION (3 col) */}
-        {/* ============================================================== */}
-        <div className="lg:col-span-3 space-y-4">
-          {/* Patient Details Card */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-blue-600" />
-                <h3 className="text-xs font-bold text-slate-800">Patient Details</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => openDrawerForPatient(activePatient.pid)}
-                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
-              >
-                View All
-              </button>
-            </div>
-
-            <div className="pt-3 text-center">
-              <img
-                src={activePatient.avatar}
-                alt={activePatient.name}
-                className="w-16 h-16 rounded-full object-cover ring-3 ring-blue-100 shadow-2xs mx-auto mb-2"
-              />
-              <div className="flex items-center justify-center gap-1.5">
-                <h4 className="text-sm font-extrabold text-slate-800">{activePatient.name}</h4>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
-                  <span className="w-1 h-1 rounded-full bg-emerald-500" />
-                  Active
-                </span>
-              </div>
-              <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
-                {activePatient.pid}
-              </p>
-
-              <div className="mt-4 space-y-2 text-left text-xs">
-                <div className="flex items-center gap-2.5 text-slate-600">
-                  <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="text-[11px]">
-                    {activePatient.age} years / {activePatient.gender}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2.5 text-slate-600">
-                  <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="text-[11px]">{activePatient.phone}</span>
-                </div>
-                <div className="flex items-center gap-2.5 text-slate-600">
-                  <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="text-[11px] truncate">{activePatient.email}</span>
-                </div>
-                <div className="flex items-center gap-2.5 text-slate-600">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="text-[11px]">{activePatient.address}</span>
-                </div>
-              </div>
-
-              {/* Sub tabs in patient details */}
-              <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100/80 rounded-xl text-[10px] font-bold mt-4">
-                <button
-                  type="button"
-                  onClick={() => setSelectedRightTab('Overview')}
-                  className={`py-1 rounded-lg transition-all ${
-                    selectedRightTab === 'Overview'
-                      ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Overview
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRightTab('Medical History')}
-                  className={`py-1 rounded-lg transition-all ${
-                    selectedRightTab === 'Medical History'
-                      ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Medical History
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRightTab('Appointments')}
-                  className={`py-1 rounded-lg transition-all ${
-                    selectedRightTab === 'Appointments'
-                      ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Appointments
-                </button>
-              </div>
-
-              {/* Last Visit / Next Appointment */}
-              <div className="mt-3.5 space-y-2">
-                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-left">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-blue-600" />
-                    <div>
-                      <div className="text-[10px] text-slate-400 font-semibold uppercase">Last Visit</div>
-                      <div className="text-[11px] font-bold text-slate-800">{activePatient.lastVisitDate}</div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-semibold text-slate-500">{activePatient.lastVisitDept}</span>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-100 flex items-center justify-between text-left">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-blue-600" />
-                    <div>
-                      <div className="text-[10px] text-blue-500 font-semibold uppercase">Next Appointment</div>
-                      <div className="text-[11px] font-bold text-slate-800">{activePatient.nextAppointmentDate}</div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-semibold text-blue-700">{activePatient.nextAppointmentTime}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Actions (4 tiles) */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-              <Pill className="w-4 h-4 text-blue-600" />
-              <h3 className="text-xs font-bold text-slate-800">Quick Actions</h3>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 mt-3">
-              <button
-                type="button"
-                onClick={() => setModalOpen(true)}
-                className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-center transition-all group cursor-pointer"
-              >
-                <Pill className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform mb-1.5" />
-                <span className="text-[11px] font-bold text-slate-700 leading-tight">
-                  New Prescription
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setModalOpen(true)}
-                className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-center transition-all group cursor-pointer"
-              >
-                <RefreshCw className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform mb-1.5" />
-                <span className="text-[11px] font-bold text-slate-700 leading-tight">
-                  Refill Request
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => openDrawerForPatient(activePatient.pid)}
-                className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-center transition-all group cursor-pointer"
-              >
-                <FileText className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform mb-1.5" />
-                <span className="text-[11px] font-bold text-slate-700 leading-tight">
-                  View Medical Record
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handlePrint('RX-2026-048')}
-                className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-center transition-all group cursor-pointer"
-              >
-                <Printer className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform mb-1.5" />
-                <span className="text-[11px] font-bold text-slate-700 leading-tight">
-                  Print Prescription
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* Recent Prescriptions List */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-blue-600" />
-                <h3 className="text-xs font-bold text-slate-800">Recent Prescriptions</h3>
-              </div>
-              <button
-                type="button"
-                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline"
-              >
-                View All
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-2.5">
-              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                    <Pill className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-bold text-slate-800">Amoxicillin 500mg</div>
-                    <div className="text-[10px] text-slate-400">Oct 19, 2026 • 7 days</div>
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
-                  Active
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                    <Pill className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-bold text-slate-800">Metformin 500mg</div>
-                    <div className="text-[10px] text-slate-400">Oct 18, 2026 • 30 days</div>
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
-                  Active
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                    <Pill className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-bold text-slate-800">Atorvastatin 20mg</div>
-                    <div className="text-[10px] text-slate-400">Oct 18, 2026 • 30 days</div>
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
-                  Active
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                    <Pill className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-bold text-slate-800">Lisinopril 10mg</div>
-                    <div className="text-[10px] text-slate-400">Oct 17, 2026 • 30 days</div>
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
-                  Active
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
-                    <Pill className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-bold text-slate-800">Paracetamol 500mg</div>
-                    <div className="text-[10px] text-slate-400">Oct 16, 2026 • 5 days</div>
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
-                  Completed
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Safe Medication Card */}
-          <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/80 flex items-start gap-3">
-            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-slate-900">Safe Medication</h4>
-              <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">
-                Always review allergies, interactions, and contraindications before prescribing.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      </DoctorPageShell>
 
       {/* Requisition Modal */}
       <DoctorPrescriptionModal
@@ -997,6 +970,6 @@ export default function DoctorPrescriptionsPage() {
         isOpen={Boolean(selectedPatientForDrawer)}
         onClose={() => setSelectedPatientForDrawer(null)}
       />
-    </div>
+    </>
   );
 }

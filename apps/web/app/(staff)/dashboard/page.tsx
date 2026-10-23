@@ -93,29 +93,29 @@ const StatCard = ({
   const isFlat = change === 0;
 
   return (
-    <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between mb-4">
-        <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center"
-          style={{ backgroundColor: iconBg }}
-        >
-          <span style={{ color: iconColor }}>{icon}</span>
-        </div>
+    <div className="bg-white rounded-2xl p-3.5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow flex items-center gap-3.5">
+      <div
+        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+        style={{ backgroundColor: iconBg }}
+      >
+        <span style={{ color: iconColor }}>{icon}</span>
       </div>
-      <div className="text-sm text-gray-500 font-medium mb-1">{label}</div>
-      <div className="text-3xl font-bold text-gray-800 mb-2">{value}</div>
-      <div className="flex items-center gap-1 text-xs font-medium">
-        {isFlat ? (
-          <Minus size={13} className="text-gray-400" />
-        ) : isUp ? (
-          <TrendingUp size={13} className="text-emerald-500" />
-        ) : (
-          <TrendingDown size={13} className="text-red-500" />
-        )}
-        <span className={isFlat ? 'text-gray-400' : isUp ? 'text-emerald-600' : 'text-red-500'}>
-          {isFlat ? '→' : isUp ? '↑' : '↓'} {Math.abs(change)}%
-        </span>
-        <span className="text-gray-400 font-normal">{changeLabel}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] text-gray-500 font-medium truncate">{label}</div>
+        <div className="text-2xl font-bold text-gray-800 leading-tight">{value}</div>
+        <div className="flex items-center gap-1 text-[11px] font-medium mt-0.5">
+          {isFlat ? (
+            <Minus size={11} className="text-gray-400" />
+          ) : isUp ? (
+            <TrendingUp size={11} className="text-emerald-500" />
+          ) : (
+            <TrendingDown size={11} className="text-red-500" />
+          )}
+          <span className={isFlat ? 'text-gray-400' : isUp ? 'text-emerald-600' : 'text-red-500'}>
+            {isFlat ? '→' : isUp ? '↑' : '↓'} {Math.abs(change)}%
+          </span>
+          <span className="text-gray-400 font-normal">{changeLabel}</span>
+        </div>
       </div>
     </div>
   );

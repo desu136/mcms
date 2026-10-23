@@ -34,8 +34,15 @@ export default function DoctorPortalLayout({ children }: { children: React.React
   }
 
   return (
-    <div className="min-h-screen flex bg-[#F4F7FC] text-slate-800 font-sans antialiased selection:bg-blue-600 selection:text-white">
-      {/* Doctor Sidebar */}
+    /*
+     * Shell: covers the full viewport, never scrolls as a whole.
+     * Sidebar  → fixed, full height, independent scroll for nav items.
+     * Right    → flex column that fills remaining width.
+     *   Header → fixed height, never scrolls.
+     *   Main   → flex-1 + overflow-y-auto = the only scrolling region.
+     */
+    <div className="h-screen h-[100dvh] w-full flex overflow-hidden bg-[#F4F7FC] text-slate-800 font-sans antialiased selection:bg-blue-600 selection:text-white">
+      {/* Doctor Sidebar — fixed, independently scrollable nav */}
       <DoctorSidebar
         isCollapsed={isCollapsed}
         onToggleCollapse={() => setIsCollapsed(!isCollapsed)}
@@ -43,20 +50,20 @@ export default function DoctorPortalLayout({ children }: { children: React.React
         onCloseMobile={() => setMobileOpen(false)}
       />
 
-      {/* Main Content Shell */}
+      {/* Right-hand shell: header + viewport content */}
       <div
-        className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${
-          isCollapsed ? 'lg:pl-20' : 'lg:pl-64'
+        className={`flex flex-col flex-1 min-w-0 min-h-0 transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'lg:ml-20' : 'lg:ml-64'
         }`}
       >
-        {/* Header */}
+        {/* Top header — fixed height, never scrolls */}
         <DoctorHeader
           onOpenSearch={() => setSearchOpen(true)}
           onOpenMobileSidebar={() => setMobileOpen(true)}
         />
 
-        {/* Dynamic Page Views */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1700px] w-full mx-auto space-y-6">
+        {/* Viewport content shell: flex-1, min-h-0, overflow-hidden */}
+        <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
           {children}
         </main>
       </div>
@@ -65,7 +72,7 @@ export default function DoctorPortalLayout({ children }: { children: React.React
       <DoctorSearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onSelectPatient={(pid) => {
+        onSelectPatient={(_pid) => {
           router.push(`/doctor/patients`);
         }}
       />
