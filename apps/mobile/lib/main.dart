@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/storage/sqlite_database.dart';
 import 'core/auth/auth_provider.dart';
+import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
-import 'features/home/presentation/screens/dashboard_screen.dart';
+import 'features/doctor/presentation/screens/doctor_dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,21 +27,13 @@ class McmsApp extends StatelessWidget {
     return MaterialApp(
       title: 'MCMS Mobile',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0EA5E9),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF0F172A),
-        fontFamily: 'Inter',
-      ),
+      theme: AppTheme.lightTheme,
       home: _AuthRouter(dbService: dbService),
     );
   }
 }
 
-/// Watches auth state and routes to LoginScreen or DashboardScreen.
+/// Watches auth state and routes to LoginScreen or DoctorDashboardScreen.
 class _AuthRouter extends ConsumerWidget {
   final MobileDatabaseService dbService;
 
@@ -52,10 +45,10 @@ class _AuthRouter extends ConsumerWidget {
 
     if (authState.isLoading) {
       return const Scaffold(
-        backgroundColor: Color(0xFF0F172A),
+        backgroundColor: Color(0xFFF8FAFC),
         body: Center(
           child: CircularProgressIndicator(
-            color: Color(0xFF38BDF8),
+            color: Color(0xFF1E6BFF),
             strokeWidth: 2.5,
           ),
         ),
@@ -63,9 +56,9 @@ class _AuthRouter extends ConsumerWidget {
     }
 
     if (authState.isAuthenticated) {
-      return DashboardScreen(dbService: dbService);
+      return DoctorDashboardScreen(dbService: dbService);
     }
 
-    return const LoginScreen();
+    return LoginScreen(dbService: dbService);
   }
 }

@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/auth/auth_provider.dart';
 
+import '../../../../core/storage/sqlite_database.dart';
+import '../../../doctor/presentation/screens/doctor_dashboard_screen.dart';
+
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  final MobileDatabaseService? dbService;
+
+  const LoginScreen({super.key, this.dbService});
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -263,11 +268,46 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 12),
+
+                        // Quick access to Doctor Dashboard
+                        SizedBox(
+                          height: 46,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.pushReplacement<void, void>(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder: (_) => DoctorDashboardScreen(
+                                    dbService: widget.dbService ??
+                                        MobileDatabaseService(),
+                                  ),
+                                ),
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF38BDF8)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(Icons.medical_services_outlined,
+                                color: Color(0xFF38BDF8), size: 18),
+                            label: const Text(
+                              'Doctor Dashboard (Dr. Fitsum Alemu)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF38BDF8),
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
 
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 24),
 
                   // Security note
                   Container(
