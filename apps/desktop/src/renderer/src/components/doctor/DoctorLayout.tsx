@@ -19,16 +19,11 @@ interface SyncStatus {
   cursor: string | null;
 }
 
-declare global {
-  interface Window {
-    mcmsDesktop?: {
-      getSyncStatus: () => Promise<SyncStatus>;
-      getVersion: () => Promise<string>;
-    };
-  }
+export interface DoctorLayoutProps {
+  onSwitchWorkstation?: ((w: 'receptionist' | 'doctor') => void) | undefined;
 }
 
-export function DoctorLayout() {
+export function DoctorLayout({ onSwitchWorkstation }: DoctorLayoutProps) {
   const { logout } = useAuth();
   const [currentTab, setCurrentTab] = useState<DoctorTab>('dashboard');
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -63,6 +58,7 @@ export function DoctorLayout() {
           onNavigateTab={(tab) => setCurrentTab(tab as DoctorTab)}
           onLogout={logout}
           syncReady={syncStatus.ready}
+          onSwitchWorkstation={onSwitchWorkstation}
         />
 
         {/* Dynamic Page Viewport with Independent Scrolling */}

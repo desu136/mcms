@@ -5,6 +5,7 @@ import 'core/auth/auth_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/doctor/presentation/screens/doctor_dashboard_screen.dart';
+import 'features/receptionist/presentation/screens/receptionist_dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,7 +34,7 @@ class McmsApp extends StatelessWidget {
   }
 }
 
-/// Watches auth state and routes to LoginScreen or DoctorDashboardScreen.
+/// Watches auth state and routes to the appropriate dashboard based on role.
 class _AuthRouter extends ConsumerWidget {
   final MobileDatabaseService dbService;
 
@@ -56,6 +57,14 @@ class _AuthRouter extends ConsumerWidget {
     }
 
     if (authState.isAuthenticated) {
+      final role = authState.user?.role.toUpperCase() ?? '';
+
+      // Route receptionist roles to the receptionist dashboard
+      if (role == 'RECEPTIONIST' || role == 'FRONT_DESK') {
+        return ReceptionistDashboardScreen(dbService: dbService);
+      }
+
+      // Default: Doctor dashboard
       return DoctorDashboardScreen(dbService: dbService);
     }
 

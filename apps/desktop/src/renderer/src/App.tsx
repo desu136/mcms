@@ -1,10 +1,22 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
+import { SyncProvider } from './context/SyncContext';
 import { LoginPage } from './pages/auth/LoginPage';
 import { DoctorLayout } from './components/doctor/DoctorLayout';
+import { ReceptionistLayout } from './components/receptionist/ReceptionistLayout';
 
 function AppRouter() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const [activeWorkstation, setActiveWorkstation] = useState<'receptionist' | 'doctor'>('receptionist');
+
+  // Align default workstation with user role
+  useEffect(() => {
+    if (user?.role === 'DOCTOR') {
+      setActiveWorkstation('doctor');
+    } else {
+      setActiveWorkstation('receptionist');
+    }
+  }, [user]);
 
   if (isLoading) {
     return (
@@ -33,13 +45,25 @@ function AppRouter() {
     );
   }
 
-  return isAuthenticated ? <DoctorLayout /> : <LoginPage />;
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  return activeWorkstation === 'receptionist' ? (
+    <ReceptionistLayout onSwitchWorkstation={setActiveWorkstation} />
+  ) : (
+    <DoctorLayout onSwitchWorkstation={setActiveWorkstation} />
+  );
 }
 
 export function App() {
   return (
     <AuthProvider>
-      <AppRouter />
+      <SyncProvider>
+        <AppRouter />
+      </SyncProvider>
     </AuthProvider>
   );
 }
+
+export default App;
