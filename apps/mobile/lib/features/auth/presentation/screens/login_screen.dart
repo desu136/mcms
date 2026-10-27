@@ -4,6 +4,7 @@ import '../../../../core/auth/auth_provider.dart';
 
 import '../../../../core/storage/sqlite_database.dart';
 import '../../../doctor/presentation/screens/doctor_dashboard_screen.dart';
+import '../../../receptionist/presentation/screens/receptionist_dashboard_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   final MobileDatabaseService? dbService;
@@ -42,6 +43,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             _emailCtrl.text.trim(),
             _passwordCtrl.text,
           );
+      _redirectIfMounted();
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -50,6 +52,55 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleQuickLogin(String email, String password) async {
+    _emailCtrl.text = email;
+    _passwordCtrl.text = password;
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      await ref.read(authProvider.notifier).login(email, password);
+      _redirectIfMounted();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _redirectIfMounted() {
+    if (!mounted) return;
+    final role = ref.read(authProvider).user?.role.toUpperCase() ?? '';
+
+    // If there is an active navigator route, pushAndRemoveUntil ensures transition
+    if (role == 'RECEPTIONIST' || role == 'FRONT_DESK') {
+      Navigator.of(context).pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => ReceptionistDashboardScreen(
+            dbService: widget.dbService ?? MobileDatabaseService(),
+          ),
+        ),
+        (route) => false,
+      );
+    } else {
+      Navigator.of(context).pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => DoctorDashboardScreen(
+            dbService: widget.dbService ?? MobileDatabaseService(),
+          ),
+        ),
+        (route) => false,
+      );
     }
   }
 
@@ -268,36 +319,82 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            Expanded(child: Divider(color: Colors.blueGrey.shade800)),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'QUICK ROLE LOGIN',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1,
+                                  color: Colors.blueGrey.shade400,
+                                ),
+                              ),
+                            ),
+                            Expanded(child: Divider(color: Colors.blueGrey.shade800)),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Quick access to Receptionist Dashboard
+                        SizedBox(
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            onPressed: _isLoading
+                                ? null
+                                : () => _handleQuickLogin(
+                                      'receptionist@mcms.local',
+                                      'Reception@123456',
+                                    ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
+                              backgroundColor: const Color(0xFF1E6BFF).withValues(alpha: 0.1),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(Icons.badge_outlined,
+                                color: Color(0xFF60A5FA), size: 19),
+                            label: const Text(
+                              'Receptionist (Sarah Receptionist)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF60A5FA),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
 
                         // Quick access to Doctor Dashboard
                         SizedBox(
-                          height: 46,
+                          height: 48,
                           child: OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.pushReplacement<void, void>(
-                                context,
-                                MaterialPageRoute<void>(
-                                  builder: (_) => DoctorDashboardScreen(
-                                    dbService: widget.dbService ??
-                                        MobileDatabaseService(),
-                                  ),
-                                ),
-                              );
-                            },
+                            onPressed: _isLoading
+                                ? null
+                                : () => _handleQuickLogin(
+                                      'doctor@mcms.local',
+                                      'Doctor@123456',
+                                    ),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFF38BDF8)),
+                              side: const BorderSide(color: Color(0xFF38BDF8), width: 1.5),
+                              backgroundColor: const Color(0xFF38BDF8).withValues(alpha: 0.1),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                             icon: const Icon(Icons.medical_services_outlined,
-                                color: Color(0xFF38BDF8), size: 18),
+                                color: Color(0xFF38BDF8), size: 19),
                             label: const Text(
                               'Doctor Dashboard (Dr. Fitsum Alemu)',
                               style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                                 color: Color(0xFF38BDF8),
                               ),
                             ),

@@ -18,6 +18,7 @@ export interface DoctorHeaderProps {
   onNavigateTab?: (tab: string) => void;
   onLogout?: () => void;
   syncReady?: boolean;
+  onSwitchWorkstation?: ((w: 'receptionist' | 'doctor') => void) | undefined;
 }
 
 export function DoctorHeader({
@@ -25,6 +26,7 @@ export function DoctorHeader({
   onNavigateTab,
   onLogout,
   syncReady = true,
+  onSwitchWorkstation,
 }: DoctorHeaderProps) {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -80,6 +82,26 @@ export function DoctorHeader({
           <span className="hidden sm:inline">{syncReady ? 'SQLite Active' : 'Connecting...'}</span>
           <Database className="w-3 h-3 text-emerald-600 sm:hidden" />
         </div>
+
+        {/* Workstation Switcher */}
+        {onSwitchWorkstation && (
+          <div className="hidden lg:flex items-center gap-1 p-0.5 bg-slate-100 rounded-xl border border-slate-200 text-[11px] font-bold">
+            <button
+              onClick={() => onSwitchWorkstation('receptionist')}
+              type="button"
+              className="px-2 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer"
+            >
+              Reception
+            </button>
+            <button
+              onClick={() => onSwitchWorkstation('doctor')}
+              type="button"
+              className="px-2 py-1 rounded-lg bg-blue-600 text-white shadow-2xs transition-all cursor-pointer"
+            >
+              Doctor
+            </button>
+          </div>
+        )}
 
         {/* Notification Bell Dropdown */}
         <div className="relative" ref={notifRef}>
