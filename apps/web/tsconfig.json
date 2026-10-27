@@ -3,6 +3,7 @@
   "extends": "@mcms/config/tsconfig/nextjs",
   "compilerOptions": {
     "baseUrl": ".",
+    "jsx": "preserve",
     "paths": {
       "@/*": ["./*"]
     },
