@@ -11,6 +11,7 @@
     "build": "pnpm build:main && pnpm build:preload && pnpm build:renderer",
     "dev": "concurrently \"tsc -p tsconfig.main.json --watch\" \"tsc -p tsconfig.preload.json --watch\" \"vite\"",
     "start": "electron dist/main/main.js",
+    "electron:dev": "cross-env NODE_ENV=development electron dist/main/main.js",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
@@ -23,7 +24,8 @@
     "better-sqlite3": "^11.8.1",
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@mcms/config": "workspace:*",
@@ -32,6 +34,7 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
+    "cross-env": "^10.1.0",
     "electron": "^34.2.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.7.3",
