@@ -12,7 +12,7 @@ async function bootstrap(): Promise<void> {
 
   // CORS for web client, desktop client, and mobile clients
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://localhost:5173', 'app://electron'],
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173', 'app://electron'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-MCMS-Sync-Cursor'],

@@ -29,7 +29,7 @@ import {
   UserPlus,
   Database,
 } from 'lucide-react';
-import { useAuth } from '../../../lib/auth/auth-context';
+import { useAuth } from '@/lib/auth/auth-context';
 import { adminUsersApi, type AdminUserSummary } from '../services/admin-api';
 import { StatCard } from '../components/StatCard';
 import { AdminCard, PageHeader, UserAvatar, LoadingSpinner } from '../components/AdminUI';
@@ -91,12 +91,12 @@ const sysInfo = [
 ];
 
 const quickActions = [
-  { icon: UserPlus, label: 'Add User', href: '/admin/users-roles', bg: 'bg-blue-50', color: 'text-blue-500' },
-  { icon: Settings, label: 'System Settings', href: '/admin/settings', bg: 'bg-purple-50', color: 'text-purple-500' },
-  { icon: HardDrive, label: 'Backup Now', href: '/admin/backup-restore', bg: 'bg-green-50', color: 'text-green-500' },
-  { icon: Eye, label: 'View Logs', href: '/admin/logs-activity', bg: 'bg-orange-50', color: 'text-orange-500' },
-  { icon: Shield, label: 'Manage Roles', href: '/admin/users-roles', bg: 'bg-pink-50', color: 'text-pink-500' },
-  { icon: RefreshCw, label: 'Update System', href: '/admin/settings', bg: 'bg-cyan-50', color: 'text-cyan-500' },
+  { icon: UserPlus, label: 'Add User', href: '/users-roles', bg: 'bg-blue-50', color: 'text-blue-500' },
+  { icon: Settings, label: 'System Settings', href: '/settings', bg: 'bg-purple-50', color: 'text-purple-500' },
+  { icon: HardDrive, label: 'Backup Now', href: '/backup-restore', bg: 'bg-green-50', color: 'text-green-500' },
+  { icon: Eye, label: 'View Logs', href: '/logs-activity', bg: 'bg-orange-50', color: 'text-orange-500' },
+  { icon: Shield, label: 'Manage Roles', href: '/users-roles', bg: 'bg-pink-50', color: 'text-pink-500' },
+  { icon: RefreshCw, label: 'Update System', href: '/settings', bg: 'bg-cyan-50', color: 'text-cyan-500' },
 ];
 
 export default function DashboardPage() {
@@ -251,7 +251,7 @@ export default function DashboardPage() {
             title="Recent Users"
             titleIcon={<Users size={16} className="text-blue-500" />}
             action={
-              <Link href="/admin/users-roles" className="text-xs text-[#2979FF] font-medium hover:underline">
+              <Link href="/users-roles" className="text-xs text-[#2979FF] font-medium hover:underline">
                 View All
               </Link>
             }
@@ -362,7 +362,7 @@ export default function DashboardPage() {
             title="Recent Activity"
             titleIcon={<Activity size={16} className="text-blue-500" />}
             action={
-              <Link href="/admin/logs-activity" className="text-xs text-[#2979FF] font-medium hover:underline">
+              <Link href="/logs-activity" className="text-xs text-[#2979FF] font-medium hover:underline">
                 View All
               </Link>
             }
@@ -392,7 +392,7 @@ export default function DashboardPage() {
           title="System Logs"
           titleIcon={<FileText size={16} className="text-blue-500" />}
           action={
-            <Link href="/admin/logs-activity" className="text-xs text-[#2979FF] font-medium hover:underline">
+            <Link href="/logs-activity" className="text-xs text-[#2979FF] font-medium hover:underline">
               View All
             </Link>
           }
@@ -431,7 +431,7 @@ export default function DashboardPage() {
           title="Database Status"
           titleIcon={<Database size={16} className="text-blue-500" />}
           action={
-            <Link href="/admin/database-management" className="text-xs text-[#2979FF] font-medium hover:underline">
+            <Link href="/database-management" className="text-xs text-[#2979FF] font-medium hover:underline">
               View Details
             </Link>
           }
