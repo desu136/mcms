@@ -493,9 +493,9 @@ export default function SystemSettingsPage() {
             {/* Quick Actions */}
             <AdminCard title="Quick Actions" titleIcon={<Activity size={15} className="text-blue-500" />}>
               <div className="space-y-1">
-                <QuickActionLink icon={FileText} label="View System Logs" description="Check application and error logs." href="/admin/logs-activity" />
-                <QuickActionLink icon={HardDrive} label="Backup Database" description="Create a manual database backup." href="/admin/backup-restore" />
-                <QuickActionLink icon={RefreshCw} label="Restore Database" description="Restore from a previous backup." href="/admin/backup-restore" />
+                <QuickActionLink icon={FileText} label="View System Logs" description="Check application and error logs." href="/logs-activity" />
+                <QuickActionLink icon={HardDrive} label="Backup Database" description="Create a manual database backup." href="/backup-restore" />
+                <QuickActionLink icon={RefreshCw} label="Restore Database" description="Restore from a previous backup." href="/backup-restore" />
                 <QuickActionLink icon={Trash2} label="Clear Cache" description="Clear application cache and temporary files." href="#" />
               </div>
             </AdminCard>

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useAuth } from '../../lib/auth/auth-context';
+import { useAuth } from '@/lib/auth/auth-context';
 import {
   LayoutDashboard,
   Users,
@@ -25,16 +25,16 @@ import {
 } from 'lucide-react';
 
 const navItems = [
-  { href: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/users-roles', label: 'Users & Roles', icon: Users },
-  { href: '/admin/settings', label: 'System Settings', icon: Settings },
-  { href: '/admin/clinic-management', label: 'Clinic Management', icon: Building2 },
-  { href: '/admin/database-management', label: 'Database Management', icon: Database },
-  { href: '/admin/logs-activity', label: 'Logs & Activity', icon: FileText },
-  { href: '/admin/backup-restore', label: 'Backup & Restore', icon: HardDrive },
-  { href: '/admin/security', label: 'Security', icon: Shield },
-  { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
-  { href: '/admin/notifications', label: 'Notifications', icon: Bell },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/users-roles', label: 'Users & Roles', icon: Users },
+  { href: '/settings', label: 'System Settings', icon: Settings },
+  { href: '/clinic-management', label: 'Clinic Management', icon: Building2 },
+  { href: '/database-management', label: 'Database Management', icon: Database },
+  { href: '/logs-activity', label: 'Logs & Activity', icon: FileText },
+  { href: '/backup-restore', label: 'Backup & Restore', icon: HardDrive },
+  { href: '/security', label: 'Security', icon: Shield },
+  { href: '/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/notifications', label: 'Notifications', icon: Bell },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -69,11 +69,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const initials = user?.displayName
     ? user.displayName
-        .split(' ')
-        .map((n: string) => n[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
+      .split(' ')
+      .map((n: string) => n[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase()
     : 'SA';
 
   if (isLoading) {
@@ -103,8 +103,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full w-[220px] bg-[#141C2E] flex flex-col z-30 transition-transform duration-300
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:flex`}
+        className={`fixed top-0 left-0 h-screen w-[220px] bg-[#141C2E] flex flex-col z-30 transition-transform duration-300
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:fixed lg:flex`}
       >
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-[18px] border-b border-white/10">
@@ -113,12 +113,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
           <div>
             <div className="text-white font-bold text-sm leading-tight">MCMS</div>
-            <div className="text-[10px] text-slate-400 leading-tight">Modern Clinic Management System</div>
+            <div className="text-[10px] text-slate-400 leading-tight">Admin Portal</div>
           </div>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto" >
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(href + '/');
             return (
@@ -127,10 +127,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 href={href}
                 onClick={() => setSidebarOpen(false)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150
-                  ${
-                    active
-                      ? 'bg-[#2979FF] text-white shadow-lg shadow-blue-500/25'
-                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  ${active
+                    ? 'bg-[#2979FF] text-white shadow-lg shadow-blue-500/25'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
                   }`}
               >
                 <Icon size={18} strokeWidth={active ? 2.5 : 1.8} className="flex-shrink-0" />
@@ -155,7 +154,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 lg:ml-0">
+      <div className="flex-1 flex flex-col min-w-0 lg:ml-[220px]">
         {/* Top Header */}
         <header className="h-[60px] bg-white border-b border-gray-100 px-5 flex items-center justify-between sticky top-0 z-10 shadow-sm">
           <div className="flex items-center gap-3 flex-1">
@@ -186,7 +185,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="flex items-center gap-2.5 ml-3">
             {/* Notifications */}
             <Link
-              href="/admin/notifications"
+              href="/notifications"
               className="relative w-9 h-9 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center hover:bg-gray-100 transition"
             >
               <Bell size={16} className="text-gray-500" />
@@ -219,7 +218,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     <div className="text-[10px] text-blue-500 mt-0.5">{user?.roles?.[0] ?? 'System Admin'}</div>
                   </div>
                   <Link
-                    href="/admin/settings"
+                    href="/settings"
                     className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition"
                     onClick={() => setProfileOpen(false)}
                   >
