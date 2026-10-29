@@ -13,5 +13,14 @@
     "./eslint/nextjs": "./eslint/nextjs.js",
     "./eslint/nestjs": "./eslint/nestjs.js",
     "./eslint/react-library": "./eslint/react-library.js"
+  },
+  "typesVersions": {
+    "*": {
+      "tsconfig/base": ["./tsconfig/base.json"],
+      "tsconfig/nextjs": ["./tsconfig/nextjs.json"],
+      "tsconfig/electron": ["./tsconfig/electron.json"],
+      "tsconfig/nestjs": ["./tsconfig/nestjs.json"],
+      "tsconfig/react-library": ["./tsconfig/react-library.json"]
+    }
   }
 }

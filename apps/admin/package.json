@@ -1,0 +1,38 @@
+{
+  "name": "@mcms/admin",
+  "version": "0.0.1",
+  "private": true,
+  "description": "MCMS Admin Portal — standalone system administration dashboard",
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf .next dist"
+  },
+  "dependencies": {
+    "@mcms/api-client": "workspace:*",
+    "@mcms/contracts": "workspace:*",
+    "@mcms/domain": "workspace:*",
+    "@mcms/validation": "workspace:*",
+    "lucide-react": "^1.16.0",
+    "next": "^15.1.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@mcms/config": "workspace:*",
+    "@types/node": "^22.13.1",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.20.1",
+    "eslint-config-next": "^15.1.7",
+    "postcss": "^8.5.2",
+    "rimraf": "^6.0.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
+  }
+}
