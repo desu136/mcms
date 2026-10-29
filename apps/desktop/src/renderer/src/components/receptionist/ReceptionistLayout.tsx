@@ -15,7 +15,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { useSync } from '../../context/SyncContext';
 
 interface ReceptionistLayoutProps {
-  onSwitchWorkstation?: (w: 'receptionist' | 'doctor') => void;
+  onSwitchWorkstation?: (w: 'receptionist' | 'doctor' | 'nurse') => void;
 }
 
 export function ReceptionistLayout({ onSwitchWorkstation }: ReceptionistLayoutProps) {

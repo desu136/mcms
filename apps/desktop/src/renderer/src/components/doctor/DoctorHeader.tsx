@@ -18,7 +18,7 @@ export interface DoctorHeaderProps {
   onNavigateTab?: (tab: string) => void;
   onLogout?: () => void;
   syncReady?: boolean;
-  onSwitchWorkstation?: ((w: 'receptionist' | 'doctor') => void) | undefined;
+  onSwitchWorkstation?: ((w: 'receptionist' | 'doctor' | 'nurse') => void) | undefined;
 }
 
 export function DoctorHeader({
@@ -99,6 +99,13 @@ export function DoctorHeader({
               className="px-2 py-1 rounded-lg bg-blue-600 text-white shadow-2xs transition-all cursor-pointer"
             >
               Doctor
+            </button>
+            <button
+              onClick={() => onSwitchWorkstation('nurse')}
+              type="button"
+              className="px-2 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer"
+            >
+              Nurse
             </button>
           </div>
         )}

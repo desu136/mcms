@@ -233,7 +233,7 @@ class _ReceptionistHomeBody extends ConsumerWidget {
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: 2.1,
+              childAspectRatio: 1.35,
             ),
             delegate: SliverChildListDelegate([
               ReceptionistKpiCard(
@@ -435,7 +435,7 @@ class _QuickActionButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(14),
@@ -448,6 +448,8 @@ class _QuickActionButton extends StatelessWidget {
               Text(
                 label,
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
