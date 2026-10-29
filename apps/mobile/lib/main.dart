@@ -6,6 +6,7 @@ import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/doctor/presentation/screens/doctor_dashboard_screen.dart';
 import 'features/receptionist/presentation/screens/receptionist_dashboard_screen.dart';
+import 'features/nurse/presentation/screens/nurse_dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,6 +59,11 @@ class _AuthRouter extends ConsumerWidget {
 
     if (authState.isAuthenticated) {
       final role = authState.user?.role.toUpperCase() ?? '';
+
+      // Route nurse roles to the nurse dashboard
+      if (role == 'NURSE' || role == 'HEAD_NURSE') {
+        return NurseDashboardScreen(dbService: dbService);
+      }
 
       // Route receptionist roles to the receptionist dashboard
       if (role == 'RECEPTIONIST' || role == 'FRONT_DESK') {

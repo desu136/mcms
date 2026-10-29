@@ -223,6 +223,32 @@ class AuthService {
       );
     }
 
+    if (cleanEmail == 'nurse@mcms.local' && password == 'Nurse@123456') {
+      const offlineUser = AuthUser(
+        id: 'user-nurse-001',
+        email: 'nurse@mcms.local',
+        displayName: 'Sister Aster Mulu',
+        firstName: 'Aster',
+        lastName: 'Mulu',
+        role: 'NURSE',
+        roles: ['NURSE'],
+      );
+
+      _currentUser = offlineUser;
+      _accessToken = 'offline_token_nurse';
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kUser, jsonEncode(offlineUser.toJson()));
+      await prefs.setString(_kAccess, _accessToken!);
+      await prefs.setString(_kRefresh, 'offline_refresh_nurse');
+
+      return AuthResult(
+        user: offlineUser,
+        accessToken: _accessToken!,
+        refreshToken: 'offline_refresh_nurse',
+      );
+    }
+
     throw Exception(
       'Unable to connect to server. Check Wi-Fi connection or verify credentials.',
     );

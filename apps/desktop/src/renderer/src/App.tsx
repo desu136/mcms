@@ -1,22 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { SyncProvider } from './context/SyncContext';
 import { LoginPage } from './pages/auth/LoginPage';
 import { DoctorLayout } from './components/doctor/DoctorLayout';
 import { ReceptionistLayout } from './components/receptionist/ReceptionistLayout';
+import { NurseLayout } from './components/nurse/NurseLayout';
+
+type Workstation = 'receptionist' | 'doctor' | 'nurse';
+
+function roleToWorkstation(role: string | undefined): Workstation {
+  if (role === 'DOCTOR') return 'doctor';
+  if (role === 'NURSE') return 'nurse';
+  return 'receptionist';
+}
 
 function AppRouter() {
   const { user, isAuthenticated, isLoading } = useAuth();
-  const [activeWorkstation, setActiveWorkstation] = useState<'receptionist' | 'doctor'>('receptionist');
 
-  // Align default workstation with user role
+  // Initialize directly from user role (avoids one-render flash to wrong workstation)
+  const [activeWorkstation, setActiveWorkstation] = useState<Workstation>(
+    () => roleToWorkstation(user?.role)
+  );
+
+  // Track previous user id so we only auto-reset on actual user change (login/logout)
+  // This allows manual workstation switching to still work between same-user sessions.
+  const prevUserIdRef = useRef<string | undefined>(user?.id);
+
   useEffect(() => {
-    if (user?.role === 'DOCTOR') {
-      setActiveWorkstation('doctor');
-    } else {
-      setActiveWorkstation('receptionist');
+    if (user?.id !== prevUserIdRef.current) {
+      prevUserIdRef.current = user?.id;
+      setActiveWorkstation(roleToWorkstation(user?.role));
     }
-  }, [user]);
+  }, [user?.id, user?.role]);
 
   if (isLoading) {
     return (
@@ -49,11 +64,13 @@ function AppRouter() {
     return <LoginPage />;
   }
 
-  return activeWorkstation === 'receptionist' ? (
-    <ReceptionistLayout onSwitchWorkstation={setActiveWorkstation} />
-  ) : (
-    <DoctorLayout onSwitchWorkstation={setActiveWorkstation} />
-  );
+  if (activeWorkstation === 'doctor') {
+    return <DoctorLayout onSwitchWorkstation={setActiveWorkstation} />;
+  }
+  if (activeWorkstation === 'nurse') {
+    return <NurseLayout onSwitchWorkstation={setActiveWorkstation} />;
+  }
+  return <ReceptionistLayout onSwitchWorkstation={setActiveWorkstation} />;
 }
 
 export function App() {

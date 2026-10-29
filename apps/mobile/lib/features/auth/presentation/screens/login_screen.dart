@@ -5,6 +5,7 @@ import '../../../../core/auth/auth_provider.dart';
 import '../../../../core/storage/sqlite_database.dart';
 import '../../../doctor/presentation/screens/doctor_dashboard_screen.dart';
 import '../../../receptionist/presentation/screens/receptionist_dashboard_screen.dart';
+import '../../../nurse/presentation/screens/nurse_dashboard_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   final MobileDatabaseService? dbService;
@@ -83,7 +84,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final role = ref.read(authProvider).user?.role.toUpperCase() ?? '';
 
     // If there is an active navigator route, pushAndRemoveUntil ensures transition
-    if (role == 'RECEPTIONIST' || role == 'FRONT_DESK') {
+    if (role == 'NURSE' || role == 'HEAD_NURSE') {
+      Navigator.of(context).pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => NurseDashboardScreen(
+            dbService: widget.dbService ?? MobileDatabaseService(),
+          ),
+        ),
+        (route) => false,
+      );
+    } else if (role == 'RECEPTIONIST' || role == 'FRONT_DESK') {
       Navigator.of(context).pushAndRemoveUntil<void>(
         MaterialPageRoute<void>(
           builder: (_) => ReceptionistDashboardScreen(
@@ -396,6 +406,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 color: Color(0xFF38BDF8),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Quick access to Nurse Dashboard
+                        SizedBox(
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            onPressed: _isLoading
+                                ? null
+                                : () => _handleQuickLogin(
+                                      'nurse@mcms.local',
+                                      'Nurse@123456',
+                                    ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF10B981), width: 1.5),
+                              backgroundColor: const Color(0xFF10B981).withValues(alpha: 0.1),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(Icons.health_and_safety_outlined,
+                                color: Color(0xFF34D399), size: 19),
+                            label: const Text(
+                              'Nurse Dashboard (Sister Aster Mulu)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF34D399),
                               ),
                             ),
                           ),
