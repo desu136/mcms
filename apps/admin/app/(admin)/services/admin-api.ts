@@ -52,14 +52,14 @@ export interface CreateUserPayload {
   password: string;
   displayName: string;
   roleIds: string[];
-  staffProfile?: { department?: string; jobTitle?: string; phoneNumber?: string };
+  staffProfile?: { department?: string; jobTitle?: string; phoneNumber?: string } | undefined;
 }
 
 export interface UpdateUserPayload {
   displayName?: string;
   isActive?: boolean;
   roleIds?: string[];
-  staffProfile?: { department?: string; jobTitle?: string; phoneNumber?: string };
+  staffProfile?: { department?: string; jobTitle?: string; phoneNumber?: string } | undefined;
 }
 
 export const adminUsersApi = {

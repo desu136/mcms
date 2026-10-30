@@ -23,8 +23,8 @@ export class UsersController {
 
   @Get()
   @RequirePermissions(PermissionSlug.USERS_READ)
-  async findAll(): Promise<UserSummaryDTO[]> {
-    return this.usersService.findAll();
+  async findAll(@CurrentUser() actor: AuthenticatedUserEntity): Promise<UserSummaryDTO[]> {
+    return this.usersService.findAll(actor);
   }
 
   @Get(':id')

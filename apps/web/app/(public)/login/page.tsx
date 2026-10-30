@@ -16,7 +16,7 @@ const DEMO_ACCOUNTS = [
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get('redirectTo') ?? '/dashboard';
+  const explicitRedirect = searchParams.get('redirectTo');
   const { login } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -32,7 +32,25 @@ function LoginForm() {
 
     try {
       await login({ email, password });
-      router.push(redirectTo);
+      if (explicitRedirect) {
+        router.push(explicitRedirect);
+      } else {
+        const savedUserStr = sessionStorage.getItem('mcms_user');
+        let destination = '/admin';
+        if (savedUserStr) {
+          try {
+            const parsed = JSON.parse(savedUserStr);
+            const role = parsed.roles?.[0];
+            if (role === 'DOCTOR') destination = '/doctor';
+            else if (role === 'NURSE') destination = '/nurse';
+            else if (role === 'RECEPTIONIST') destination = '/receptionist';
+            else destination = '/admin';
+          } catch {
+            destination = '/admin';
+          }
+        }
+        router.push(destination);
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'Invalid email or password');
     } finally {

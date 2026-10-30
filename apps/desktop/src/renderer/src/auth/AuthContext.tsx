@@ -5,9 +5,26 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 export interface AuthUser {
   id: string;
   email: string;
-  firstName: string;
-  lastName: string;
+  /** Preferred full name returned by the API */
+  displayName?: string;
+  /** Legacy fields (API returns displayName, not split names) */
+  firstName?: string;
+  lastName?: string;
+  /** Primary role slug, e.g. 'CLINIC_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST' */
   role: string;
+  /** Full list of role slugs assigned to this user */
+  roles?: string[];
+  permissions?: string[];
+  tenant?: { id: string; name: string; slug: string; code: string; logoUrl: string | null } | null;
+  branches?: Array<{ id: string; name: string; code: string; isMainBranch: boolean; isPrimary: boolean }>;
+  activeBranchId?: string;
+  staffProfile?: {
+    employeeNumber?: string;
+    jobTitle?: string;
+    department?: string;
+    phoneNumber?: string;
+    licenseNumber?: string;
+  };
 }
 
 interface AuthContextValue {

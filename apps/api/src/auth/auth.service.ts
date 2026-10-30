@@ -51,6 +51,10 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: {
+        tenant: true,
+        userBranches: {
+          include: { branch: true },
+        },
         userRoles: {
           include: {
             role: {
@@ -112,11 +116,37 @@ export class AuthService {
       },
     });
 
+    const primaryBranch = user.userBranches.find((ub) => ub.isPrimary) ?? user.userBranches[0];
+    const roles = user.userRoles.map((ur) => ur.role.name);
+    const roleHierarchy = [
+      'SUPER_ADMIN',
+      'CLINIC_ADMIN',
+      'DOCTOR',
+      'NURSE',
+      'LAB_TECHNICIAN',
+      'RECEPTIONIST',
+      'PATIENT',
+    ];
+    const primaryRole =
+      roles
+        .slice()
+        .sort((a, b) => roleHierarchy.indexOf(a) - roleHierarchy.indexOf(b))[0] ?? 'PATIENT';
+
     const { accessToken, refreshToken, jti, tokenFamily } =
-      await this.generateTokenPair(user.id, email, ipAddress, userAgent);
+      await this.generateTokenPair(
+        user.id,
+        email,
+        user.tenantId,
+        primaryBranch?.branchId ?? null,
+        primaryRole,
+        ipAddress,
+        userAgent,
+      );
 
     await this.createAuditLog(user.id, AuditEventType.AUTH_LOGIN_SUCCESS, 'User', ipAddress, {
       tokenFamily,
+      tenantId: user.tenantId,
+      branchId: primaryBranch?.branchId,
     });
 
     return {
@@ -137,7 +167,14 @@ export class AuthService {
 
     const session = await this.prisma.authSession.findUnique({
       where: { refreshTokenHash: tokenHash },
-      include: { user: true },
+      include: {
+        user: {
+          include: {
+            userRoles: { include: { role: true } },
+            userBranches: true,
+          },
+        },
+      },
     });
 
     if (!session) {
@@ -180,10 +217,30 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
+    const primaryBranch =
+      session.user.userBranches.find((ub) => ub.isPrimary) ?? session.user.userBranches[0];
+    const roles = session.user.userRoles.map((ur) => ur.role.name);
+    const roleHierarchy = [
+      'SUPER_ADMIN',
+      'CLINIC_ADMIN',
+      'DOCTOR',
+      'NURSE',
+      'LAB_TECHNICIAN',
+      'RECEPTIONIST',
+      'PATIENT',
+    ];
+    const primaryRole =
+      roles
+        .slice()
+        .sort((a, b) => roleHierarchy.indexOf(a) - roleHierarchy.indexOf(b))[0] ?? 'PATIENT';
+
     // Issue new token pair in the same family
     const { accessToken, refreshToken } = await this.generateTokenPair(
       session.userId,
       session.user.email,
+      session.user.tenantId,
+      primaryBranch?.branchId ?? null,
+      primaryRole,
       ipAddress,
       userAgent,
       session.tokenFamily,
@@ -334,6 +391,68 @@ export class AuthService {
     return { message: 'Password has been reset successfully. Please log in again.' };
   }
 
+  async switchBranch(
+    user: AuthenticatedUserEntity,
+    branchId: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ accessToken: string; refreshToken: string; activeBranchId: string; user: AuthenticatedUser }> {
+    const isSuperAdmin = user.userRoles.some((ur) => ur.role.name === 'SUPER_ADMIN');
+    if (!isSuperAdmin) {
+      const hasBranch = user.userBranches?.some((ub) => ub.branchId === branchId);
+      if (!hasBranch) {
+        throw new ForbiddenException('User is not authorized for the requested branch');
+      }
+    }
+
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      include: { tenant: true },
+    });
+    if (!branch || branch.status !== 'ACTIVE') {
+      throw new BadRequestException('Invalid or inactive branch');
+    }
+
+    const roles = user.userRoles.map((ur) => ur.role.name);
+    const roleHierarchy = [
+      'SUPER_ADMIN',
+      'CLINIC_ADMIN',
+      'DOCTOR',
+      'NURSE',
+      'LAB_TECHNICIAN',
+      'RECEPTIONIST',
+      'PATIENT',
+    ];
+    const primaryRole =
+      roles
+        .slice()
+        .sort((a, b) => roleHierarchy.indexOf(a) - roleHierarchy.indexOf(b))[0] ?? 'PATIENT';
+
+    const { accessToken, refreshToken, jti } = await this.generateTokenPair(
+      user.id,
+      user.email,
+      branch.tenantId,
+      branch.id,
+      primaryRole,
+      ipAddress,
+      userAgent,
+    );
+
+    await this.createAuditLog(user.id, AuditEventType.SYSTEM_CONFIG_UPDATED, 'Branch', ipAddress, {
+      switchedToBranchId: branch.id,
+    });
+
+    const mappedUser = this.mapToAuthenticatedUser(user);
+    mappedUser.activeBranchId = branch.id;
+
+    return {
+      accessToken,
+      refreshToken,
+      activeBranchId: branch.id,
+      user: mappedUser,
+    };
+  }
+
   // ─── Me (current user profile) ───────────────────────────────────────────────
 
   mapToAuthenticatedUser(user: AuthenticatedUserEntity): AuthenticatedUser {
@@ -352,6 +471,7 @@ export class AuthService {
       'CLINIC_ADMIN',
       'DOCTOR',
       'NURSE',
+      'LAB_TECHNICIAN',
       'RECEPTIONIST',
       'PATIENT',
     ];
@@ -360,6 +480,28 @@ export class AuthService {
         .slice()
         .sort((a, b) => roleHierarchy.indexOf(a) - roleHierarchy.indexOf(b))[0] ?? 'PATIENT';
 
+    const tenant = user.tenant
+      ? {
+          id: user.tenant.id,
+          name: user.tenant.name,
+          slug: user.tenant.slug,
+          code: user.tenant.code,
+          logoUrl: user.tenant.logoUrl,
+        }
+      : null;
+
+    const branches = (user.userBranches ?? []).map((ub) => ({
+      id: ub.branch.id,
+      name: ub.branch.name,
+      code: ub.branch.code,
+      isMainBranch: ub.branch.isMainBranch,
+      isPrimary: ub.isPrimary,
+    }));
+
+    const primaryBranch =
+      user.userBranches?.find((ub) => ub.isPrimary) ?? user.userBranches?.[0];
+    const activeBranchId = primaryBranch?.branchId;
+
     const result: AuthenticatedUser = {
       id: user.id,
       email: user.email,
@@ -367,6 +509,9 @@ export class AuthService {
       role: primaryRole as any,
       roles,
       permissions,
+      tenant,
+      branches,
+      ...(activeBranchId ? { activeBranchId } : {}),
     };
 
     if (user.staffProfile) {
@@ -387,6 +532,9 @@ export class AuthService {
   private async generateTokenPair(
     userId: string,
     email: string,
+    tenantId?: string | null,
+    activeBranchId?: string | null,
+    role?: string,
     ipAddress?: string,
     userAgent?: string,
     existingFamily?: string,
@@ -394,7 +542,15 @@ export class AuthService {
     const jti = crypto.randomUUID();
     const tokenFamily = existingFamily ?? crypto.randomUUID();
 
-    const payload: JwtPayload = { sub: userId, email, jti, type: 'access' };
+    const payload: JwtPayload = {
+      sub: userId,
+      email,
+      tenantId: tenantId ?? null,
+      activeBranchId: activeBranchId ?? null,
+      jti,
+      type: 'access',
+      ...(role ? { role } : {}),
+    };
     const accessToken = this.jwtService.sign(payload, {
       expiresIn: ACCESS_TOKEN_TTL_SECONDS,
     });

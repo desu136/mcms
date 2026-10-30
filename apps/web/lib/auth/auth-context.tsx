@@ -19,7 +19,7 @@ interface AuthContextValue {
 
 const STORAGE_KEY_REFRESH = 'mcms_refresh_token';
 const STORAGE_KEY_USER = 'mcms_user';
-const rawApiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002';
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const sanitizedApiUrl = rawApiUrl.replace(/\/+$/, '');
 const API_BASE = sanitizedApiUrl.endsWith('/api/v1')
   ? sanitizedApiUrl

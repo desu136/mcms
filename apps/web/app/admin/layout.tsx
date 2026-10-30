@@ -7,6 +7,7 @@ import { useAuth } from '../../lib/auth/auth-context';
 import {
   LayoutDashboard,
   Users,
+  UserCog,
   CalendarDays,
   Stethoscope,
   Building2,
@@ -21,23 +22,30 @@ import {
   LogOut,
   Menu,
   X,
+  ExternalLink,
 } from 'lucide-react';
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/doctor', label: 'Doctor Workspace', icon: Stethoscope },
-  { href: '/patients', label: 'Patients', icon: Users },
-  { href: '/appointments', label: 'Appointments', icon: CalendarDays },
-  { href: '/doctors', label: 'Doctors', icon: Stethoscope },
-  { href: '/departments', label: 'Departments', icon: Building2 },
-  { href: '/services', label: 'Services', icon: Wrench },
-  { href: '/medical-records', label: 'Medical Records', icon: FolderOpen },
-  { href: '/billing', label: 'Billing & Payments', icon: CreditCard },
-  { href: '/reports', label: 'Reports', icon: BarChart3 },
-  { href: '/settings', label: 'Settings', icon: Settings },
+const adminNavItems = [
+  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/staff', label: 'Staff & Roles', icon: UserCog },
+  { href: '/admin/doctors', label: 'Doctors', icon: Stethoscope },
+  { href: '/admin/departments', label: 'Departments', icon: Building2 },
+  { href: '/admin/patients', label: 'Patients', icon: Users },
+  { href: '/admin/appointments', label: 'Appointments', icon: CalendarDays },
+  { href: '/admin/services', label: 'Services', icon: Wrench },
+  { href: '/admin/medical-records', label: 'Medical Records', icon: FolderOpen },
+  { href: '/admin/billing', label: 'Billing & Payments', icon: CreditCard },
+  { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
-export default function StaffLayout({ children }: { children: React.ReactNode }) {
+const workstationLinks = [
+  { href: '/doctor', label: 'Doctor Workstation' },
+  { href: '/nurse', label: 'Nurse Workstation' },
+  { href: '/receptionist', label: 'Receptionist' },
+];
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, isLoading, logout } = useAuth();
@@ -55,7 +63,6 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     router.push('/login');
   };
 
-  const firstName = user?.displayName?.split(' ')[0] ?? 'Admin';
   const initials = user?.displayName
     ? user.displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
     : 'CA';
@@ -81,15 +88,18 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
             <span className="text-white font-bold text-lg">+</span>
           </div>
           <div>
-            <div className="text-white font-bold text-sm leading-tight">MCMS</div>
-            <div className="text-[10px] text-slate-400 leading-tight">Modern Clinic Management System</div>
+            <div className="text-white font-bold text-sm leading-tight">MCMS Admin</div>
+            <div className="text-[10px] text-slate-400 leading-tight">Clinical Administration</div>
           </div>
         </div>
 
         {/* Nav — independently scrollable */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto min-h-0">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
+          <div className="px-3 pb-2 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+            Clinical Administration
+          </div>
+          {adminNavItems.map(({ href, label, icon: Icon }) => {
+            const active = href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
             return (
               <Link
                 key={href}
@@ -105,6 +115,20 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
               </Link>
             );
           })}
+
+          <div className="pt-4 px-3 pb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+            Switch Workstation
+          </div>
+          {workstationLinks.map(({ href, label }) => (
+            <Link
+              key={href}
+              href={href}
+              className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition"
+            >
+              <span>{label}</span>
+              <ExternalLink size={12} className="text-slate-500" />
+            </Link>
+          ))}
         </nav>
 
         {/* Clinic info */}
@@ -115,7 +139,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
             </div>
             <div>
               <div className="text-white text-xs font-semibold">City Health Clinic</div>
-              <div className="text-slate-400 text-[10px]">Better Health, Brighter Future</div>
+              <div className="text-slate-400 text-[10px]">Clinical Operations Portal</div>
             </div>
           </div>
         </div>
@@ -139,7 +163,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
               <Search size={16} className="absolute left-3 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search patients, appointments, or anything..."
+                placeholder="Search patients, appointments, doctors..."
                 className="w-full pl-9 pr-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition"
               />
             </div>
@@ -163,8 +187,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
                   {initials}
                 </div>
                 <div className="hidden sm:block text-left">
-                  <div className="text-xs font-semibold text-gray-800">{user?.displayName ?? 'Admin'}</div>
-                  <div className="text-[10px] text-gray-400">{user?.roles?.[0] ?? 'Clinic Admin'}</div>
+                  <div className="text-xs font-semibold text-gray-800">{user?.displayName ?? 'Clinic Administrator'}</div>
+                  <div className="text-[10px] text-gray-400">{user?.roles?.[0] ?? 'CLINIC_ADMIN'}</div>
                 </div>
                 <ChevronDown size={14} className="text-gray-400 hidden sm:block" />
               </button>

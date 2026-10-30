@@ -66,6 +66,22 @@ export interface StaffProfileDTO {
   licenseNumber?: string;
 }
 
+export interface TenantSummaryDTO {
+  id: string;
+  name: string;
+  slug: string;
+  code: string;
+  logoUrl?: string | null;
+}
+
+export interface BranchSummaryDTO {
+  id: string;
+  name: string;
+  code: string;
+  isMainBranch: boolean;
+  isPrimary?: boolean;
+}
+
 export interface AuthenticatedUser {
   id: string;
   email: string;
@@ -73,7 +89,10 @@ export interface AuthenticatedUser {
   role: UserRole; // primary role backwards-compatibility
   roles: string[];
   permissions: string[];
-  staffProfile?: StaffProfileDTO;
+  staffProfile?: StaffProfileDTO | undefined;
+  tenant?: TenantSummaryDTO | null | undefined;
+  branches?: BranchSummaryDTO[] | undefined;
+  activeBranchId?: string | null | undefined;
 }
 
 export interface LogoutResponse {
