@@ -14,6 +14,7 @@
     "dev:renderer": "vite",
     "dev": "concurrently -k -n main,preload,renderer -c blue,cyan,magenta \"pnpm watch:main\" \"pnpm watch:preload\" \"pnpm dev:renderer\"",
     "start": "electron dist/main/main.js",
+    "electron:dev": "cross-env NODE_ENV=development electron dist/main/main.js",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
@@ -37,6 +38,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.6.1",
     "concurrently": "^9.1.2",
+    "cross-env": "^10.1.0",
     "electron": "^34.2.0",
     "postcss": "^8.5.31",
     "rimraf": "^6.0.1",

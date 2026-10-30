@@ -73,6 +73,10 @@ export enum PermissionSlug {
   TENANTS_WRITE = 'tenants:write',
   BRANCHES_READ = 'branches:read',
   BRANCHES_WRITE = 'branches:write',
+  DEPARTMENTS_READ = 'departments:read',
+  DEPARTMENTS_MANAGE = 'departments:manage',
+  ROOMS_READ = 'rooms:read',
+  ROOMS_MANAGE = 'rooms:manage',
 
   // Clinical & Patients
   PATIENTS_READ = 'patients:read',

@@ -27,8 +27,8 @@ export interface ReceptionistHeaderProps {
   isSyncing?: boolean | undefined;
   pendingSyncOps?: number | undefined;
   onTriggerSync?: (() => void) | undefined;
-  currentWorkstation?: ('receptionist' | 'doctor' | 'nurse') | undefined;
-  onSwitchWorkstation?: ((w: 'receptionist' | 'doctor' | 'nurse') => void) | undefined;
+  currentWorkstation?: ('receptionist' | 'doctor' | 'nurse' | 'admin') | undefined;
+  onSwitchWorkstation?: ((w: 'receptionist' | 'doctor' | 'nurse' | 'admin') => void) | undefined;
 }
 
 export function ReceptionistHeader({
@@ -114,6 +114,17 @@ export function ReceptionistHeader({
         {/* Workstation Switcher */}
         {onSwitchWorkstation && (
           <div className="hidden lg:flex items-center gap-1 p-0.5 bg-slate-100 rounded-xl border border-slate-200 text-[11px] font-bold">
+            <button
+              onClick={() => onSwitchWorkstation('admin')}
+              type="button"
+              className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
+                currentWorkstation === 'admin'
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Admin
+            </button>
             <button
               onClick={() => onSwitchWorkstation('receptionist')}
               type="button"

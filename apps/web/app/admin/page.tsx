@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from '../../../lib/auth/auth-context';
+import { useAuth } from '../../lib/auth/auth-context';
 import {
   Users,
   CalendarDays,

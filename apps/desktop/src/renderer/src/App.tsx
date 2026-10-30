@@ -5,31 +5,53 @@ import { LoginPage } from './pages/auth/LoginPage';
 import { DoctorLayout } from './components/doctor/DoctorLayout';
 import { ReceptionistLayout } from './components/receptionist/ReceptionistLayout';
 import { NurseLayout } from './components/nurse/NurseLayout';
+import { AdminLayout } from './components/admin/AdminLayout';
 
-type Workstation = 'receptionist' | 'doctor' | 'nurse';
+import type { AuthUser } from './auth/AuthContext';
 
-function roleToWorkstation(role: string | undefined): Workstation {
-  if (role === 'DOCTOR') return 'doctor';
-  if (role === 'NURSE') return 'nurse';
+export type Workstation = 'admin' | 'doctor' | 'nurse' | 'receptionist';
+
+/** Derive the default workstation from a user object. Checks both the primary
+ *  `role` field and the `roles[]` array so we handle both correctly. */
+function userToWorkstation(user: AuthUser | null | undefined): Workstation {
+  if (!user) return 'receptionist';
+  const primary = (user.role ?? '').toUpperCase();
+  const all = (user.roles ?? []).map((r) => r.toUpperCase());
+  const isAdmin = primary.includes('ADMIN') || all.some((r) => r.includes('ADMIN'));
+  if (isAdmin) return 'admin';
+  if (primary === 'DOCTOR' || all.includes('DOCTOR')) return 'doctor';
+  if (primary === 'NURSE' || all.includes('NURSE')) return 'nurse';
   return 'receptionist';
+}
+
+/** Read user from localStorage directly — used to set initial workstation
+ *  before AuthProvider's own useEffect has run. */
+function getStoredUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem('mcms_desktop_user');
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  } catch {
+    return null;
+  }
 }
 
 function AppRouter() {
   const { user, isAuthenticated, isLoading } = useAuth();
 
-  // Initialize directly from user role (avoids one-render flash to wrong workstation)
+  // Initialize from localStorage directly so the correct workstation shows
+  // immediately — even before AuthProvider's useEffect has hydrated `user`.
   const [activeWorkstation, setActiveWorkstation] = useState<Workstation>(
-    () => roleToWorkstation(user?.role)
+    () => userToWorkstation(getStoredUser())
   );
 
-  // Track previous user id so we only auto-reset on actual user change (login/logout)
-  // This allows manual workstation switching to still work between same-user sessions.
-  const prevUserIdRef = useRef<string | undefined>(user?.id);
+  // Track previous user id so we only auto-reset on actual user change (login/logout).
+  // This allows manual workstation switching to still work within a session.
+  const prevUserIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (user?.id !== prevUserIdRef.current) {
       prevUserIdRef.current = user?.id;
-      setActiveWorkstation(roleToWorkstation(user?.role));
+      setActiveWorkstation(userToWorkstation(user));
     }
   }, [user?.id, user?.role]);
 
@@ -64,6 +86,9 @@ function AppRouter() {
     return <LoginPage />;
   }
 
+  if (activeWorkstation === 'admin') {
+    return <AdminLayout onSwitchWorkstation={setActiveWorkstation} />;
+  }
   if (activeWorkstation === 'doctor') {
     return <DoctorLayout onSwitchWorkstation={setActiveWorkstation} />;
   }

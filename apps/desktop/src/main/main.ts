@@ -1,9 +1,27 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, net } from 'electron';
 import * as path from 'path';
 import { LocalSqliteStorage } from '../storage/sqlite-client';
 
 let mainWindow: BrowserWindow | null = null;
 let sqliteStorage: LocalSqliteStorage | null = null;
+
+async function waitForVite(url: string, retries = 30, delayMs = 500): Promise<boolean> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const req = net.request(url);
+        req.on('response', () => resolve());
+        req.on('error', reject);
+        req.end();
+      });
+      return true;
+    } catch {
+      console.log(`[MCMS] Waiting for Vite dev server... (${i + 1}/${retries})`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  return false;
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -21,9 +39,18 @@ function createWindow(): void {
 
   const isDev = process.env.NODE_ENV === 'development';
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173').catch(() => {
-      // Fallback if Vite dev server is not active
-      mainWindow?.loadFile(path.join(__dirname, '../renderer/index.html'));
+    // Open DevTools so we can see renderer errors
+    mainWindow.webContents.openDevTools();
+
+    // Wait for Vite to be ready, then load
+    waitForVite('http://localhost:5173').then((ready) => {
+      if (ready) {
+        console.log('[MCMS] Vite ready — loading http://localhost:5173');
+        mainWindow?.loadURL('http://localhost:5173');
+      } else {
+        console.error('[MCMS] Vite dev server not reachable. Is `pnpm dev` running?');
+        mainWindow?.loadFile(path.join(__dirname, '../renderer/index.html'));
+      }
     });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));

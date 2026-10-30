@@ -29,6 +29,11 @@
       "types": "./dist/clinical/index.d.ts",
       "import": "./dist/clinical/index.js",
       "default": "./dist/clinical/index.js"
+    },
+    "./clinic-admin": {
+      "types": "./dist/clinic-admin/index.d.ts",
+      "import": "./dist/clinic-admin/index.js",
+      "default": "./dist/clinic-admin/index.js"
     }
   },
   "main": "./dist/index.js",

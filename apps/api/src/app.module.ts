@@ -13,6 +13,7 @@ import { BranchesModule } from './branches/branches.module';
 import { PatientsModule } from './patients/patients.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { ClinicalModule } from './clinical/clinical.module';
+import { ClinicAdminModule } from './clinic-admin/clinic-admin.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { TenantGuard } from './common/tenant/tenant.guard';
@@ -46,6 +47,7 @@ import { TenantGuard } from './common/tenant/tenant.guard';
     PatientsModule,
     AppointmentsModule,
     ClinicalModule,
+    ClinicAdminModule,
   ],
   providers: [
     // Rate limiting guard applied globally
