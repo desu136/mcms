@@ -19,6 +19,16 @@
       "types": "./dist/health/index.d.ts",
       "import": "./dist/health/index.js",
       "default": "./dist/health/index.js"
+    },
+    "./tenant": {
+      "types": "./dist/tenant/index.d.ts",
+      "import": "./dist/tenant/index.js",
+      "default": "./dist/tenant/index.js"
+    },
+    "./clinical": {
+      "types": "./dist/clinical/index.d.ts",
+      "import": "./dist/clinical/index.js",
+      "default": "./dist/clinical/index.js"
     }
   },
   "main": "./dist/index.js",

@@ -77,6 +77,18 @@ export class AuthController {
     return this.authService.mapToAuthenticatedUser(user);
   }
 
+  @Post('switch-branch')
+  @HttpCode(HttpStatus.OK)
+  async switchBranch(
+    @CurrentUser() user: AuthenticatedUserEntity,
+    @Body('branchId') branchId: string,
+    @Req() req: Request,
+  ) {
+    const ip = (req.headers['x-forwarded-for'] as string) ?? req.ip;
+    const ua = req.headers['user-agent'];
+    return this.authService.switchBranch(user, branchId, ip, ua);
+  }
+
   @Public()
   @Post('password-reset/request')
   @HttpCode(HttpStatus.OK)

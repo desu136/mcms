@@ -6,6 +6,7 @@ export enum UserRole {
   CLINIC_ADMIN = 'CLINIC_ADMIN',
   DOCTOR = 'DOCTOR',
   NURSE = 'NURSE',
+  LAB_TECHNICIAN = 'LAB_TECHNICIAN',
   RECEPTIONIST = 'RECEPTIONIST',
   PATIENT = 'PATIENT',
 }
@@ -67,6 +68,41 @@ export enum PermissionSlug {
   ROLES_MANAGE = 'roles:manage',
   PERMISSIONS_READ = 'permissions:read',
 
+  // Tenants & Branches
+  TENANTS_READ = 'tenants:read',
+  TENANTS_WRITE = 'tenants:write',
+  BRANCHES_READ = 'branches:read',
+  BRANCHES_WRITE = 'branches:write',
+
+  // Clinical & Patients
+  PATIENTS_READ = 'patients:read',
+  PATIENTS_WRITE = 'patients:update',
+  PATIENTS_CREATE = 'patients:create',
+  APPOINTMENTS_READ = 'appointments:read',
+  APPOINTMENTS_WRITE = 'appointments:create',
+  APPOINTMENTS_MANAGE = 'appointments:manage',
+  QUEUES_READ = 'queue:read',
+  QUEUES_MANAGE = 'queue:manage',
+  ADMISSIONS_READ = 'admissions:manage',
+  ADMISSIONS_WRITE = 'admissions:manage',
+  VITALS_READ = 'vitals:read',
+  VITALS_RECORD = 'vitals:record',
+  PRESCRIPTIONS_READ = 'prescriptions:read',
+  PRESCRIPTIONS_WRITE = 'prescriptions:create',
+  MEDICATIONS_ADMINISTER = 'medications:administer',
+  NURSING_READ = 'tasks:manage',
+  NURSING_TASKS = 'tasks:manage',
+  LABS_READ = 'lab:orders:read',
+  LABS_ORDER = 'lab:orders:create',
+  LABS_COLLECT = 'lab:samples:collect',
+  LABS_PROCESS = 'lab:results:enter',
+  LABS_VERIFY = 'lab:results:verify',
+  BILLING_READ = 'billing:read',
+  BILLING_MANAGE = 'billing:manage',
+  REPORTS_READ = 'reports:read',
+  SETTINGS_READ = 'settings:read',
+  SETTINGS_MANAGE = 'settings:manage',
+
   // Audit
   AUDIT_READ = 'audit:read',
 
@@ -96,4 +132,10 @@ export enum AuditEventType {
   ROLE_CREATED = 'ROLE_CREATED',
   ROLE_UPDATED = 'ROLE_UPDATED',
   ROLE_PERMISSIONS_UPDATED = 'ROLE_PERMISSIONS_UPDATED',
+
+  TENANT_CREATED = 'TENANT_CREATED',
+  TENANT_UPDATED = 'TENANT_UPDATED',
+  BRANCH_CREATED = 'BRANCH_CREATED',
+  BRANCH_UPDATED = 'BRANCH_UPDATED',
+  SYSTEM_CONFIG_UPDATED = 'SYSTEM_CONFIG_UPDATED',
 }
