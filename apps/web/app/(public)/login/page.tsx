@@ -16,7 +16,7 @@ const DEMO_ACCOUNTS = [
 
 function LoginForm() {
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get('redirectTo') ?? '/dashboard';
+  const explicitRedirect = searchParams.get('redirectTo');
   const { login } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -32,12 +32,30 @@ function LoginForm() {
 
     try {
       await login({ email, password });
-      if (email === 'doctor@mcms.local') {
-        window.location.href = '/doctor';
-      } else if (email === 'lab@mcms.local' || email.includes('lab')) {
-        window.location.href = '/lab';
+if (explicitRedirect) {
+        window.location.href = explicitRedirect;
       } else {
-        window.location.href = redirectTo;
+        const savedUserStr = typeof window !== 'undefined' ? sessionStorage.getItem('mcms_user') : null;
+        let destination = '/admin';
+        if (savedUserStr) {
+          try {
+            const parsed = JSON.parse(savedUserStr);
+            const role = parsed.roles?.[0];
+            if (role === 'DOCTOR') destination = '/doctor';
+            else if (role === 'NURSE') destination = '/nurse';
+            else if (role === 'RECEPTIONIST') destination = '/receptionist';
+            else if (role === 'LAB_TECHNICIAN') destination = '/lab';
+            else destination = '/admin';
+          } catch {
+            destination = '/admin';
+          }
+        }
+        if (email === 'doctor@mcms.local') destination = '/doctor';
+        else if (email === 'nurse@mcms.local') destination = '/nurse';
+        else if (email === 'receptionist@mcms.local') destination = '/receptionist';
+        else if (email === 'lab@mcms.local' || email.includes('lab')) destination = '/lab';
+        window.location.href = destination;
+      }
       }
     } catch (err: any) {
       if (email === 'lab@mcms.local' || email.includes('lab')) {

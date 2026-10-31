@@ -9,6 +9,8 @@
     "jsx": "preserve",
     "allowJs": true,
     "incremental": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "plugins": [{ "name": "next" }],
     "paths": {}
   },

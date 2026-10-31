@@ -22,44 +22,281 @@ enum AccountStatus {
   PENDING_VERIFICATION
 }
 
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  INACTIVE
+}
+
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+  UNDER_MAINTENANCE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum PatientStatus {
+  ACTIVE
+  INACTIVE
+  DECEASED
+}
+
+enum RoomType {
+  CONSULTATION
+  TREATMENT
+  WARD
+  LABORATORY
+  PHARMACY
+  TRIAGE
+  EMERGENCY
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+}
+
+enum BedStatus {
+  AVAILABLE
+  OCCUPIED
+  CLEANING
+  MAINTENANCE
+}
+
+enum QueuePriority {
+  ROUTINE
+  URGENT
+  EMERGENCY
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  IN_CONSULTATION
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum AppointmentType {
+  OUTPATIENT
+  FOLLOW_UP
+  CONSULTATION
+  PROCEDURE
+  ROUTINE_CHECKUP
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum AdmissionStatus {
+  ADMITTED
+  DISCHARGED
+  TRANSFERRED
+}
+
+enum VitalsCondition {
+  NORMAL
+  ELEVATED
+  HIGH_BP
+  LOW_BP
+  CRITICAL
+}
+
+enum PrescriptionStatus {
+  ACTIVE
+  DISPENSED
+  PARTIALLY_DISPENSED
+  DISCONTINUED
+  EXPIRED
+}
+
+enum MedAdminStatus {
+  PENDING
+  DUE_SOON
+  ADMINISTERED
+  MISSED
+  HELD
+  REFUSED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  SCHEDULED
+  COMPLETED
+}
+
+enum LabOrderPriority {
+  ROUTINE
+  URGENT
+  STAT
+}
+
+enum LabOrderStatus {
+  ORDERED
+  SAMPLE_COLLECTED
+  IN_LAB
+  RESULTED
+  VERIFIED
+  CANCELLED
+}
+
+enum LabSampleStatus {
+  PENDING
+  COLLECTED
+  IN_LAB
+  COMPLETED
+}
+
+// ─── Multi-Tenancy & Multi-Branch Core ────────────────────────────────────────
+
+model Tenant {
+  id           String        @id @default(uuid())
+  name         String
+  slug         String        @unique
+  code         String        @unique
+  logoUrl      String?       @map("logo_url")
+  contactEmail String?       @map("contact_email")
+  contactPhone String?       @map("contact_phone")
+  address      String?
+  city         String?
+  country      String?       @default("Ethiopia")
+  status       TenantStatus  @default(ACTIVE)
+  settings     Json?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  deletedAt    DateTime?     @map("deleted_at")
+
+  branches        Branch[]
+  users           User[]
+  departments     Department[]
+  patients        Patient[]
+  appointments    Appointment[]
+  queueEntries    QueueEntry[]
+  admissions      Admission[]
+  vitalReadings   VitalReading[]
+  prescriptions   Prescription[]
+  labOrders       LabOrder[]
+  auditLogs       AuditLog[]
+
+  @@index([status])
+  @@map("tenants")
+}
+
+model Branch {
+  id           String        @id @default(uuid())
+  tenantId     String        @map("tenant_id")
+  name         String
+  code         String
+  isMainBranch Boolean       @default(false) @map("is_main_branch")
+  phone        String?
+  email        String?
+  address      String?
+  city         String?
+  status       BranchStatus  @default(ACTIVE)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  deletedAt    DateTime?     @map("deleted_at")
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userBranches    UserBranch[]
+  departments     Department[]
+  rooms           Room[]
+  appointments    Appointment[]
+  queueEntries    QueueEntry[]
+  admissions      Admission[]
+  prescriptions   Prescription[]
+  labOrders       LabOrder[]
+  nursingTasks    NursingTask[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("branches")
+}
+
+model UserBranch {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  branchId   String   @map("branch_id")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId])
+  @@map("user_branches")
+}
+
 // ─── Core Identity ────────────────────────────────────────────────────────────
 
 model User {
-  id              String        @id @default(uuid())
-  email           String        @unique
-  passwordHash    String        @map("password_hash")
-  displayName     String        @map("display_name")
-  accountStatus   AccountStatus @default(ACTIVE) @map("account_status")
-  failedLoginCount Int          @default(0) @map("failed_login_count")
-  lockedAt        DateTime?     @map("locked_at")
-  lastLoginAt     DateTime?     @map("last_login_at")
-  lastLoginIp     String?       @map("last_login_ip")
-  passwordChangedAt DateTime?   @map("password_changed_at")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
-  deletedAt       DateTime?     @map("deleted_at")
+  id                String        @id @default(uuid())
+  tenantId          String?       @map("tenant_id")
+  email             String        @unique
+  passwordHash      String        @map("password_hash")
+  displayName       String        @map("display_name")
+  accountStatus     AccountStatus @default(ACTIVE) @map("account_status")
+  failedLoginCount  Int           @default(0) @map("failed_login_count")
+  lockedAt          DateTime?     @map("locked_at")
+  lastLoginAt       DateTime?     @map("last_login_at")
+  lastLoginIp       String?       @map("last_login_ip")
+  passwordChangedAt DateTime?     @map("password_changed_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  deletedAt         DateTime?     @map("deleted_at")
 
-  // Relations
-  sessions        AuthSession[]
-  auditLogs       AuditLog[]
-  userRoles       UserRole[]
-  staffProfile    StaffProfile?
-  passwordResets  PasswordReset[]
+  tenant            Tenant?             @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  sessions          AuthSession[]
+  auditLogs         AuditLog[]
+  userRoles         UserRole[]
+  userBranches      UserBranch[]
+  staffProfile      StaffProfile?
+  passwordResets    PasswordReset[]
+  doctorAppointments Appointment[]      @relation("DoctorAppointments")
+  admittedPatients  Admission[]         @relation("AdmittingDoctor")
+  vitalReadings     VitalReading[]      @relation("RecordedVitals")
+  prescriptions     Prescription[]      @relation("DoctorPrescriptions")
+  administeredMeds  MedicationAdministration[] @relation("AdministeringNurse")
+  assignedTasks     NursingTask[]       @relation("AssignedNurseTasks")
+  orderedLabTests   LabOrder[]          @relation("DoctorLabOrders")
 
   @@index([email])
+  @@index([tenantId])
   @@index([accountStatus])
   @@map("users")
 }
 
 model StaffProfile {
-  id             String  @id @default(uuid())
-  userId         String  @unique @map("user_id")
-  employeeNumber String? @unique @map("employee_number")
-  jobTitle       String? @map("job_title")
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  employeeNumber String?  @unique @map("employee_number")
+  jobTitle       String?  @map("job_title")
   department     String?
-  phoneNumber    String? @map("phone_number")
-  licenseNumber  String? @map("license_number")
-  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneNumber    String?  @map("phone_number")
+  licenseNumber  String?  @map("license_number")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("staff_profiles")
 }
@@ -67,17 +304,17 @@ model StaffProfile {
 // ─── Auth & Sessions ──────────────────────────────────────────────────────────
 
 model AuthSession {
-  id                String    @id @default(uuid())
-  userId            String    @map("user_id")
-  tokenFamily       String    @map("token_family") // refresh token rotation family
-  refreshTokenHash  String    @unique @map("refresh_token_hash")
-  accessTokenJti    String?   @unique @map("access_token_jti") // JWT ID for blocklisting
-  expiresAt         DateTime  @map("expires_at")
-  revokedAt         DateTime? @map("revoked_at")
-  ipAddress         String?   @map("ip_address")
-  userAgent         String?   @map("user_agent")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  tokenFamily      String    @map("token_family")
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  accessTokenJti   String?   @unique @map("access_token_jti")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  ipAddress        String?   @map("ip_address")
+  userAgent        String?   @map("user_agent")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([tokenFamily])
@@ -86,13 +323,13 @@ model AuthSession {
 }
 
 model PasswordReset {
-  id         String    @id @default(uuid())
-  userId     String    @map("user_id")
-  tokenHash  String    @unique @map("token_hash")
-  expiresAt  DateTime  @map("expires_at")
-  usedAt     DateTime? @map("used_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("password_resets")
@@ -116,9 +353,9 @@ model Role {
 
 model Permission {
   id          String           @id @default(uuid())
-  slug        String           @unique // e.g. "users:create"
+  slug        String           @unique
   name        String
-  module      String           // e.g. "users", "appointments"
+  module      String
   description String           @default("")
   createdAt   DateTime         @default(now()) @map("created_at")
 
@@ -133,7 +370,7 @@ model UserRole {
   userId    String   @map("user_id")
   roleId    String   @map("role_id")
   grantedAt DateTime @default(now()) @map("granted_at")
-  grantedBy String?  @map("granted_by") // userId of granter
+  grantedBy String?  @map("granted_by")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -143,10 +380,10 @@ model UserRole {
 }
 
 model RolePermission {
-  id           String   @id @default(uuid())
-  roleId       String   @map("role_id")
-  permissionId String   @map("permission_id")
-  grantedAt    DateTime @default(now()) @map("granted_at")
+  id           String     @id @default(uuid())
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+  grantedAt    DateTime   @default(now()) @map("granted_at")
 
   role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
@@ -155,20 +392,397 @@ model RolePermission {
   @@map("role_permissions")
 }
 
+// ─── Physical & Clinical Infrastructure (Branch-Scoped) ───────────────────────
+
+model Department {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  branchId    String   @map("branch_id")
+  name        String
+  code        String
+  description String?
+  color       String?  @default("#2563EB")
+  icon        String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch       Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  rooms        Room[]
+  appointments Appointment[]
+  queueEntries QueueEntry[]
+
+  @@unique([branchId, code])
+  @@index([tenantId])
+  @@index([branchId])
+  @@map("departments")
+}
+
+model Room {
+  id           String     @id @default(uuid())
+  branchId     String     @map("branch_id")
+  departmentId String     @map("department_id")
+  name         String
+  roomNumber   String     @map("room_number")
+  roomType     RoomType   @default(CONSULTATION) @map("room_type")
+  status       RoomStatus @default(AVAILABLE)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  branch       Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  department   Department    @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  beds         Bed[]
+  appointments Appointment[]
+  queueEntries QueueEntry[]
+
+  @@unique([branchId, roomNumber])
+  @@index([branchId])
+  @@index([departmentId])
+  @@map("rooms")
+}
+
+model Bed {
+  id         String     @id @default(uuid())
+  roomId     String     @map("room_id")
+  bedNumber  String     @map("bed_number")
+  status     BedStatus  @default(AVAILABLE)
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  room       Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  admissions Admission[]
+
+  @@unique([roomId, bedNumber])
+  @@index([roomId])
+  @@map("beds")
+}
+
+// ─── Patient & Clinical Records (Tenant-Level Continuity) ─────────────────────
+
+model Patient {
+  id                     String        @id @default(uuid())
+  tenantId               String        @map("tenant_id")
+  pid                    String        // Unique PID per healthcare network
+  firstName              String        @map("first_name")
+  lastName               String        @map("last_name")
+  fullName               String        @map("full_name")
+  dateOfBirth            DateTime?     @map("date_of_birth")
+  gender                 Gender        @default(FEMALE)
+  phoneNumber            String?       @map("phone_number")
+  email                  String?
+  address                String?
+  city                   String?
+  bloodType              String?       @map("blood_type")
+  allergies              String?
+  emergencyContactName   String?       @map("emergency_contact_name")
+  emergencyContactPhone  String?       @map("emergency_contact_phone")
+  emergencyContactRel    String?       @map("emergency_contact_rel")
+  status                 PatientStatus @default(ACTIVE)
+  createdAt              DateTime      @default(now()) @map("created_at")
+  updatedAt              DateTime      @updatedAt @map("updated_at")
+
+  tenant                 Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments           Appointment[]
+  queueEntries           QueueEntry[]
+  admissions             Admission[]
+  vitalReadings          VitalReading[]
+  prescriptions          Prescription[]
+  medicationAdmins       MedicationAdministration[]
+  nursingTasks           NursingTask[]
+  labOrders              LabOrder[]
+
+  @@unique([tenantId, pid])
+  @@index([tenantId])
+  @@index([phoneNumber])
+  @@index([fullName])
+  @@map("patients")
+}
+
+model QueueEntry {
+  id                String        @id @default(uuid())
+  tenantId          String        @map("tenant_id")
+  branchId          String        @map("branch_id")
+  patientId         String        @map("patient_id")
+  departmentId      String?       @map("department_id")
+  roomId            String?       @map("room_id")
+  assignedDoctorId  String?       @map("assigned_doctor_id")
+  ticketNumber      String        @map("ticket_number")
+  priority          QueuePriority @default(ROUTINE)
+  status            QueueStatus   @default(WAITING)
+  checkInTime       DateTime      @default(now()) @map("check_in_time")
+  calledTime        DateTime?     @map("called_time")
+  completedTime     DateTime?     @map("completed_time")
+
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch            Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  patient           Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  department        Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  room              Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, status])
+  @@index([tenantId])
+  @@map("queue_entries")
+}
+
+model Appointment {
+  id              String            @id @default(uuid())
+  tenantId        String            @map("tenant_id")
+  branchId        String            @map("branch_id")
+  patientId       String            @map("patient_id")
+  doctorId        String?           @map("doctor_id")
+  departmentId    String?           @map("department_id")
+  roomId          String?           @map("room_id")
+  appointmentDate DateTime          @map("appointment_date")
+  startTime       String            @map("start_time")
+  endTime         String?           @map("end_time")
+  type            AppointmentType   @default(OUTPATIENT)
+  status          AppointmentStatus @default(SCHEDULED)
+  reason          String?
+  notes           String?
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch          Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  patient         Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor          User?             @relation("DoctorAppointments", fields: [doctorId], references: [id], onDelete: SetNull)
+  department      Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  room            Room?             @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, appointmentDate])
+  @@index([tenantId])
+  @@index([patientId])
+  @@map("appointments")
+}
+
+model Admission {
+  id                 String           @id @default(uuid())
+  tenantId           String           @map("tenant_id")
+  branchId           String           @map("branch_id")
+  patientId          String           @map("patient_id")
+  bedId              String           @map("bed_id")
+  admittingDoctorId  String?          @map("admitting_doctor_id")
+  admissionDate      DateTime         @default(now()) @map("admission_date")
+  dischargeDate      DateTime?        @map("discharge_date")
+  status             AdmissionStatus  @default(ADMITTED)
+  admissionDiagnosis String?          @map("admission_diagnosis")
+  dischargeSummary   String?          @map("discharge_summary")
+
+  tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch             Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  patient            Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  bed                Bed              @relation(fields: [bedId], references: [id], onDelete: Restrict)
+  admittingDoctor    User?            @relation("AdmittingDoctor", fields: [admittingDoctorId], references: [id], onDelete: SetNull)
+  vitalReadings      VitalReading[]
+  medications        MedicationAdministration[]
+  tasks              NursingTask[]
+
+  @@index([branchId, status])
+  @@index([tenantId])
+  @@index([patientId])
+  @@map("admissions")
+}
+
+model VitalReading {
+  id              String          @id @default(uuid())
+  tenantId        String          @map("tenant_id")
+  patientId       String          @map("patient_id")
+  admissionId     String?         @map("admission_id")
+  recordedById    String?         @map("recorded_by_id")
+  systolicBp      Int             @map("systolic_bp")
+  diastolicBp     Int             @map("diastolic_bp")
+  heartRate       Int             @map("heart_rate")
+  temperature     Float
+  spo2            Int
+  respiratoryRate Int?            @default(16) @map("respiratory_rate")
+  condition       VitalsCondition @default(NORMAL)
+  notes           String?
+  recordedAt      DateTime        @default(now()) @map("recorded_at")
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient         Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  admission       Admission?      @relation(fields: [admissionId], references: [id], onDelete: SetNull)
+  recordedBy      User?           @relation("RecordedVitals", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([patientId, recordedAt])
+  @@index([tenantId])
+  @@map("vital_readings")
+}
+
+model Prescription {
+  id          String             @id @default(uuid())
+  tenantId    String             @map("tenant_id")
+  branchId    String             @map("branch_id")
+  patientId   String             @map("patient_id")
+  doctorId    String             @map("doctor_id")
+  diagnosis   String?
+  status      PrescriptionStatus @default(ACTIVE)
+  notes       String?
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch      Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  patient     Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      User               @relation("DoctorPrescriptions", fields: [doctorId], references: [id], onDelete: Cascade)
+  items       PrescriptionItem[]
+
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([patientId])
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id             String       @id @default(uuid())
+  prescriptionId String       @map("prescription_id")
+  medicationName String       @map("medication_name")
+  dosage         String
+  route          String       @default("Oral")
+  frequency      String       @default("BID")
+  duration       String       @default("5 days")
+  instructions   String?
+
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([prescriptionId])
+  @@map("prescription_items")
+}
+
+model MedicationAdministration {
+  id               String         @id @default(uuid())
+  tenantId         String         @map("tenant_id")
+  patientId        String         @map("patient_id")
+  admissionId      String?        @map("admission_id")
+  medicationName   String         @map("medication_name")
+  dose             String
+  route            String         @default("Oral")
+  schedule         String         @default("BID")
+  scheduledTime    String?        @map("scheduled_time")
+  status           MedAdminStatus @default(PENDING)
+  administeredById String?        @map("administered_by_id")
+  administeredAt   DateTime?      @map("administered_at")
+  instructions     String?
+  notes            String?
+
+  patient          Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  admission        Admission?     @relation(fields: [admissionId], references: [id], onDelete: SetNull)
+  administeredBy   User?          @relation("AdministeringNurse", fields: [administeredById], references: [id], onDelete: SetNull)
+
+  @@index([patientId])
+  @@index([admissionId])
+  @@map("medication_administrations")
+}
+
+model NursingTask {
+  id           String       @id @default(uuid())
+  tenantId     String       @map("tenant_id")
+  branchId     String       @map("branch_id")
+  patientId    String       @map("patient_id")
+  admissionId  String?      @map("admission_id")
+  assignedToId String?      @map("assigned_to_id")
+  title        String
+  details      String?
+  taskType     String       @default("General") @map("task_type")
+  priority     TaskPriority @default(MEDIUM)
+  dueTime      String       @map("due_time")
+  status       TaskStatus   @default(PENDING)
+  completedAt  DateTime?    @map("completed_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  branch       Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  admission    Admission?   @relation(fields: [admissionId], references: [id], onDelete: SetNull)
+  assignedTo   User?        @relation("AssignedNurseTasks", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, status])
+  @@index([patientId])
+  @@map("nursing_tasks")
+}
+
+model LabOrder {
+  id               String           @id @default(uuid())
+  tenantId         String           @map("tenant_id")
+  branchId         String           @map("branch_id")
+  patientId        String           @map("patient_id")
+  orderingDoctorId String           @map("ordering_doctor_id")
+  orderNumber      String           @map("order_number")
+  priority         LabOrderPriority @default(ROUTINE)
+  status           LabOrderStatus   @default(ORDERED)
+  clinicalNotes    String?          @map("clinical_notes")
+  orderedAt        DateTime         @default(now()) @map("ordered_at")
+
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch           Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  patient          Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  orderingDoctor   User             @relation("DoctorLabOrders", fields: [orderingDoctorId], references: [id], onDelete: Cascade)
+  samples          LabSample[]
+  results          LabResult[]
+
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([patientId])
+  @@map("lab_orders")
+}
+
+model LabSample {
+  id            String          @id @default(uuid())
+  labOrderId    String          @map("lab_order_id")
+  sampleId      String          @map("sample_id") // Barcode
+  sampleType    String          @map("sample_type") // Blood, Urine, Swab
+  tubeType      String?         @map("tube_type") // EDTA Lavender, SST Gold
+  status        LabSampleStatus @default(PENDING)
+  collectedById String?         @map("collected_by_id")
+  collectedAt   DateTime?       @map("collected_at")
+  receivedById  String?         @map("received_by_id")
+  receivedAt    DateTime?       @map("received_at")
+
+  labOrder      LabOrder        @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+
+  @@index([labOrderId])
+  @@map("lab_samples")
+}
+
+model LabResult {
+  id             String    @id @default(uuid())
+  labOrderId     String    @map("lab_order_id")
+  testName       String    @map("test_name")
+  testCategory   String?   @map("test_category")
+  value          String
+  unit           String?
+  referenceRange String?   @map("reference_range")
+  isAbnormal     Boolean   @default(false) @map("is_abnormal")
+  performedById  String?   @map("performed_by_id")
+  performedAt    DateTime  @default(now()) @map("performed_at")
+  verifiedById   String?   @map("verified_by_id")
+  verifiedAt     DateTime? @map("verified_at")
+  notes          String?
+
+  labOrder       LabOrder  @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+
+  @@index([labOrderId])
+  @@map("lab_results")
+}
+
 // ─── Audit & Sync ─────────────────────────────────────────────────────────────
 
 model AuditLog {
   id         String   @id @default(uuid())
+  tenantId   String?  @map("tenant_id")
   userId     String?  @map("user_id")
-  action     String   // AuditEventType string value
-  resource   String   // e.g. "User", "Role"
+  action     String
+  resource   String
   resourceId String?  @map("resource_id")
   payload    Json?
   ipAddress  String?  @map("ip_address")
   userAgent  String?  @map("user_agent")
   createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([tenantId])
   @@index([userId])
   @@index([action])
   @@index([createdAt])
@@ -177,6 +791,7 @@ model AuditLog {
 
 model SyncJournal {
   id              String     @id @default(uuid())
+  tenantId        String?    @map("tenant_id")
   operationId     String     @unique @map("operation_id")
   entityType      String     @map("entity_type")
   entityId        String     @map("entity_id")

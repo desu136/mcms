@@ -23,9 +23,14 @@ export class UsersService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<UserSummaryDTO[]> {
+  async findAll(actor?: AuthenticatedUserEntity): Promise<UserSummaryDTO[]> {
+    const where: Record<string, unknown> = { deletedAt: null };
+    if (actor?.tenantId) {
+      where.tenantId = actor.tenantId;
+    }
+
     const users = await this.prisma.user.findMany({
-      where: { deletedAt: null },
+      where: where as any,
       include: {
         userRoles: {
           include: {
