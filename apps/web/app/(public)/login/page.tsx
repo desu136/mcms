@@ -32,7 +32,7 @@ function LoginForm() {
 
     try {
       await login({ email, password });
-if (explicitRedirect) {
+      if (explicitRedirect) {
         window.location.href = explicitRedirect;
       } else {
         const savedUserStr = typeof window !== 'undefined' ? sessionStorage.getItem('mcms_user') : null;
@@ -55,7 +55,6 @@ if (explicitRedirect) {
         else if (email === 'receptionist@mcms.local') destination = '/receptionist';
         else if (email === 'lab@mcms.local' || email.includes('lab')) destination = '/lab';
         window.location.href = destination;
-      }
       }
     } catch (err: any) {
       if (email === 'lab@mcms.local' || email.includes('lab')) {
