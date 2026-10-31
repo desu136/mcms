@@ -89,32 +89,28 @@ export default function DoctorDashboardPage() {
   );
 
   const kpisContent = (
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+    <div className="grid grid-cols-4 gap-2 sm:gap-2.5 xl:gap-3">
       <DoctorStatCard
         title="Today's Appointments"
         value={9}
-        icon={Users}
         color="blue"
         change={{ value: '+2', trend: 'up', label: 'vs. yesterday' }}
       />
       <DoctorStatCard
         title="Patients Seen Today"
         value={7}
-        icon={CheckCircle2}
         color="emerald"
         change={{ value: '+3', trend: 'up', label: 'vs. yesterday' }}
       />
       <DoctorStatCard
         title="Pending Prescriptions"
         value={4}
-        icon={Pill}
         color="purple"
         change={{ value: '-2', trend: 'down', label: 'vs. yesterday' }}
       />
       <DoctorStatCard
         title="Lab Results Pending"
         value={6}
-        icon={FlaskConical}
         color="orange"
         change={{ value: '+1', trend: 'up', label: 'vs. yesterday' }}
       />

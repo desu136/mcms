@@ -46,13 +46,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/login');
+      window.location.href = '/login';
     }
-  }, [isLoading, user, router]);
+  }, [isLoading, user]);
 
   const handleLogout = async () => {
     await logout();
-    router.push('/login');
+    window.location.href = '/login';
   };
 
   const firstName = user?.displayName?.split(' ')[0] ?? 'Admin';

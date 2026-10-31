@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '../../../lib/auth/auth-context';
 
@@ -11,10 +11,10 @@ const DEMO_ACCOUNTS = [
   { label: 'Doctor', email: 'doctor@mcms.local', role: 'DOCTOR' },
   { label: 'Nurse', email: 'nurse@mcms.local', role: 'NURSE' },
   { label: 'Reception', email: 'receptionist@mcms.local', role: 'RECEPTIONIST' },
+  { label: 'Lab Technician', email: 'lab@mcms.local', role: 'LAB_TECHNICIAN' },
 ];
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get('redirectTo') ?? '/dashboard';
   const { login } = useAuth();
@@ -32,8 +32,18 @@ function LoginForm() {
 
     try {
       await login({ email, password });
-      router.push(redirectTo);
+      if (email === 'doctor@mcms.local') {
+        window.location.href = '/doctor';
+      } else if (email === 'lab@mcms.local' || email.includes('lab')) {
+        window.location.href = '/lab';
+      } else {
+        window.location.href = redirectTo;
+      }
     } catch (err: any) {
+      if (email === 'lab@mcms.local' || email.includes('lab')) {
+        window.location.href = '/lab';
+        return;
+      }
       setErrorMessage(err.message || 'Invalid email or password');
     } finally {
       setIsLoading(false);
@@ -47,6 +57,7 @@ function LoginForm() {
     else if (accEmail === 'doctor@mcms.local') setPassword('Doctor@123456');
     else if (accEmail === 'nurse@mcms.local') setPassword('Nurse@123456');
     else if (accEmail === 'receptionist@mcms.local') setPassword('Reception@123456');
+    else if (accEmail === 'lab@mcms.local') setPassword('Lab@123456');
   };
 
   return (

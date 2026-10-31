@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { CURRENT_DOCTOR } from './doctorMockData';
 import { useAuth } from '../../lib/auth/auth-context';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 interface DoctorHeaderProps {
@@ -25,7 +24,6 @@ interface DoctorHeaderProps {
 }
 
 export default function DoctorHeader({ onOpenSearch, onOpenMobileSidebar }: DoctorHeaderProps) {
-  const router = useRouter();
   const { user, logout } = useAuth();
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -47,7 +45,7 @@ export default function DoctorHeader({ onOpenSearch, onOpenMobileSidebar }: Doct
 
   const handleLogout = async () => {
     await logout();
-    router.push('/login');
+    window.location.href = '/login';
   };
 
   const doctorName = user?.displayName || CURRENT_DOCTOR.name;

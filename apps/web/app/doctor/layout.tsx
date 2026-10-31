@@ -20,27 +20,7 @@ export default function DoctorPortalLayout({ children }: { children: React.React
     }
   }, [isLoading, user, router]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#F4F7FC] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            Loading Doctor Workspace...
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    /*
-     * Shell: covers the full viewport, never scrolls as a whole.
-     * Sidebar  → fixed, full height, independent scroll for nav items.
-     * Right    → flex column that fills remaining width.
-     *   Header → fixed height, never scrolls.
-     *   Main   → flex-1 + overflow-y-auto = the only scrolling region.
-     */
     <div className="h-screen h-[100dvh] w-full flex overflow-hidden bg-[#F4F7FC] text-slate-800 font-sans antialiased selection:bg-blue-600 selection:text-white">
       {/* Doctor Sidebar — fixed, independently scrollable nav */}
       <DoctorSidebar
@@ -62,9 +42,23 @@ export default function DoctorPortalLayout({ children }: { children: React.React
           onOpenMobileSidebar={() => setMobileOpen(true)}
         />
 
-        {/* Viewport content shell: flex-1, min-h-0, overflow-hidden */}
-        <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
-          {children}
+        {/* Viewport content shell */}
+        <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto">
+          {isLoading ? (
+            <div className="min-h-[60vh] flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Loading Doctor Workspace...
+                </div>
+              </div>
+              <div className="hidden" aria-hidden="true">
+                {children}
+              </div>
+            </div>
+          ) : (
+            children
+          )}
         </main>
       </div>
 
@@ -72,9 +66,6 @@ export default function DoctorPortalLayout({ children }: { children: React.React
       <DoctorSearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onSelectPatient={(_pid) => {
-          router.push(`/doctor/patients`);
-        }}
       />
     </div>
   );
