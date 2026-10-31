@@ -7,6 +7,8 @@ const prisma = new PrismaClient();
 
 const PERMISSIONS = [
   // Auth
+
+
   { slug: 'auth:login', name: 'Login', module: 'auth', description: 'Authenticate with credentials' },
   { slug: 'auth:logout', name: 'Logout', module: 'auth', description: 'End an active session' },
   { slug: 'auth:refresh', name: 'Refresh Token', module: 'auth', description: 'Refresh access token' },
@@ -168,6 +170,7 @@ async function main(): Promise<void> {
         name: roleName,
         description: `System role: ${roleName.toLowerCase().replace(/_/g, ' ')}`,
         isSystemRole: true,
+
       },
     });
     roleMap[roleName] = role.id;
