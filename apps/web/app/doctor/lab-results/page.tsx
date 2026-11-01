@@ -26,6 +26,7 @@ import {
   CalendarCheck,
   BarChart2,
   RefreshCw,
+  Building2,
 } from 'lucide-react';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
@@ -45,6 +46,7 @@ interface LabRow {
   avatar: string;
   test: string;
   department: string;
+  branchName?: string | undefined;
   result: string;
   reference: string;
   status: LabStatus;
@@ -195,6 +197,7 @@ export default function DoctorLabResultsPage() {
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(o.patientName)}`,
           test: testName,
           department,
+          ...(o.branchName ? { branchName: o.branchName } : {}),
           result: resultText,
           reference: refText,
           status,
@@ -614,7 +617,15 @@ export default function DoctorLabResultsPage() {
                         <img src={r.avatar} alt={r.patient} className="w-8 h-8 rounded-full object-cover ring-1 ring-white shadow-2xs shrink-0" />
                         <div>
                           <div className="font-bold text-slate-800 leading-tight">{r.patient}</div>
-                          <div className="text-[10px] text-slate-400">{r.pid}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] text-slate-400">{r.pid}</span>
+                            {r.branchName && (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60">
+                                <Building2 className="w-2.5 h-2.5 text-slate-400" />
+                                {r.branchName}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>

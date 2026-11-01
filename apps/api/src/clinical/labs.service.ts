@@ -63,11 +63,13 @@ export class LabsService {
       verifiedAt: Date | null;
       notes: string | null;
     }>;
+    branch?: { name: string } | null;
   }): LabOrderDTO {
     return {
       id: o.id,
       tenantId: o.tenantId,
       branchId: o.branchId,
+      branchName: o.branch?.name ?? null,
       patientId: o.patientId,
       patientName: o.patient.fullName,
       patientPid: o.patient.pid,
@@ -114,8 +116,13 @@ export class LabsService {
 
     const where: Record<string, unknown> = {};
     if (tenantId) where.tenantId = tenantId;
-    if (branchId) where.branchId = branchId;
-    if (patientId) where.patientId = patientId;
+    if (patientId) {
+      where.patientId = patientId;
+      // Do not restrict by branchId when querying a patient's lab history
+    } else if (branchId) {
+      where.branchId = branchId;
+    }
+
     if (status) {
       const upper = status.toUpperCase();
       if (upper === 'PENDING') {
@@ -136,6 +143,7 @@ export class LabsService {
       include: {
         patient: { select: { fullName: true, pid: true } },
         orderingDoctor: { select: { displayName: true } },
+        branch: { select: { name: true } },
         samples: true,
         results: true,
       },

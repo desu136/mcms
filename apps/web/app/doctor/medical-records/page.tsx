@@ -28,6 +28,7 @@ import {
   Stethoscope,
   Upload,
   RefreshCw,
+  Building2,
 } from 'lucide-react';
 import { INITIAL_PATIENTS, PatientItem } from '../../../components/doctor/doctorMockData';
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
@@ -48,6 +49,7 @@ interface MedicalRecordRow {
   visitTime: string;
   visitType: VisitType;
   department: string;
+  branchName?: string;
   doctor: { name: string; specialty: string; avatar: string };
   diagnosisSummary: string;
   status: 'Completed';
@@ -55,16 +57,16 @@ interface MedicalRecordRow {
 
 /* ─── Mock Data ──────────────────────────────────────── */
 const MEDICAL_HISTORY_ROWS: MedicalRecordRow[] = [
-  { id: 'rec-1', visitDate: 'Oct 18, 2026', visitTime: '09:40 AM', visitType: 'Follow-up',    department: 'Cardiology',            doctor: { name: 'Dr. Fitsum Alemu', specialty: 'Cardiologist',     avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Hypertension - controlled. Continue current medication...', status: 'Completed' },
-  { id: 'rec-2', visitDate: 'Oct 12, 2026', visitTime: '10:15 AM', visitType: 'Consultation', department: 'Internal Medicine',      doctor: { name: 'Dr. Hiwet Desta',  specialty: 'General Physician', avatar: 'https://images.unsplash.com/photo-1594824813576-96b63ca7b567?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Common cold. Rest and hydration...',                      status: 'Completed' },
-  { id: 'rec-3', visitDate: 'Oct 05, 2026', visitTime: '02:30 PM', visitType: 'Lab Visit',    department: 'Laboratory',            doctor: { name: 'Lab Tech Team',    specialty: 'Laboratory',        avatar: 'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'CBC - Normal. WBC, RBC, Platelets within range...',        status: 'Completed' },
-  { id: 'rec-4', visitDate: 'Sep 28, 2026', visitTime: '11:20 AM', visitType: 'Follow-up',    department: 'Cardiology',            doctor: { name: 'Dr. Fitsum Alemu', specialty: 'Cardiologist',     avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Post-angiogram follow-up. Stable condition...',            status: 'Completed' },
-  { id: 'rec-5', visitDate: 'Sep 20, 2026', visitTime: '04:10 PM', visitType: 'Consultation', department: 'Internal Medicine',      doctor: { name: 'Dr. Hiwet Desta',  specialty: 'General Physician', avatar: 'https://images.unsplash.com/photo-1594824813576-96b63ca7b567?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Gastritis. Prescribed medication...',                      status: 'Completed' },
-  { id: 'rec-6', visitDate: 'Sep 14, 2026', visitTime: '09:00 AM', visitType: 'Consultation', department: 'Obstetrics & Gynecology',doctor: { name: 'Dr. Sara Ahmed',   specialty: 'Gynecologist',      avatar: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Routine check-up. All normal...',                         status: 'Completed' },
-  { id: 'rec-7', visitDate: 'Sep 07, 2026', visitTime: '01:45 PM', visitType: 'Imaging',      department: 'Radiology',             doctor: { name: 'Dr. Daniel Tesfaye',specialty: 'Radiologist',      avatar: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Chest X-ray. No abnormality detected...',                  status: 'Completed' },
-  { id: 'rec-8', visitDate: 'Aug 30, 2026', visitTime: '03:20 PM', visitType: 'Prescription', department: 'Pharmacy',              doctor: { name: 'Dr. Fitsum Alemu', specialty: 'Cardiologist',     avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Amlodipine 5mg. Once daily...',                            status: 'Completed' },
-  { id: 'rec-9', visitDate: 'Aug 22, 2026', visitTime: '10:30 AM', visitType: 'Consultation', department: 'Internal Medicine',      doctor: { name: 'Dr. Hiwet Desta',  specialty: 'General Physician', avatar: 'https://images.unsplash.com/photo-1594824813576-96b63ca7b567?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Fever and cough. Antibiotics prescribed...',                status: 'Completed' },
-  { id: 'rec-10',visitDate: 'Aug 15, 2026', visitTime: '02:00 PM', visitType: 'Lab Visit',    department: 'Laboratory',            doctor: { name: 'Lab Tech Team',    specialty: 'Laboratory',        avatar: 'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Blood glucose - 98 mg/dL. Normal range...',                status: 'Completed' },
+  { id: 'rec-1', visitDate: 'Oct 18, 2026', visitTime: '09:40 AM', visitType: 'Follow-up',    department: 'Cardiology',            branchName: 'Downtown Central', doctor: { name: 'Dr. Fitsum Alemu', specialty: 'Cardiologist',     avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Hypertension - controlled. Continue current medication...', status: 'Completed' },
+  { id: 'rec-2', visitDate: 'Oct 12, 2026', visitTime: '10:15 AM', visitType: 'Consultation', department: 'Internal Medicine',      branchName: 'Main Hospital',    doctor: { name: 'Dr. Hiwet Desta',  specialty: 'General Physician', avatar: 'https://images.unsplash.com/photo-1594824813576-96b63ca7b567?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Common cold. Rest and hydration...',                      status: 'Completed' },
+  { id: 'rec-3', visitDate: 'Oct 05, 2026', visitTime: '02:30 PM', visitType: 'Lab Visit',    department: 'Laboratory',            branchName: 'Main Hospital',    doctor: { name: 'Lab Tech Team',    specialty: 'Laboratory',        avatar: 'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'CBC - Normal. WBC, RBC, Platelets within range...',        status: 'Completed' },
+  { id: 'rec-4', visitDate: 'Sep 28, 2026', visitTime: '11:20 AM', visitType: 'Follow-up',    department: 'Cardiology',            branchName: 'Northside Clinic', doctor: { name: 'Dr. Fitsum Alemu', specialty: 'Cardiologist',     avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Post-angiogram follow-up. Stable condition...',            status: 'Completed' },
+  { id: 'rec-5', visitDate: 'Sep 20, 2026', visitTime: '04:10 PM', visitType: 'Consultation', department: 'Internal Medicine',      branchName: 'Downtown Central', doctor: { name: 'Dr. Hiwet Desta',  specialty: 'General Physician', avatar: 'https://images.unsplash.com/photo-1594824813576-96b63ca7b567?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Gastritis. Prescribed medication...',                      status: 'Completed' },
+  { id: 'rec-6', visitDate: 'Sep 14, 2026', visitTime: '09:00 AM', visitType: 'Consultation', department: 'Obstetrics & Gynecology',branchName: 'Main Hospital',    doctor: { name: 'Dr. Sara Ahmed',   specialty: 'Gynecologist',      avatar: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Routine check-up. All normal...',                         status: 'Completed' },
+  { id: 'rec-7', visitDate: 'Sep 07, 2026', visitTime: '01:45 PM', visitType: 'Imaging',      department: 'Radiology',             branchName: 'Westside Outpatient', doctor: { name: 'Dr. Daniel Tesfaye',specialty: 'Radiologist',      avatar: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Chest X-ray. No abnormality detected...',                  status: 'Completed' },
+  { id: 'rec-8', visitDate: 'Aug 30, 2026', visitTime: '03:20 PM', visitType: 'Prescription', department: 'Pharmacy',              branchName: 'Downtown Central', doctor: { name: 'Dr. Fitsum Alemu', specialty: 'Cardiologist',     avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Amlodipine 5mg. Once daily...',                            status: 'Completed' },
+  { id: 'rec-9', visitDate: 'Aug 22, 2026', visitTime: '10:30 AM', visitType: 'Consultation', department: 'Internal Medicine',      branchName: 'Northside Clinic', doctor: { name: 'Dr. Hiwet Desta',  specialty: 'General Physician', avatar: 'https://images.unsplash.com/photo-1594824813576-96b63ca7b567?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Fever and cough. Antibiotics prescribed...',                status: 'Completed' },
+  { id: 'rec-10',visitDate: 'Aug 15, 2026', visitTime: '02:00 PM', visitType: 'Lab Visit',    department: 'Laboratory',            branchName: 'Main Hospital',    doctor: { name: 'Lab Tech Team',    specialty: 'Laboratory',        avatar: 'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=80&auto=format&fit=crop&q=80' }, diagnosisSummary: 'Blood glucose - 98 mg/dL. Normal range...',                status: 'Completed' },
 ];
 
 /* ─── Visit type badge colors ─────────────────────────── */
@@ -532,6 +534,7 @@ export default function DoctorMedicalRecordsPage() {
                   </th>
                   <th className="py-3 px-4">Visit Date</th>
                   <th className="py-3 px-4">Visit Type</th>
+                  <th className="py-3 px-4">Branch</th>
                   <th className="py-3 px-4">Department</th>
                   <th className="py-3 px-4">Doctor</th>
                   <th className="py-3 px-4">Diagnosis Summary</th>
@@ -557,6 +560,12 @@ export default function DoctorMedicalRecordsPage() {
                     <td className="py-3 px-4 whitespace-nowrap">
                       <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${visitTypeStyle[row.visitType]}`}>
                         {row.visitType}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200/80">
+                        <Building2 className="w-3 h-3 text-slate-400" />
+                        {row.branchName || 'Main Hospital'}
                       </span>
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap">

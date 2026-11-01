@@ -97,6 +97,7 @@ export interface AppointmentDTO {
   id: string;
   tenantId: string;
   branchId: string;
+  branchName?: string | null;
   patientId: string;
   patientName: string;
   patientPid: string;
@@ -222,6 +223,7 @@ export interface PrescriptionDTO {
   id: string;
   tenantId: string;
   branchId: string;
+  branchName?: string | null;
   patientId: string;
   patientName: string;
   patientPid: string;
@@ -363,6 +365,7 @@ export interface LabOrderDTO {
   id: string;
   tenantId: string;
   branchId: string;
+  branchName?: string | null;
   patientId: string;
   patientName: string;
   patientPid: string;
