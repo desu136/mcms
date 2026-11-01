@@ -16,6 +16,7 @@ import {
   Pill,
   ExternalLink,
   Plus,
+  Building2,
 } from 'lucide-react';
 import { PatientItem } from './doctorMockData';
 
@@ -45,9 +46,12 @@ export default function DoctorPatientDrawer({
         <div className="w-screen max-w-md bg-white shadow-2xl border-l border-slate-200 flex flex-col">
           {/* Top Bar */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Patient Electronic Record
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                <Building2 className="w-2.5 h-2.5" /> All Branches
               </span>
               <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700">
                 {patient.status}
@@ -238,33 +242,48 @@ export default function DoctorPatientDrawer({
             {activeTab === 'appointments' && (
               <div className="space-y-3">
                 <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Past & Upcoming Consultations
+                  Past & Upcoming Consultations (Across Facilities)
                 </div>
                 <div className="space-y-2">
                   <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/40">
                     <div className="flex items-center justify-between text-xs font-bold text-blue-900 mb-1">
                       <span>Oct 25, 2026 • 09:00 AM</span>
-                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px]">
-                        Upcoming
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100/70 text-blue-800">
+                          <Building2 className="w-2.5 h-2.5" /> Downtown Central
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px]">
+                          Upcoming
+                        </span>
+                      </div>
                     </div>
                     <div className="text-xs text-slate-600">Cardiology Follow-up with Dr. Fitsum Alemu</div>
                   </div>
                   <div className="p-3 rounded-xl border border-slate-100 bg-white">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
                       <span>Oct 18, 2026 • 08:00 AM</span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px]">
-                        Completed
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
+                          <Building2 className="w-2.5 h-2.5 text-slate-400" /> Main Hospital
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px]">
+                          Completed
+                        </span>
+                      </div>
                     </div>
                     <div className="text-xs text-slate-600">Prescription refill & routine BP assessment</div>
                   </div>
                   <div className="p-3 rounded-xl border border-slate-100 bg-white">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
                       <span>Sep 12, 2026 • 10:30 AM</span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px]">
-                        Completed
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
+                          <Building2 className="w-2.5 h-2.5 text-slate-400" /> Northside Clinic
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px]">
+                          Completed
+                        </span>
+                      </div>
                     </div>
                     <div className="text-xs text-slate-600">Initial Cardiology Consultation</div>
                   </div>

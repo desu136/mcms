@@ -25,6 +25,7 @@ import {
   AlertCircle,
   XCircle,
   ChevronDown,
+  Building2,
 } from 'lucide-react';
 import type { PrescriptionDTO, PatientDTO } from '@mcms/contracts';
 import { INITIAL_PATIENTS, PatientItem } from '../../../components/doctor/doctorMockData';
@@ -699,8 +700,16 @@ export default function DoctorPrescriptionsPage() {
                                 >
                                   {row.patientName}
                                 </div>
-                                <div className="text-[10px] text-slate-400 font-medium">
-                                  {row.patientPid || row.patientId.slice(0, 8)}
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    {row.patientPid || row.patientId.slice(0, 8)}
+                                  </span>
+                                  {row.branchName && (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60">
+                                      <Building2 className="w-2.5 h-2.5 text-slate-400" />
+                                      {row.branchName}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>

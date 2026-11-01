@@ -28,7 +28,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/users-roles', label: 'Users & Roles', icon: Users },
   { href: '/settings', label: 'System Settings', icon: Settings },
-  { href: '/clinic-management', label: 'Clinic Management', icon: Building2 },
+  { href: '/clinic-management', label: 'Clinic Tenants', icon: Building2 },
   { href: '/database-management', label: 'Database Management', icon: Database },
   { href: '/logs-activity', label: 'Logs & Activity', icon: FileText },
   { href: '/backup-restore', label: 'Backup & Restore', icon: HardDrive },

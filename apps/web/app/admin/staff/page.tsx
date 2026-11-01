@@ -20,10 +20,19 @@ import {
   FlaskConical,
   Pill,
   Lock,
+  Building2,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { useAuth } from '../../../lib/auth/auth-context';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface BranchItem {
+  id: string;
+  name: string;
+  code: string;
+  isMainBranch?: boolean;
+}
 
 interface StaffMember {
   id: string;
@@ -33,6 +42,9 @@ interface StaffMember {
   isLocked: boolean;
   roles: string[];
   createdAt: string;
+  primaryBranchId?: string | null;
+  primaryBranchName?: string | null;
+  branchIds?: string[];
   staffProfile?: {
     department?: string;
     jobTitle?: string;
@@ -53,12 +65,13 @@ interface CreateStaffPayload {
   password: string;
   displayName: string;
   roleIds: string[];
+  branchId?: string | undefined;
   staffProfile?: {
-    department?: string;
-    jobTitle?: string;
-    phoneNumber?: string;
-    licenseNumber?: string;
-    specialization?: string;
+    department?: string | undefined;
+    jobTitle?: string | undefined;
+    phoneNumber?: string | undefined;
+    licenseNumber?: string | undefined;
+    specialization?: string | undefined;
   } | undefined;
 }
 
@@ -160,6 +173,7 @@ interface StaffFormData {
   email: string;
   password: string;
   role: string;
+  branchId: string;
   department: string;
   jobTitle: string;
   phoneNumber: string;
@@ -170,17 +184,19 @@ interface StaffFormData {
 interface StaffDialogProps {
   open: boolean;
   staffRoles: StaffRole[];
+  branches: BranchItem[];
   member?: StaffMember | null;
   onClose: () => void;
   onSubmit: (data: StaffFormData) => Promise<void>;
 }
 
-function StaffDialog({ open, staffRoles, member, onClose, onSubmit }: StaffDialogProps) {
+function StaffDialog({ open, staffRoles, branches, member, onClose, onSubmit }: StaffDialogProps) {
   const [form, setForm] = useState<StaffFormData>({
     displayName: member?.displayName ?? '',
     email: member?.email ?? '',
     password: '',
     role: member?.roles?.find((r) => CLINICAL_ROLES.includes(r)) ?? 'DOCTOR',
+    branchId: member?.primaryBranchId ?? (branches[0]?.id ?? ''),
     department: member?.staffProfile?.department ?? '',
     jobTitle: member?.staffProfile?.jobTitle ?? '',
     phoneNumber: member?.staffProfile?.phoneNumber ?? '',
@@ -197,6 +213,7 @@ function StaffDialog({ open, staffRoles, member, onClose, onSubmit }: StaffDialo
         email: member?.email ?? '',
         password: '',
         role: member?.roles?.find((r) => CLINICAL_ROLES.includes(r)) ?? 'DOCTOR',
+        branchId: member?.primaryBranchId ?? (branches[0]?.id ?? ''),
         department: member?.staffProfile?.department ?? '',
         jobTitle: member?.staffProfile?.jobTitle ?? '',
         phoneNumber: member?.staffProfile?.phoneNumber ?? '',
@@ -205,7 +222,7 @@ function StaffDialog({ open, staffRoles, member, onClose, onSubmit }: StaffDialo
       });
       setError('');
     }
-  }, [open, member]);
+  }, [open, member, branches]);
 
   if (!open) return null;
 
@@ -281,6 +298,23 @@ function StaffDialog({ open, staffRoles, member, onClose, onSubmit }: StaffDialo
                 );
               })}
             </div>
+          </div>
+
+          {/* Branch selector */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Assigned Clinic Branch</label>
+            <select
+              value={form.branchId}
+              onChange={(e) => setForm((f) => ({ ...f, branchId: e.target.value }))}
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+            >
+              <option value="">Default Branch</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({b.code}){b.isMainBranch ? ' ★ Main' : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -405,6 +439,144 @@ function StaffDialog({ open, staffRoles, member, onClose, onSubmit }: StaffDialo
   );
 }
 
+// ─── Transfer Branch Dialog ───────────────────────────────────────────────────
+
+interface TransferBranchDialogProps {
+  open: boolean;
+  member: StaffMember | null;
+  branches: BranchItem[];
+  onClose: () => void;
+  onTransfer: (memberId: string, targetBranchId: string) => Promise<void>;
+}
+
+function TransferBranchDialog({ open, member, branches, onClose, onTransfer }: TransferBranchDialogProps) {
+  const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open && member) {
+      setSelectedBranchId('');
+      setError('');
+    }
+  }, [open, member]);
+
+  if (!open || !member) return null;
+
+  const currentBranchName = member.primaryBranchName || 'Main Branch';
+  const availableBranches = branches.filter((b) => b.id !== member.primaryBranchId);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBranchId) {
+      setError('Please select a destination branch');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await onTransfer(member.id, selectedBranchId);
+      onClose();
+    } catch (err: unknown) {
+      setError((err instanceof Error ? err.message : null) ?? 'Failed to transfer branch');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+              <ArrowRightLeft size={16} className="text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-gray-900">Transfer Staff Branch</h2>
+              <p className="text-[10px] text-gray-400">Reassign staff member to another clinic location</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 transition text-gray-400">
+            <X size={16} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mx-6 mt-4 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center gap-3">
+            <StaffAvatar name={member.displayName} />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-gray-800 truncate">{member.displayName}</div>
+              <div className="text-[11px] text-gray-400">{member.email}</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="p-3 rounded-xl border border-gray-100 bg-gray-50/50">
+              <div className="text-[10px] text-gray-400 font-medium">Current Branch</div>
+              <div className="text-xs font-semibold text-gray-800 mt-1 flex items-center gap-1.5 truncate">
+                <Building2 size={13} className="text-gray-500 shrink-0" />
+                <span className="truncate">{currentBranchName}</span>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl border border-blue-100 bg-blue-50/30">
+              <div className="text-[10px] text-blue-600 font-medium">Destination</div>
+              <div className="text-xs font-semibold text-blue-800 mt-1 truncate">
+                {branches.find((b) => b.id === selectedBranchId)?.name || 'Select below'}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">Select New Branch *</label>
+            <select
+              value={selectedBranchId}
+              onChange={(e) => setSelectedBranchId(e.target.value)}
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+              required
+            >
+              <option value="">-- Choose destination branch --</option>
+              {availableBranches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({b.code}){b.isMainBranch ? ' ★ Main' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !selectedBranchId}
+              className="px-4 py-2 text-xs font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition flex items-center gap-1.5"
+            >
+              {loading ? (
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Check size={14} />
+              )}
+              Confirm Transfer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Confirm dialog ───────────────────────────────────────────────────────────
 
 function ConfirmModal({
@@ -434,13 +606,17 @@ export default function StaffManagementPage() {
   const { accessToken } = useAuth();
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [staffRoles, setStaffRoles] = useState<StaffRole[]>([]);
+  const [branches, setBranches] = useState<BranchItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
+  const [branchFilter, setBranchFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
+  const [transferMember, setTransferMember] = useState<StaffMember | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; id: string; action: 'activate' | 'deactivate' }>({ open: false, id: '', action: 'deactivate' });
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
@@ -454,9 +630,10 @@ export default function StaffManagementPage() {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [allUsers, roles] = await Promise.all([
+      const [allUsers, roles, branchList] = await Promise.all([
         apiRequest<StaffMember[]>('users', accessToken),
         apiRequest<StaffRole[]>('roles', accessToken).catch(() => [] as StaffRole[]),
+        apiRequest<BranchItem[]>('branches', accessToken).catch(() => [] as BranchItem[]),
       ]);
       // Clinic admin only sees clinical staff (not SUPER_ADMIN / CLINIC_ADMIN)
       const clinicalStaff = allUsers.filter((u) =>
@@ -464,6 +641,7 @@ export default function StaffManagementPage() {
       );
       setStaff(clinicalStaff);
       setStaffRoles(roles.filter((r) => CLINICAL_ROLES.includes(r.name)));
+      setBranches(branchList);
     } catch {
       showToast('Failed to load staff data.', 'error');
     } finally {
@@ -483,14 +661,23 @@ export default function StaffManagementPage() {
 
   const filtered = staff.filter((s) => {
     const q = search.toLowerCase();
-    const matchSearch = !search || s.displayName.toLowerCase().includes(q) || s.email.toLowerCase().includes(q) || (s.staffProfile?.department ?? '').toLowerCase().includes(q);
+    const matchSearch =
+      !search ||
+      s.displayName.toLowerCase().includes(q) ||
+      s.email.toLowerCase().includes(q) ||
+      (s.staffProfile?.department ?? '').toLowerCase().includes(q) ||
+      (s.primaryBranchName ?? '').toLowerCase().includes(q);
     const matchRole = roleFilter === 'All' || s.roles.includes(roleFilter);
+    const matchBranch =
+      branchFilter === 'All' ||
+      s.primaryBranchId === branchFilter ||
+      (s.branchIds && s.branchIds.includes(branchFilter));
     const matchStatus =
       statusFilter === 'All' ||
       (statusFilter === 'Active' && s.isActive && !s.isLocked) ||
       (statusFilter === 'Inactive' && !s.isActive && !s.isLocked) ||
       (statusFilter === 'Locked' && s.isLocked);
-    return matchSearch && matchRole && matchStatus;
+    return matchSearch && matchRole && matchBranch && matchStatus;
   });
 
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -505,6 +692,7 @@ export default function StaffManagementPage() {
       password: data.password,
       displayName: data.displayName,
       roleIds: roleObj ? [roleObj.id] : [data.role],
+      ...(data.branchId ? { branchId: data.branchId } : {}),
       staffProfile: Object.fromEntries(
         Object.entries({
           department: data.department,
@@ -528,6 +716,7 @@ export default function StaffManagementPage() {
       body: JSON.stringify({
         displayName: data.displayName,
         roleIds: roleObj ? [roleObj.id] : undefined,
+        branchId: data.branchId || undefined,
         staffProfile: Object.fromEntries(
           Object.entries({
             department: data.department,
@@ -541,6 +730,21 @@ export default function StaffManagementPage() {
     });
     showToast('Staff member updated successfully!');
     void fetchData();
+  };
+
+  const handleTransferBranch = async (memberId: string, targetBranchId: string) => {
+    if (!accessToken) return;
+    try {
+      await apiRequest<void>(`users/${memberId}/transfer-branch`, accessToken, {
+        method: 'POST',
+        body: JSON.stringify({ branchId: targetBranchId }),
+      });
+      showToast('Staff member transferred to new branch successfully!');
+      void fetchData();
+    } catch (err: unknown) {
+      showToast((err instanceof Error ? err.message : null) ?? 'Failed to transfer branch.', 'error');
+      throw err;
+    }
   };
 
   const handleStatusChange = async () => {
@@ -650,6 +854,19 @@ export default function StaffManagementPage() {
               </div>
               <div className="relative">
                 <select
+                  value={branchFilter}
+                  onChange={(e) => { setBranchFilter(e.target.value); setPage(1); }}
+                  className="pl-3 pr-7 py-2 text-xs border border-gray-200 rounded-xl appearance-none focus:outline-none text-gray-700"
+                >
+                  <option value="All">All Branches</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+              <div className="relative">
+                <select
                   value={statusFilter}
                   onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
                   className="pl-3 pr-7 py-2 text-xs border border-gray-200 rounded-xl appearance-none focus:outline-none text-gray-700"
@@ -681,6 +898,7 @@ export default function StaffManagementPage() {
                   <tr className="border-b border-gray-100">
                     <th className="text-left text-[10px] font-semibold text-gray-400 px-5 py-3">Staff Member</th>
                     <th className="text-left text-[10px] font-semibold text-gray-400 px-3 py-3">Role</th>
+                    <th className="text-left text-[10px] font-semibold text-gray-400 px-3 py-3">Branch</th>
                     <th className="text-left text-[10px] font-semibold text-gray-400 px-3 py-3">Department</th>
                     <th className="text-left text-[10px] font-semibold text-gray-400 px-3 py-3">Phone</th>
                     <th className="text-left text-[10px] font-semibold text-gray-400 px-3 py-3">Since</th>
@@ -702,6 +920,12 @@ export default function StaffManagementPage() {
                       </td>
                       <td className="px-3 py-3.5">
                         <RoleBadge role={s.roles[0] ?? 'STAFF'} />
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-blue-50/70 text-blue-700 border border-blue-100/60">
+                          <Building2 size={10} className="text-blue-500" />
+                          {s.primaryBranchName || 'Main Branch'}
+                        </span>
                       </td>
                       <td className="px-3 py-3.5 text-xs text-gray-600">
                         {s.staffProfile?.department ?? <span className="text-gray-300 italic">—</span>}
@@ -730,6 +954,12 @@ export default function StaffManagementPage() {
                                 className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition"
                               >
                                 <Edit3 size={13} />Edit Account
+                              </button>
+                              <button
+                                onClick={() => { setTransferMember(s); setTransferDialogOpen(true); setActionMenuOpen(null); }}
+                                className="flex items-center gap-2 w-full px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 transition"
+                              >
+                                <ArrowRightLeft size={13} />Transfer Branch
                               </button>
                               {s.isActive && !s.isLocked ? (
                                 <button
@@ -831,9 +1061,20 @@ export default function StaffManagementPage() {
       <StaffDialog
         open={dialogOpen}
         staffRoles={staffRoles}
+        branches={branches}
         member={editingMember}
         onClose={() => setDialogOpen(false)}
         onSubmit={editingMember ? handleUpdate : handleCreate}
+      />
+      <TransferBranchDialog
+        open={transferDialogOpen}
+        member={transferMember}
+        branches={branches}
+        onClose={() => {
+          setTransferDialogOpen(false);
+          setTransferMember(null);
+        }}
+        onTransfer={handleTransferBranch}
       />
       <ConfirmModal
         open={confirmDialog.open}

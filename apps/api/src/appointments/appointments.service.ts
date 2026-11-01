@@ -222,17 +222,23 @@ export class AppointmentsService {
     const { tenantId, branchId, isSuperAdmin } = ctx;
 
     const where: Record<string, unknown> = {};
-    if (branchId) where.branchId = branchId;
-    else if (tenantId) where.tenantId = tenantId;
+    if (patientId) {
+      where.patientId = patientId;
+      if (tenantId) where.tenantId = tenantId;
+      // Do not restrict by branchId when querying a patient's historical encounters
+    } else {
+      if (branchId) where.branchId = branchId;
+      else if (tenantId) where.tenantId = tenantId;
+    }
     if (date) where.appointmentDate = new Date(date);
     if (doctorId) where.doctorId = doctorId;
-    if (patientId) where.patientId = patientId;
 
     const appointments = await this.prisma.appointment.findMany({
       where: where as any,
       include: {
         patient: { select: { fullName: true, pid: true } },
         doctor: { select: { displayName: true } },
+        branch: { select: { name: true } },
       },
       orderBy: [{ appointmentDate: 'asc' }, { startTime: 'asc' }],
     });
@@ -241,6 +247,7 @@ export class AppointmentsService {
       id: a.id,
       tenantId: a.tenantId,
       branchId: a.branchId,
+      branchName: a.branch?.name ?? null,
       patientId: a.patientId,
       patientName: a.patient.fullName,
       patientPid: a.patient.pid,

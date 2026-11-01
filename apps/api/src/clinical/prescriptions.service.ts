@@ -44,11 +44,13 @@ export class PrescriptionsService {
       duration: string;
       instructions: string | null;
     }>;
+    branch?: { name: string } | null;
   }): PrescriptionDTO {
     return {
       id: p.id,
       tenantId: p.tenantId,
       branchId: p.branchId,
+      branchName: p.branch?.name ?? null,
       patientId: p.patientId,
       patientName: p.patient.fullName,
       patientPid: p.patient.pid,
@@ -82,8 +84,14 @@ export class PrescriptionsService {
 
     const where: Record<string, unknown> = {};
     if (tenantId) where.tenantId = tenantId;
-    if (branchId) where.branchId = branchId;
-    if (patientId) where.patientId = patientId;
+    if (patientId) {
+      where.patientId = patientId;
+      // When reviewing a patient's prescription history, do not restrict by branchId
+      // so doctors can see all active/past medications across the health network.
+    } else if (branchId) {
+      where.branchId = branchId;
+    }
+
     if (status) {
       const upper = status.toUpperCase();
       if (Object.values(PrescriptionStatus).includes(upper as PrescriptionStatus)) {
@@ -96,6 +104,7 @@ export class PrescriptionsService {
       include: {
         patient: { select: { fullName: true, pid: true } },
         doctor: { select: { displayName: true } },
+        branch: { select: { name: true } },
         items: true,
       },
       orderBy: { createdAt: 'desc' },
