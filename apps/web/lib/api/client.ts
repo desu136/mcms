@@ -14,19 +14,45 @@ export async function apiRequest<T>(
   options: ApiRequestOptions = {},
 ): Promise<T> {
   const { token, headers = {}, ...rest } = options;
-  const mergedHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...headers,
+  const buildHeaders = (authToken?: string | null) => {
+    const merged: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...headers,
+    };
+    if (authToken) {
+      merged['Authorization'] = `Bearer ${authToken}`;
+    }
+    return merged;
   };
-  if (token) {
-    mergedHeaders['Authorization'] = `Bearer ${token}`;
-  }
 
   const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-  const res = await fetch(`${API_BASE}/${cleanPath}`, {
+  let res = await fetch(`${API_BASE}/${cleanPath}`, {
     ...rest,
-    headers: mergedHeaders,
+    headers: buildHeaders(token),
   });
+
+  if (res.status === 401 && typeof window !== 'undefined') {
+    const refreshToken = localStorage.getItem('mcms_refresh_token');
+    if (refreshToken) {
+      try {
+        const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (refreshRes.ok) {
+          const data = (await refreshRes.json()) as { accessToken: string; refreshToken: string };
+          localStorage.setItem('mcms_refresh_token', data.refreshToken);
+          res = await fetch(`${API_BASE}/${cleanPath}`, {
+            ...rest,
+            headers: buildHeaders(data.accessToken),
+          });
+        }
+      } catch {
+        // Fall through to error handler
+      }
+    }
+  }
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({}));

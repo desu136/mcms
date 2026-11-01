@@ -65,6 +65,7 @@ interface CreateStaffPayload {
   password: string;
   displayName: string;
   roleIds: string[];
+  tenantId?: string | undefined;
   branchId?: string | undefined;
   staffProfile?: {
     department?: string | undefined;
@@ -78,7 +79,7 @@ interface CreateStaffPayload {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 // Clinical staff roles managed by the Clinic Admin
-const CLINICAL_ROLES = ['DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECH', 'PHARMACIST'];
+const CLINICAL_ROLES = ['DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECH', 'LAB_TECHNICIAN', 'PHARMACIST'];
 
 const DEPARTMENTS = [
   'General Medicine', 'Pediatrics', 'Gynecology & Obstetrics',
@@ -92,6 +93,7 @@ const ROLE_ICONS: Record<string, React.ElementType> = {
   NURSE: Syringe,
   RECEPTIONIST: ClipboardList,
   LAB_TECH: FlaskConical,
+  LAB_TECHNICIAN: FlaskConical,
   PHARMACIST: Pill,
 };
 
@@ -100,6 +102,7 @@ const ROLE_COLORS: Record<string, { bg: string; text: string; border: string }> 
   NURSE: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   RECEPTIONIST: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
   LAB_TECH: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+  LAB_TECHNICIAN: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
   PHARMACIST: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
 };
 
@@ -112,14 +115,38 @@ const rawApiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const API_BASE = `${rawApiUrl.replace(/\/+$/, '')}/api/v1`;
 
 async function apiRequest<T>(path: string, token: string | null, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}/${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  const doFetch = (authToken: string | null) =>
+    fetch(`${API_BASE}/${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+
+  let res = await doFetch(token);
+
+  if (res.status === 401 && typeof window !== 'undefined') {
+    const refreshToken = localStorage.getItem('mcms_refresh_token');
+    if (refreshToken) {
+      try {
+        const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (refreshRes.ok) {
+          const data = (await refreshRes.json()) as { accessToken: string; refreshToken: string };
+          localStorage.setItem('mcms_refresh_token', data.refreshToken);
+          res = await doFetch(data.accessToken);
+        }
+      } catch {
+        // Fall through to standard error handling
+      }
+    }
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as Record<string, unknown>)?.message as string ?? `Error ${res.status}`);
@@ -603,7 +630,7 @@ function ConfirmModal({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function StaffManagementPage() {
-  const { accessToken } = useAuth();
+  const { user: currentUser, accessToken } = useAuth();
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [staffRoles, setStaffRoles] = useState<StaffRole[]>([]);
   const [branches, setBranches] = useState<BranchItem[]>([]);
@@ -691,6 +718,7 @@ export default function StaffManagementPage() {
       email: data.email,
       password: data.password,
       displayName: data.displayName,
+      tenantId: currentUser?.tenant?.id ?? undefined,
       roleIds: roleObj ? [roleObj.id] : [data.role],
       ...(data.branchId ? { branchId: data.branchId } : {}),
       staffProfile: Object.fromEntries(

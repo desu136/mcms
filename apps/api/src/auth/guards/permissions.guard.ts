@@ -50,6 +50,13 @@ export class PermissionsGuard implements CanActivate {
       if (required === 'tenants:manage' && userPermissions.has('tenants:write')) return true;
       if (required === 'branches:write' && userPermissions.has('branches:manage')) return true;
       if (required === 'branches:manage' && userPermissions.has('branches:write')) return true;
+      // Handle user account status modification aliases
+      if (
+        (required === 'users:activate' || required === 'users:deactivate') &&
+        (userPermissions.has('users:update') || userPermissions.has('users:delete'))
+      ) {
+        return true;
+      }
       return false;
     };
 

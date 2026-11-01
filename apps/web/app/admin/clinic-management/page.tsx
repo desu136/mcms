@@ -77,6 +77,7 @@ const ROLE_ICONS: Record<string, React.ElementType> = {
   NURSE: Syringe,
   RECEPTIONIST: ClipboardList,
   LAB_TECH: FlaskConical,
+  LAB_TECHNICIAN: FlaskConical,
   PHARMACIST: Pill,
 };
 
@@ -85,6 +86,7 @@ const ROLE_COLORS: Record<string, { bg: string; text: string; border: string }> 
   NURSE: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   RECEPTIONIST: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
   LAB_TECH: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+  LAB_TECHNICIAN: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
   PHARMACIST: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
 };
 
