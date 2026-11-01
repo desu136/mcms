@@ -68,7 +68,12 @@ export class AppointmentsService {
     return `T${String(count + 1).padStart(3, '0')}`;
   }
 
-  async getQueue(ctx: TenantContext): Promise<QueueEntryDTO[]> {
+  async getQueue(
+    ctx: TenantContext,
+    status?: string,
+    doctorId?: string,
+    departmentId?: string,
+  ): Promise<QueueEntryDTO[]> {
     const { tenantId, branchId, isSuperAdmin } = ctx;
     if (!branchId && !isSuperAdmin) {
       throw new ForbiddenException('Branch context required for queue operations');
@@ -77,6 +82,10 @@ export class AppointmentsService {
     const where: Record<string, unknown> = {};
     if (branchId) where.branchId = branchId;
     else if (tenantId) where.tenantId = tenantId;
+
+    if (status) where.status = this.normalizeQueueStatus(status);
+    if (doctorId) where.assignedDoctorId = doctorId;
+    if (departmentId) where.departmentId = departmentId;
 
     const entries = await this.prisma.queueEntry.findMany({
       where: where as any,
@@ -230,7 +239,16 @@ export class AppointmentsService {
       if (branchId) where.branchId = branchId;
       else if (tenantId) where.tenantId = tenantId;
     }
-    if (date) where.appointmentDate = new Date(date);
+    if (date) {
+      const parsedDate = new Date(date);
+      if (!isNaN(parsedDate.getTime())) {
+        const start = new Date(parsedDate);
+        start.setUTCHours(0, 0, 0, 0);
+        const end = new Date(parsedDate);
+        end.setUTCHours(23, 59, 59, 999);
+        where.appointmentDate = { gte: start, lte: end };
+      }
+    }
     if (doctorId) where.doctorId = doctorId;
 
     const appointments = await this.prisma.appointment.findMany({
@@ -255,7 +273,7 @@ export class AppointmentsService {
       doctorName: a.doctor?.displayName ?? null,
       departmentId: a.departmentId,
       roomId: a.roomId,
-      appointmentDate: a.appointmentDate.toISOString(),
+      appointmentDate: a.appointmentDate.toISOString().split('T')[0] ?? a.appointmentDate.toISOString(),
       startTime: a.startTime,
       endTime: a.endTime,
       type: a.type,
