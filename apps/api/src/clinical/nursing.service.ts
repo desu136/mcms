@@ -72,7 +72,12 @@ export class NursingService {
     const where: Record<string, unknown> = {};
     if (tenantId) where.tenantId = tenantId;
     if (branchId) where.branchId = branchId;
-    if (status) where.status = status as TaskStatus;
+    if (status) {
+      const upper = status.toUpperCase();
+      if (Object.values(TaskStatus).includes(upper as TaskStatus)) {
+        where.status = upper as TaskStatus;
+      }
+    }
     if (assignedToId) where.assignedToId = assignedToId;
     if (patientId) where.patientId = patientId;
 

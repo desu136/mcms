@@ -1,8 +1,11 @@
-﻿'use client';
+'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Heart, Activity, Thermometer, Wind, Check } from 'lucide-react';
 import { NURSE_PATIENTS, NursePatient } from './nurseMockData';
+import { useAuth } from '@/lib/auth/auth-context';
+import { recordVitals } from '@/lib/api/clinical';
+import { fetchPatients } from '@/lib/api/patients';
 
 interface RecordVitalsModalProps {
   isOpen: boolean;
@@ -17,6 +20,8 @@ export default function RecordVitalsModal({
   selectedPatientId,
   onSave,
 }: RecordVitalsModalProps) {
+  const { accessToken } = useAuth();
+  const [patientsList, setPatientsList] = useState<{ id: string; name: string; pid: string }[]>([]);
   const [patientId, setPatientId] = useState(selectedPatientId || NURSE_PATIENTS[0]!.id);
   const [mode, setMode] = useState<'manual' | 'quick'>('manual');
   const [temp, setTemp] = useState('36.8');
@@ -27,11 +32,58 @@ export default function RecordVitalsModal({
   const [spo2, setSpo2] = useState('98');
   const [note, setNote] = useState('');
   const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (selectedPatientId) setPatientId(selectedPatientId);
+  }, [selectedPatientId]);
+
+  useEffect(() => {
+    if (!accessToken || !isOpen) return;
+    void (async () => {
+      try {
+        const res = await fetchPatients(accessToken, { limit: 50 });
+        if (res.data.length > 0) {
+          setPatientsList(
+            res.data.map((p) => ({
+              id: p.id,
+              name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+              pid: p.pid,
+            })),
+          );
+        }
+      } catch (err) {
+        console.error('Failed to load patients in RecordVitalsModal:', err);
+      }
+    })();
+  }, [accessToken, isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
+    if (accessToken) {
+      try {
+        const parsedTemp = parseFloat(temp);
+        const tempCelsius = tempUnit === 'F' ? Math.round(((parsedTemp - 32) * (5 / 9)) * 10) / 10 : parsedTemp;
+        await recordVitals(
+          {
+            patientId,
+            temperature: tempCelsius,
+            systolicBp: parseInt(systolic, 10),
+            diastolicBp: parseInt(diastolic, 10),
+            heartRate: parseInt(hr, 10),
+            spo2: parseFloat(spo2),
+            ...(note.trim() ? { notes: note.trim() } : {}),
+          },
+          accessToken,
+        );
+      } catch (err) {
+        console.error('Failed to save vitals to API:', err);
+      }
+    }
+    setIsSaving(false);
     setIsSaved(true);
     if (onSave) {
       onSave({
@@ -113,11 +165,17 @@ export default function RecordVitalsModal({
               onChange={(e) => setPatientId(e.target.value)}
               className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
             >
-              {NURSE_PATIENTS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.pid}) â€” Room {p.room} â€¢ {p.department}
-                </option>
-              ))}
+              {patientsList.length > 0
+                ? patientsList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.pid})
+                    </option>
+                  ))
+                : NURSE_PATIENTS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.pid}) — Room {p.room} • {p.department}
+                    </option>
+                  ))}
             </select>
           </div>
 

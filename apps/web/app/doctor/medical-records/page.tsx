@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   FileText,
   Search,
@@ -27,12 +27,16 @@ import {
   Layers,
   Stethoscope,
   Upload,
+  RefreshCw,
 } from 'lucide-react';
-import { INITIAL_PATIENTS } from '../../../components/doctor/doctorMockData';
+import { INITIAL_PATIENTS, PatientItem } from '../../../components/doctor/doctorMockData';
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
 import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescriptionModal';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
+import { useAuth } from '../../../lib/auth/auth-context';
+import { fetchPatients } from '../../../lib/api/patients';
+import type { PatientDTO } from '@mcms/contracts';
 
 /* ─── Types ──────────────────────────────────────────── */
 type VisitType = 'Follow-up' | 'Consultation' | 'Lab Visit' | 'Imaging' | 'Prescription';
@@ -84,7 +88,55 @@ const deptIconColor: Record<string, string> = {
 
 /* ═══════════════════════════════════════════════════════ */
 export default function DoctorMedicalRecordsPage() {
-  const patient = INITIAL_PATIENTS[0]!;
+  const { accessToken } = useAuth();
+  const [livePatients, setLivePatients] = useState<PatientDTO[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadPatients = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const res = await fetchPatients(accessToken);
+      const data = res.data;
+      setLivePatients(data);
+      if (data.length > 0 && !selectedPatientId) {
+        setSelectedPatientId(data[0]!.id);
+      }
+    } catch (err) {
+      console.error('Failed to load patients for medical records:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken, selectedPatientId]);
+
+  useEffect(() => {
+    loadPatients();
+  }, [loadPatients]);
+
+  const activeLivePatient = livePatients.find((p) => p.id === selectedPatientId) || livePatients[0];
+  const patient: PatientItem = activeLivePatient
+    ? {
+        id: activeLivePatient.id,
+        name: activeLivePatient.fullName || `${activeLivePatient.firstName} ${activeLivePatient.lastName}`,
+        pid: activeLivePatient.pid,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(activeLivePatient.fullName || activeLivePatient.firstName)}`,
+        age: activeLivePatient.dateOfBirth
+          ? Math.max(0, new Date().getFullYear() - new Date(activeLivePatient.dateOfBirth).getFullYear())
+          : 30,
+        gender: (activeLivePatient.gender as 'Male' | 'Female') || 'Male',
+        phone: activeLivePatient.phoneNumber || '—',
+        email: activeLivePatient.email || '—',
+        address: activeLivePatient.address || 'Addis Ababa, Ethiopia',
+        status: 'Active',
+        lastVisit: 'Recent',
+        lastVisitReason: 'General consultation',
+        department: 'General',
+        totalVisits: 0,
+        conditions: [],
+      }
+    : INITIAL_PATIENTS[0]!;
+
   const [selectedTab, setSelectedTab] = useState<TabId>('records');
   const [searchQuery, setSearchQuery] = useState('');
   const [visitTypeFilter, setVisitTypeFilter] = useState('All Visit Types');
@@ -119,17 +171,39 @@ export default function DoctorMedicalRecordsPage() {
           <FileText className="w-5 h-5" />
         </div>
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Medical Records</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Medical Records</h1>
+            <button
+              onClick={loadPatients}
+              disabled={isLoading}
+              title="Refresh patients"
+              className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
+            </button>
+          </div>
           <p className="text-xs text-slate-500 font-medium">
             View and manage patient medical history, diagnoses, prescriptions and test results.
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-2.5 shrink-0">
+      <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+        {livePatients.length > 0 && (
+          <select
+            value={patient.id}
+            onChange={(e) => setSelectedPatientId(e.target.value)}
+            className="px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-2xs text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
+          >
+            {livePatients.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.fullName || `${p.firstName} ${p.lastName}`} ({p.pid})
+              </option>
+            ))}
+          </select>
+        )}
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-2xs text-xs font-bold text-slate-700">
           <Calendar className="w-3.5 h-3.5 text-blue-500" />
-          Oct 01, 2026 – Oct 31, 2026
-          <ExternalLink className="w-3 h-3 text-slate-400" />
+          {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
         </div>
         <button
           onClick={() => alert('New clinical medical record encounter started')}
@@ -570,12 +644,14 @@ export default function DoctorMedicalRecordsPage() {
       <DoctorPrescriptionModal
         isOpen={prescriptionModalOpen}
         onClose={() => setPrescriptionModalOpen(false)}
-        defaultPatientId={patient.id}
+        patientId={patient.id}
+        patientName={patient.name}
       />
       <DoctorLabOrderModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        defaultPatientId={patient.id}
+        patientId={patient.id}
+        patientName={patient.name}
       />
     </>
   );

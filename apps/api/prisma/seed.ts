@@ -37,10 +37,12 @@ const PERMISSIONS = [
   // Tenant & Organization
   { slug: 'tenants:read', name: 'View Tenants', module: 'tenants', description: 'View organization details' },
   { slug: 'tenants:manage', name: 'Manage Tenants', module: 'tenants', description: 'Create and configure organizations' },
+  { slug: 'tenants:write', name: 'Write Tenants', module: 'tenants', description: 'Create and configure organizations' },
 
   // Branches
   { slug: 'branches:read', name: 'View Branches', module: 'branches', description: 'View clinic branch locations' },
   { slug: 'branches:manage', name: 'Manage Branches', module: 'branches', description: 'Create and configure physical facilities' },
+  { slug: 'branches:write', name: 'Write Branches', module: 'branches', description: 'Create and configure physical facilities' },
 
   // Departments & Rooms
   { slug: 'departments:read', name: 'View Departments', module: 'departments', description: 'View clinical departments' },

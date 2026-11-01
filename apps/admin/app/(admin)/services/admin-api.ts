@@ -40,11 +40,14 @@ export interface AdminUserSummary {
   roles: string[];
   permissions: string[];
   createdAt: string;
+  tenantId?: string | null;
+  tenantName?: string | null;
   staffProfile?: {
-    department?: string;
-    jobTitle?: string;
-    phoneNumber?: string;
-  };
+    department?: string | null;
+    jobTitle?: string | null;
+    phoneNumber?: string | null;
+    licenseNumber?: string | null;
+  } | null;
 }
 
 export interface CreateUserPayload {
@@ -52,14 +55,15 @@ export interface CreateUserPayload {
   password: string;
   displayName: string;
   roleIds: string[];
-  staffProfile?: { department?: string; jobTitle?: string; phoneNumber?: string } | undefined;
+  tenantId?: string;
+  staffProfile?: { department?: string; jobTitle?: string; phoneNumber?: string; licenseNumber?: string } | undefined;
 }
 
 export interface UpdateUserPayload {
   displayName?: string;
   isActive?: boolean;
   roleIds?: string[];
-  staffProfile?: { department?: string; jobTitle?: string; phoneNumber?: string } | undefined;
+  staffProfile?: { department?: string; jobTitle?: string; phoneNumber?: string; licenseNumber?: string } | undefined;
 }
 
 export const adminUsersApi = {
@@ -73,6 +77,71 @@ export const adminUsersApi = {
     request<void>(`users/${id}/deactivate`, { method: 'PATCH', body: JSON.stringify({}), token }),
   activate: (id: string, token: string | null) =>
     request<void>(`users/${id}/activate`, { method: 'PATCH', body: JSON.stringify({}), token }),
+};
+
+// ─── Tenants ─────────────────────────────────────────────────────────────────
+
+export interface AdminTenantSummary {
+  id: string;
+  name: string;
+  slug: string;
+  code: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  licenseNumber?: string | null;
+  currency: string;
+  timezone: string;
+  logoUrl: string | null;
+  subscriptionPlan: string;
+  maxBranches: number;
+  maxUsers: number;
+  isActive: boolean;
+  createdAt: string;
+  branchCount: number;
+  userCount: number;
+}
+
+export interface CreateTenantPayload {
+  name: string;
+  slug?: string;
+  code?: string;
+  licenseNumber?: string;
+  adminName?: string;
+  adminEmail?: string;
+  adminPassword?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  currency?: string;
+  timezone?: string;
+  subscriptionPlan?: string;
+  maxBranches?: number;
+  maxUsers?: number;
+}
+
+export interface UpdateTenantPayload {
+  name?: string;
+  licenseNumber?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  currency?: string;
+  timezone?: string;
+  logoUrl?: string;
+  subscriptionPlan?: string;
+  maxBranches?: number;
+  maxUsers?: number;
+  isActive?: boolean;
+}
+
+export const adminTenantsApi = {
+  list: (token: string | null) => request<AdminTenantSummary[]>('tenants', { token }),
+  get: (id: string, token: string | null) => request<AdminTenantSummary>(`tenants/${id}`, { token }),
+  create: (data: CreateTenantPayload, token: string | null) =>
+    request<AdminTenantSummary>('tenants', { method: 'POST', body: JSON.stringify(data), token }),
+  update: (id: string, data: UpdateTenantPayload, token: string | null) =>
+    request<AdminTenantSummary>(`tenants/${id}`, { method: 'PATCH', body: JSON.stringify(data), token }),
 };
 
 // ─── Roles ───────────────────────────────────────────────────────────────────

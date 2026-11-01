@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import NurseStatCard from '@/components/nurse/NurseStatCard';
 import { NURSE_PATIENTS, NursePatient } from '@/components/nurse/nurseMockData';
+import { useAuth } from '@/lib/auth/auth-context';
+import { fetchPatients } from '@/lib/api/patients';
 import {
   Users, Eye, MessageCircle, MoreVertical, ChevronLeft, ChevronRight,
   Filter, Search, Activity, Heart, Thermometer, Droplets,
   Phone, Mail, MapPin, AlertCircle, CheckCircle2, FileText,
-  Pill, FlaskConical, UserCircle,
+  Pill, FlaskConical, UserCircle, RefreshCw,
 } from 'lucide-react';
 import NursePatientDetailsModal from '@/components/nurse/NursePatientDetailsModal';
 import RecordVitalsModal from '@/components/nurse/RecordVitalsModal';
@@ -34,6 +36,9 @@ const TABS = [
 type RightTab = 'Overview' | 'Visit History' | 'Medical Records';
 
 export default function NursePatientsPage() {
+  const { accessToken } = useAuth();
+  const [patients, setPatients] = useState<NursePatient[]>(NURSE_PATIENTS);
+  const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
@@ -49,7 +54,52 @@ export default function NursePatientsPage() {
 
   const rowsPerPage = 10;
 
-  const filtered = NURSE_PATIENTS.filter(p => {
+  const loadPatients = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const res = await fetchPatients(accessToken, { limit: 50 });
+      if (res && res.data && res.data.length > 0) {
+        const mapped: NursePatient[] = res.data.map((p, idx) => {
+          const mock = NURSE_PATIENTS[idx % NURSE_PATIENTS.length] as NursePatient;
+          return {
+            id: p.id,
+            pid: p.pid,
+            name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+            age: p.dateOfBirth
+              ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
+              : 30,
+            gender: (p.gender === 'Female' ? 'Female' : 'Male'),
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.firstName)}`,
+            phone: p.phoneNumber || '—',
+            email: p.email || '—',
+            address: p.address || 'Addis Ababa, Ethiopia',
+            room: mock?.room ?? 'A-101',
+            bed: mock?.bed ?? 'Bed 01',
+            department: mock?.department ?? 'General',
+            visitReason: 'General consultation',
+            status: mock?.status ?? 'In Care',
+            vitalsStatus: 'Normal',
+            vitals: mock?.vitals ?? { bp: '118/76', hr: 72, temp: 36.8, spo2: 98 },
+            doctor: mock?.doctor ?? 'Dr. Fitsum Alemu',
+            admissionDate: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : 'N/A',
+          };
+        });
+        setPatients(mapped);
+        setSelectedPatient(mapped[0]!);
+      }
+    } catch (err) {
+      console.error('Failed to load patients for nurse portal:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadPatients();
+  }, [loadPatients]);
+
+  const filtered = patients.filter(p => {
     const q = searchQuery.toLowerCase();
     const matchQ = !q || p.name.toLowerCase().includes(q) || p.pid.toLowerCase().includes(q) || p.visitReason.toLowerCase().includes(q);
     const matchTab = activeTab === 'all'
@@ -83,12 +133,23 @@ export default function NursePatientsPage() {
               <p className="text-xs text-gray-400 mt-0.5">Manage and monitor all assigned patients in your ward.</p>
             </div>
           </div>
-          <button
-            onClick={() => handleOpenDetails(selectedPatient)}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-all hover:scale-[1.01]"
-          >
-            View Patient Details
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void loadPatients()}
+              disabled={isLoading}
+              className="px-2.5 py-1.5 border border-gray-200 hover:bg-white bg-white/70 text-gray-700 text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 transition disabled:opacity-50"
+              title="Refresh Patients"
+            >
+              <RefreshCw size={13} className={`text-blue-600 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              onClick={() => handleOpenDetails(selectedPatient)}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-all hover:scale-[1.01]"
+            >
+              View Patient Details
+            </button>
+          </div>
         </div>
 
         {/* Stat Cards */}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users,
   UserPlus,
@@ -25,9 +25,10 @@ import {
   Heart,
   ExternalLink,
   ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
+import type { PatientDTO } from '@mcms/contracts';
 import {
-  INITIAL_PATIENTS,
   PatientItem,
 } from '../../../components/doctor/doctorMockData';
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
@@ -36,9 +37,12 @@ import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescripti
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 import DoctorStatCard from '../../../components/doctor/DoctorStatCard';
+import { useAuth } from '../../../lib/auth/auth-context';
+import { fetchPatients } from '../../../lib/api/patients';
 
 export default function DoctorPatientsPage() {
-  const [patientsList, setPatientsList] = useState<PatientItem[]>(INITIAL_PATIENTS);
+  const { accessToken } = useAuth();
+  const [patientsList, setPatientsList] = useState<PatientItem[]>([]);
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'inactive' | 'recent'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
@@ -46,9 +50,10 @@ export default function DoctorPatientsPage() {
   const [selectedVisitType, setSelectedVisitType] = useState('All Visit Types');
   const [selectedPatientIds, setSelectedPatientIds] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Active highlighted patient for right panel
-  const [highlightedPatient, setHighlightedPatient] = useState<PatientItem>(INITIAL_PATIENTS[0]!);
+  const [highlightedPatient, setHighlightedPatient] = useState<PatientItem | null>(null);
   const [rightPanelTab, setRightPanelTab] = useState<'overview' | 'medical' | 'appointments'>('overview');
 
   // Modals & Drawers
@@ -56,6 +61,63 @@ export default function DoctorPatientsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
+
+  const now = new Date();
+  const dateLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const dayLabel = now.toLocaleDateString('en-US', { weekday: 'long' });
+
+  const toPatientItem = (p: PatientDTO): PatientItem => {
+    const age = p.dateOfBirth
+      ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
+      : 30;
+    return {
+      id: p.id,
+      pid: p.pid || p.id.slice(0, 8),
+      name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+      age,
+      gender: p.gender === 'FEMALE' ? 'Female' : 'Male',
+      department: 'General Medicine',
+      phone: p.phoneNumber || '—',
+      email: p.email || '—',
+      address: p.address || 'Addis Ababa, Ethiopia',
+      lastVisit: 'Recent',
+      lastVisitReason: 'Routine Consultation',
+      status: 'Active',
+      avatar: p.gender === 'FEMALE'
+        ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
+        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+      totalVisits: 1,
+      conditions: [
+        {
+          title: 'Routine Health Checkup',
+          diagnosedDate: '2026',
+          status: 'Active',
+          type: 'general',
+        },
+      ],
+    };
+  };
+
+  const loadPatients = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const resp = await fetchPatients(accessToken, { limit: 100 });
+      const items = resp.data.map(toPatientItem);
+      setPatientsList(items);
+      if (items.length > 0 && !highlightedPatient) {
+        setHighlightedPatient(items[0] || null);
+      }
+    } catch (err) {
+      console.error('Failed to load patients:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken, highlightedPatient]);
+
+  useEffect(() => {
+    void loadPatients();
+  }, [loadPatients]);
 
   // Filtered patients
   const filteredPatients = patientsList.filter((p) => {
@@ -67,7 +129,8 @@ export default function DoctorPatientsPage() {
       const match =
         p.name.toLowerCase().includes(q) ||
         p.pid.toLowerCase().includes(q) ||
-        p.phone.includes(q);
+        p.phone.includes(q) ||
+        p.email.toLowerCase().includes(q);
       if (!match) return false;
     }
 
@@ -95,7 +158,7 @@ export default function DoctorPatientsPage() {
   };
 
   const handlePatientAdded = (newP: PatientItem) => {
-    setPatientsList([newP, ...patientsList]);
+    setPatientsList((prev) => [newP, ...prev]);
     setHighlightedPatient(newP);
   };
 
@@ -118,7 +181,7 @@ export default function DoctorPatientsPage() {
       <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
         <button
           onClick={() => setAddPatientModalOpen(true)}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all"
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all cursor-pointer"
         >
           <UserPlus className="w-4 h-4" />
           <span>Add New Patient</span>
@@ -127,51 +190,49 @@ export default function DoctorPatientsPage() {
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
           <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
           <div className="text-right">
-            <div className="text-xs font-bold text-slate-800">Oct 19, 2026</div>
-            <div className="text-[10px] text-slate-400 font-medium leading-none">Monday</div>
+            <div className="text-xs font-bold text-slate-800">{dateLabel}</div>
+            <div className="text-[10px] text-slate-400 font-medium leading-none">{dayLabel}</div>
           </div>
-          <div className="flex items-center gap-0.5 ml-2 border-l border-slate-200 pl-2 text-slate-400">
-            <button className="p-0.5 rounded hover:bg-slate-100">
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <button className="p-0.5 rounded hover:bg-slate-100">
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <button
+            onClick={() => void loadPatients()}
+            title="Refresh"
+            className="ml-2 border-l border-slate-200 pl-2 text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
     </div>
   );
 
+  const activeCount = patientsList.filter((p) => p.status === 'Active').length;
+  const inactiveCount = patientsList.filter((p) => p.status === 'Inactive').length;
+
   const kpisContent = (
     <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
       <DoctorStatCard
         title="Total Patients"
-        value={248}
+        value={isLoading ? '—' : patientsList.length}
         icon={Users}
         color="blue"
-        change={{ value: '12%', trend: 'up', label: 'vs. last month' }}
       />
       <DoctorStatCard
         title="Active Patients"
-        value={232}
+        value={isLoading ? '—' : activeCount}
         icon={Users}
         color="emerald"
-        change={{ value: '10%', trend: 'up', label: 'vs. last month' }}
       />
       <DoctorStatCard
-        title="New Patients"
-        value={18}
+        title="Recent Patients"
+        value={isLoading ? '—' : patientsList.length}
         icon={Users}
         color="purple"
-        change={{ value: '5%', trend: 'up', label: 'vs. last month' }}
       />
       <DoctorStatCard
         title="Inactive Patients"
-        value={16}
+        value={isLoading ? '—' : inactiveCount}
         icon={Users}
         color="orange"
-        change={{ value: '3%', trend: 'down', label: 'vs. last month' }}
       />
     </div>
   );
@@ -199,130 +260,136 @@ export default function DoctorPatientsPage() {
             </div>
 
             {/* Profile Avatar & Demographics */}
-            <div className="flex items-start gap-4 pb-4 border-b border-slate-100">
-              <img
-                src={highlightedPatient.avatar}
-                alt={highlightedPatient.name}
-                className="w-16 h-16 rounded-2xl object-cover ring-2 ring-blue-500/20 shadow-2xs"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-base font-bold text-slate-800 truncate">
-                    {highlightedPatient.name}
-                  </h4>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shrink-0">
-                    ● Active
-                  </span>
-                </div>
-                <div className="text-xs text-blue-600 font-semibold mb-1">
-                  {highlightedPatient.pid}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {highlightedPatient.age} years / {highlightedPatient.gender}
-                </div>
-                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-1">
-                  <Phone className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{highlightedPatient.phone}</span>
-                </div>
-                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                  <Mail className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="truncate">{highlightedPatient.email}</span>
-                </div>
-                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="truncate">{highlightedPatient.address}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sub-tabs (Overview, Medical History, Appointments) */}
-            <div className="flex items-center gap-2 my-4 p-1 rounded-xl bg-slate-100/70 border border-slate-200/50">
-              {(['overview', 'medical', 'appointments'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setRightPanelTab(tab)}
-                  className={`flex-1 py-1.5 text-xs font-bold capitalize rounded-lg transition-all ${
-                    rightPanelTab === tab
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {tab === 'overview'
-                    ? 'Overview'
-                    : tab === 'medical'
-                    ? 'Medical History'
-                    : 'Appointments'}
-                </button>
-              ))}
-            </div>
-
-            {/* Sub-tab content */}
-            {rightPanelTab === 'overview' && (
-              <div className="space-y-3">
-                {/* Total Visits */}
-                <div className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] text-slate-400 font-medium">Total Visits</div>
-                    <div className="text-lg font-extrabold text-slate-800">{highlightedPatient.totalVisits}</div>
+            {highlightedPatient ? (
+              <>
+                <div className="flex items-start gap-4 pb-4 border-b border-slate-100">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-extrabold text-2xl flex items-center justify-center ring-2 ring-blue-500/20 shadow-2xs shrink-0">
+                    {highlightedPatient.name.charAt(0)}
                   </div>
-                  <FileText className="w-5 h-5 text-blue-500" />
-                </div>
-
-                {/* Last Visit + Next Appointment side-by-side */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/60">
-                    <div className="flex items-center gap-1 mb-1">
-                      <CalendarDays className="w-3 h-3 text-emerald-500" />
-                      <div className="text-[10px] text-slate-400 font-medium">Last Visit</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-base font-bold text-slate-800 truncate">
+                        {highlightedPatient.name}
+                      </h4>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shrink-0">
+                        ● Active
+                      </span>
                     </div>
-                    <div className="text-[11px] font-bold text-slate-800">{highlightedPatient.lastVisit}</div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">{highlightedPatient.department}</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl border border-blue-100 bg-blue-50/40">
-                    <div className="flex items-center gap-1 mb-1">
-                      <CalendarDays className="w-3 h-3 text-blue-500" />
-                      <div className="text-[10px] text-slate-400 font-medium">Next Appt.</div>
+                    <div className="text-xs text-blue-600 font-semibold mb-1">
+                      {highlightedPatient.pid}
                     </div>
-                    <div className="text-[11px] font-bold text-slate-800">{highlightedPatient.nextAppointment ? highlightedPatient.nextAppointment.split(' - ')[0] : 'None'}</div>
-                    <div className="text-[10px] text-blue-500 font-medium mt-0.5">Cardiology</div>
+                    <div className="text-xs text-slate-500">
+                      {highlightedPatient.age} years / {highlightedPatient.gender}
+                    </div>
+                    <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-1">
+                      <Phone className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{highlightedPatient.phone}</span>
+                    </div>
+                    <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                      <Mail className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="truncate">{highlightedPatient.email}</span>
+                    </div>
+                    <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="truncate">{highlightedPatient.address}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {rightPanelTab === 'medical' && (
-              <div className="space-y-2">
-                {highlightedPatient.conditions.map((c, i) => (
-                  <div
-                    key={i}
-                    className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="text-xs font-bold text-slate-800">{c.title}</div>
-                      <div className="text-[10px] text-slate-400">Diagnosed: {c.diagnosedDate}</div>
-                    </div>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        c.status === 'Active'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-blue-100 text-blue-700'
+                {/* Sub-tabs (Overview, Medical History, Appointments) */}
+                <div className="flex items-center gap-2 my-4 p-1 rounded-xl bg-slate-100/70 border border-slate-200/50">
+                  {(['overview', 'medical', 'appointments'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setRightPanelTab(tab)}
+                      className={`flex-1 py-1.5 text-xs font-bold capitalize rounded-lg transition-all ${
+                        rightPanelTab === tab
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      {c.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {rightPanelTab === 'appointments' && (
-              <div className="space-y-2 text-xs">
-                <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/50">
-                  <div className="font-bold text-blue-900">Upcoming Cardiology Consultation</div>
-                  <div className="text-slate-600 mt-0.5">
-                    {highlightedPatient.nextAppointment || 'Oct 25, 2026 - 09:00 AM'}
-                  </div>
+                      {tab === 'overview'
+                        ? 'Overview'
+                        : tab === 'medical'
+                        ? 'Medical History'
+                        : 'Appointments'}
+                    </button>
+                  ))}
                 </div>
+
+                {/* Sub-tab content */}
+                {rightPanelTab === 'overview' && (
+                  <div className="space-y-3">
+                    {/* Total Visits */}
+                    <div className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between">
+                      <div>
+                        <div className="text-[11px] text-slate-400 font-medium">Total Visits</div>
+                        <div className="text-lg font-extrabold text-slate-800">{highlightedPatient.totalVisits}</div>
+                      </div>
+                      <FileText className="w-5 h-5 text-blue-500" />
+                    </div>
+
+                    {/* Last Visit + Next Appointment side-by-side */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/60">
+                        <div className="flex items-center gap-1 mb-1">
+                          <CalendarDays className="w-3 h-3 text-emerald-500" />
+                          <div className="text-[10px] text-slate-400 font-medium">Last Visit</div>
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-800">{highlightedPatient.lastVisit}</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">{highlightedPatient.department}</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl border border-blue-100 bg-blue-50/40">
+                        <div className="flex items-center gap-1 mb-1">
+                          <CalendarDays className="w-3 h-3 text-blue-500" />
+                          <div className="text-[10px] text-slate-400 font-medium">Next Appt.</div>
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-800">{highlightedPatient.nextAppointment ? highlightedPatient.nextAppointment.split(' - ')[0] : 'None'}</div>
+                        <div className="text-[10px] text-blue-500 font-medium mt-0.5">Cardiology</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {rightPanelTab === 'medical' && (
+                  <div className="space-y-2">
+                    {highlightedPatient.conditions.map((c, i) => (
+                      <div
+                        key={i}
+                        className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">{c.title}</div>
+                          <div className="text-[10px] text-slate-400">Diagnosed: {c.diagnosedDate}</div>
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            c.status === 'Active'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-blue-100 text-blue-700'
+                          }`}
+                        >
+                          {c.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {rightPanelTab === 'appointments' && (
+                  <div className="space-y-2 text-xs">
+                    <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/50">
+                      <div className="font-bold text-blue-900">Upcoming Cardiology Consultation</div>
+                      <div className="text-slate-600 mt-0.5">
+                        {highlightedPatient.nextAppointment || 'Oct 25, 2026 - 09:00 AM'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="py-12 text-center text-xs text-slate-400">
+                No patient selected or registered yet.
               </div>
             )}
           </div>
@@ -335,29 +402,33 @@ export default function DoctorPatientsPage() {
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => alert(`Scheduling appointment for ${highlightedPatient.name}`)}
-                className="p-3.5 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 text-center transition-all group"
+                disabled={!highlightedPatient}
+                onClick={() => alert(`Scheduling appointment for ${highlightedPatient?.name}`)}
+                className="p-3.5 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 text-center transition-all group disabled:opacity-50 cursor-pointer"
               >
                 <CalendarDays className="w-5 h-5 text-blue-600 mx-auto mb-1 group-hover:scale-110 transition-transform" />
                 <div className="text-xs font-bold text-slate-800">New Appointment</div>
               </button>
               <button
+                disabled={!highlightedPatient}
                 onClick={() => setPrescriptionModalOpen(true)}
-                className="p-3.5 rounded-xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/40 text-center transition-all group"
+                className="p-3.5 rounded-xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/40 text-center transition-all group disabled:opacity-50 cursor-pointer"
               >
                 <Pill className="w-5 h-5 text-indigo-600 mx-auto mb-1 group-hover:scale-110 transition-transform" />
                 <div className="text-xs font-bold text-slate-800">Add Prescription</div>
               </button>
               <button
+                disabled={!highlightedPatient}
                 onClick={() => setLabModalOpen(true)}
-                className="p-3.5 rounded-xl border border-slate-200 hover:border-orange-500 hover:bg-orange-50/40 text-center transition-all group"
+                className="p-3.5 rounded-xl border border-slate-200 hover:border-orange-500 hover:bg-orange-50/40 text-center transition-all group disabled:opacity-50 cursor-pointer"
               >
                 <FlaskConical className="w-5 h-5 text-orange-500 mx-auto mb-1 group-hover:scale-110 transition-transform" />
                 <div className="text-xs font-bold text-slate-800">Order Lab Test</div>
               </button>
               <button
+                disabled={!highlightedPatient}
                 onClick={() => setDrawerOpen(true)}
-                className="p-3.5 rounded-xl border border-slate-200 hover:border-cyan-500 hover:bg-cyan-50/40 text-center transition-all group"
+                className="p-3.5 rounded-xl border border-slate-200 hover:border-cyan-500 hover:bg-cyan-50/40 text-center transition-all group disabled:opacity-50 cursor-pointer"
               >
                 <FileText className="w-5 h-5 text-cyan-600 mx-auto mb-1 group-hover:scale-110 transition-transform" />
                 <div className="text-xs font-bold text-slate-800">View Records</div>
@@ -567,18 +638,31 @@ export default function DoctorPatientsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
-                  {filteredPatients.map((patient) => {
-                    const isChecked = selectedPatientIds.includes(patient.id);
-                    const isHighlighted = highlightedPatient.id === patient.id;
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
+                        Loading patients from registry...
+                      </td>
+                    </tr>
+                  ) : filteredPatients.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
+                        No patients found matching the criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPatients.map((patient) => {
+                      const isChecked = selectedPatientIds.includes(patient.id);
+                      const isHighlighted = highlightedPatient?.id === patient.id;
 
-                    return (
-                      <tr
-                        key={patient.id}
-                        onClick={() => setHighlightedPatient(patient)}
-                        className={`hover:bg-slate-50/80 cursor-pointer transition-colors ${
-                          isHighlighted ? 'bg-blue-50/30' : ''
-                        }`}
-                      >
+                      return (
+                        <tr
+                          key={patient.id}
+                          onClick={() => setHighlightedPatient(patient)}
+                          className={`hover:bg-slate-50/80 cursor-pointer transition-colors ${
+                            isHighlighted ? 'bg-blue-50/30' : ''
+                          }`}
+                        >
                         <td
                           className="py-3.5 px-4 text-center"
                           onClick={(e) => e.stopPropagation()}
@@ -665,17 +749,18 @@ export default function DoctorPatientsPage() {
                         </td>
                       </tr>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
 
-            {/* Pagination Controls (Matching screenshot) */}
-            <div className="p-4 px-5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
-              <div>
-                Showing <span className="font-bold text-slate-700">1-10</span> of{' '}
-                <span className="font-bold text-slate-700">248</span> patients
-              </div>
+          {/* Pagination Controls (Matching screenshot) */}
+          <div className="p-4 px-5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
+            <div>
+              Showing <span className="font-bold text-slate-700">{filteredPatients.length > 0 ? 1 : 0}-{filteredPatients.length}</span> of{' '}
+              <span className="font-bold text-slate-700">{patientsList.length}</span> patients
+            </div>
 
               <div className="flex items-center gap-1">
                 <button className="p-1 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50">
@@ -736,13 +821,15 @@ export default function DoctorPatientsPage() {
       <DoctorPrescriptionModal
         isOpen={prescriptionModalOpen}
         onClose={() => setPrescriptionModalOpen(false)}
-        defaultPatientId={highlightedPatient.id}
+        patientId={highlightedPatient?.id}
+        patientName={highlightedPatient?.name}
       />
 
       <DoctorLabOrderModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        defaultPatientId={highlightedPatient.id}
+        patientId={highlightedPatient?.id}
+        patientName={highlightedPatient?.name}
       />
     </>
   );

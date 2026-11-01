@@ -84,7 +84,12 @@ export class PrescriptionsService {
     if (tenantId) where.tenantId = tenantId;
     if (branchId) where.branchId = branchId;
     if (patientId) where.patientId = patientId;
-    if (status) where.status = status as PrescriptionStatus;
+    if (status) {
+      const upper = status.toUpperCase();
+      if (Object.values(PrescriptionStatus).includes(upper as PrescriptionStatus)) {
+        where.status = upper as PrescriptionStatus;
+      }
+    }
 
     const prescriptions = await this.prisma.prescription.findMany({
       where: where as any,

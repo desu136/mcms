@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -6,6 +6,7 @@ import {
   UserCheck,
   Shield,
   Building2,
+  Building,
   Search,
   MoreHorizontal,
   Plus,
@@ -18,11 +19,15 @@ import {
   Info,
   Crown,
   Lock,
+  Eye,
+  EyeOff,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   adminUsersApi,
   adminRolesApi,
+  adminTenantsApi,
   type AdminUserSummary,
   type AdminRole,
   type CreateUserPayload,
@@ -40,17 +45,21 @@ import {
 } from '../components/AdminUI';
 import { StatusBadge, RoleBadge } from '../components/StatusBadge';
 
-// â”€â”€â”€ System Admin only manages these roles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── System Admin only manages these roles ────────────────────────────────────
 // Clinical staff (DOCTOR, NURSE, RECEPTIONIST, etc.) are managed by each
-// Clinic Admin within their own tenant scope â€” NOT by the System Admin.
+// Clinic Admin within their own tenant scope — NOT by the System Admin.
 const SYSTEM_ROLES = ['SUPER_ADMIN', 'CLINIC_ADMIN'];
 
-// â”€â”€â”€ Add / Edit Clinic Admin Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Add / Edit Clinic Admin Dialog ──────────────────────────────────────────
 
 interface ClinicAdminFormData {
+  clinicName: string;
+  licenseNumber: string;
+  address?: string;
   displayName: string;
   email: string;
   password: string;
+  confirmPassword?: string;
   role: 'CLINIC_ADMIN' | 'SUPER_ADMIN';
   phoneNumber: string;
 }
@@ -67,24 +76,36 @@ function ClinicAdminDialog({ open, roles, user, onClose, onSubmit }: ClinicAdmin
   const systemRoleObjects = roles.filter((r) => SYSTEM_ROLES.includes(r.name));
 
   const [form, setForm] = useState<ClinicAdminFormData>({
+    clinicName: user?.tenantName ?? '',
+    licenseNumber: user?.staffProfile?.licenseNumber ?? '',
+    address: '',
     displayName: user?.displayName ?? '',
     email: user?.email ?? '',
     password: '',
+    confirmPassword: '',
     role: (user?.roles?.find((r) => SYSTEM_ROLES.includes(r)) as 'CLINIC_ADMIN' | 'SUPER_ADMIN') ?? 'CLINIC_ADMIN',
     phoneNumber: user?.staffProfile?.phoneNumber ?? '',
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (open) {
       setForm({
+        clinicName: user?.tenantName ?? '',
+        licenseNumber: user?.staffProfile?.licenseNumber ?? '',
+        address: '',
         displayName: user?.displayName ?? '',
         email: user?.email ?? '',
         password: '',
+        confirmPassword: '',
         role: (user?.roles?.find((r) => SYSTEM_ROLES.includes(r)) as 'CLINIC_ADMIN' | 'SUPER_ADMIN') ?? 'CLINIC_ADMIN',
         phoneNumber: user?.staffProfile?.phoneNumber ?? '',
       });
+      setShowPassword(false);
+      setShowConfirmPassword(false);
       setError('');
     }
   }, [open, user]);
@@ -97,21 +118,37 @@ function ClinicAdminDialog({ open, roles, user, onClose, onSubmit }: ClinicAdmin
       setError('Full name and email are required.');
       return;
     }
-    if (!user && !form.password.trim()) {
-      setError('Password is required for new accounts.');
+
+    if (form.role === 'CLINIC_ADMIN' && !form.clinicName.trim()) {
+      setError('Clinic name is required. It will be registered as the primary tenant & Main Branch.');
       return;
     }
-    if (!user && form.password.length < 8) {
-      setError('Password must be at least 8 characters.');
+
+    if (!user) {
+      if (!form.password.trim()) {
+        setError('Password is required for new accounts.');
+        return;
+      }
+      if (form.password.length < 8) {
+        setError('Password must be at least 8 characters.');
+        return;
+      }
+      if (form.password !== form.confirmPassword) {
+        setError('Passwords do not match. Please ensure both passwords match.');
+        return;
+      }
+    } else if (form.password && form.password !== form.confirmPassword) {
+      setError('Passwords do not match.');
       return;
     }
+
     setSubmitting(true);
     setError('');
     try {
       await onSubmit(form);
       onClose();
     } catch (err: any) {
-      setError(err.message ?? 'Failed to save user.');
+      setError(err.message ?? 'Failed to save administrator.');
     } finally {
       setSubmitting(false);
     }
@@ -119,17 +156,17 @@ function ClinicAdminDialog({ open, roles, user, onClose, onSubmit }: ClinicAdmin
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-5">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
               <Crown size={18} className="text-blue-600" />
             </div>
             <div>
               <h3 className="text-sm font-bold text-gray-900">
-                {user ? 'Edit Clinic Administrator' : 'Add Clinic Administrator'}
+                {user ? 'Edit Administrator' : 'Register Clinic Administrator'}
               </h3>
-              <p className="text-[10px] text-gray-400">Platform-level admin account</p>
+              <p className="text-[10px] text-gray-400">Tenant setup with automatic Main Branch provisioning</p>
             </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
@@ -138,113 +175,223 @@ function ClinicAdminDialog({ open, roles, user, onClose, onSubmit }: ClinicAdmin
         </div>
 
         {/* Info banner */}
-        <div className="mb-4 flex gap-2.5 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+        <div className="mb-4 flex gap-2.5 p-3 bg-blue-50/80 border border-blue-100 rounded-xl">
           <Info size={14} className="text-blue-500 shrink-0 mt-0.5" />
           <p className="text-[11px] text-blue-700 leading-relaxed">
-            Clinic Admins manage their own clinic&apos;s staff, departments, and operations.
-            Clinical staff (doctors, nurses, etc.) are added by the Clinic Admin in their tenant portal.
+            Registering a Clinic Admin automatically provisions their <strong>Clinic Tenant</strong> and creates their <strong>Main Branch</strong>. The Clinic Admin will login using these credentials.
           </p>
         </div>
 
         {error && (
-          <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
+          <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600 font-medium">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Role selection */}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Full Name *</label>
-            <input
-              type="text"
-              value={form.displayName}
-              onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-              placeholder="e.g. Dr. Bethlehem Tadesse"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Email Address *</label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-500"
-              placeholder="admin@clinic.com"
-              disabled={!!user}
-              required
-            />
-            {user && <p className="text-[10px] text-gray-400 mt-1">Email cannot be changed after creation.</p>}
-          </div>
-
-          {!user && (
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Temporary Password *</label>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-                placeholder="Min 8 characters"
-                minLength={8}
-              />
-              <p className="text-[10px] text-gray-400 mt-1">User will be prompted to change on first login.</p>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Contact Phone</label>
-            <input
-              type="tel"
-              value={form.phoneNumber}
-              onChange={(e) => setForm((f) => ({ ...f, phoneNumber: e.target.value }))}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-              placeholder="+251 911 000 000"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">System Role</label>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Administrative Role</label>
             <select
               value={form.role}
               onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as 'CLINIC_ADMIN' | 'SUPER_ADMIN' }))}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
             >
               {systemRoleObjects.length > 0
                 ? systemRoleObjects.map((r) => (
                     <option key={r.id} value={r.name}>
-                      {r.name === 'CLINIC_ADMIN' ? 'Clinic Administrator' : 'Super Administrator'}
+                      {r.name === 'CLINIC_ADMIN' ? 'Clinic Administrator (Manages Clinic & Main Branch)' : 'Super Administrator (Platform Wide)'}
                     </option>
                   ))
                 : SYSTEM_ROLES.map((r) => (
                     <option key={r} value={r}>
-                      {r === 'CLINIC_ADMIN' ? 'Clinic Administrator' : 'Super Administrator'}
+                      {r === 'CLINIC_ADMIN' ? 'Clinic Administrator (Manages Clinic & Main Branch)' : 'Super Administrator (Platform Wide)'}
                     </option>
                   ))}
             </select>
+          </div>
+
+          {/* Clinic Information (Only for Clinic Admin) */}
+          {form.role === 'CLINIC_ADMIN' && (
+            <div className="p-3.5 bg-blue-50/40 border border-blue-100 rounded-xl space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-gray-800">
+                <Building2 size={14} className="text-blue-600" />
+                <span>Clinic & Main Branch Information</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Clinic Name *</label>
+                <input
+                  type="text"
+                  value={form.clinicName}
+                  onChange={(e) => setForm((f) => ({ ...f, clinicName: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                  placeholder="e.g. St. Paul Specialized Medical Center"
+                  required={form.role === 'CLINIC_ADMIN'}
+                />
+                <p className="text-[10px] text-blue-600 mt-1 flex items-center gap-1">
+                  <Check size={11} /> Automatically created as the clinic&apos;s Main Branch
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Operating License No.</label>
+                  <input
+                    type="text"
+                    value={form.licenseNumber}
+                    onChange={(e) => setForm((f) => ({ ...f, licenseNumber: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                    placeholder="e.g. LIC-ETH-2024-9102"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-0.5">Health authority license</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Clinic Address</label>
+                  <input
+                    type="text"
+                    value={form.address ?? ''}
+                    onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                    placeholder="e.g. Addis Ababa, Ethiopia"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-0.5">Physical location</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Admin User Details */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-gray-800">Administrator Contact Details</p>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Full Name *</label>
+                <input
+                  type="text"
+                  value={form.displayName}
+                  onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                  placeholder="e.g. Dr. Bethlehem Tadesse"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Contact Phone</label>
+                <input
+                  type="tel"
+                  value={form.phoneNumber}
+                  onChange={(e) => setForm((f) => ({ ...f, phoneNumber: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                  placeholder="+251 911 000 000"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Email Address (Login ID) *</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-500"
+                placeholder="admin@clinic.com"
+                disabled={!!user}
+                required
+              />
+              {user && <p className="text-[10px] text-gray-400 mt-1">Email cannot be changed after creation.</p>}
+            </div>
+          </div>
+
+          {/* Dedicated Password Area */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-800">
+              <Lock size={14} className="text-blue-600" />
+              <span>{user ? 'Reset Password (Optional)' : 'Password & Credentials *'}</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                {user ? 'New Password' : 'Password *'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                  className="w-full pl-3 pr-10 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                  placeholder={user ? 'Leave blank to keep current' : 'Min. 8 characters'}
+                  minLength={user ? 0 : 8}
+                  required={!user}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Confirm Password {user ? '' : '*'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={form.confirmPassword ?? ''}
+                  onChange={(e) => setForm((f) => ({ ...f, confirmPassword: e.target.value }))}
+                  className="w-full pl-3 pr-10 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                  placeholder="Re-enter password to verify"
+                  minLength={user ? 0 : 8}
+                  required={!user && !!form.password}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  tabIndex={-1}
+                >
+                  {showConfirmPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+
+              {form.password && form.confirmPassword && form.password !== form.confirmPassword && (
+                <p className="text-[11px] text-red-500 mt-1">Passwords do not match.</p>
+              )}
+              {form.password && form.confirmPassword && form.password === form.confirmPassword && (
+                <p className="text-[11px] text-emerald-600 mt-1 flex items-center gap-1 font-medium">
+                  <Check size={12} /> Passwords match
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition"
+              className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-[#2979FF] rounded-xl hover:bg-blue-700 disabled:opacity-60 transition flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-[#2979FF] rounded-xl hover:bg-blue-700 disabled:opacity-60 transition flex items-center justify-center gap-2"
             >
               {submitting ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <Check size={15} />
               )}
-              {user ? 'Save Changes' : 'Create Admin Account'}
+              {user ? 'Save Changes' : 'Register Clinic & Admin'}
             </button>
           </div>
         </form>
@@ -335,28 +482,66 @@ export default function UsersRolesPage() {
 
   const handleCreateUser = async (data: ClinicAdminFormData) => {
     if (!accessToken) return;
-    const roleObj = systemRoles.find((r) => r.name === data.role);
-    const payload: CreateUserPayload = {
-      email: data.email,
-      password: data.password,
-      displayName: data.displayName,
-      roleIds: roleObj ? [roleObj.id] : [],
-      staffProfile: data.phoneNumber ? { phoneNumber: data.phoneNumber } : undefined,
-    };
-    await adminUsersApi.create(payload, accessToken);
-    showToast('Admin account created successfully!');
+    if (data.role === 'CLINIC_ADMIN') {
+      await adminTenantsApi.create(
+        {
+          name: data.clinicName.trim(),
+          adminName: data.displayName.trim(),
+          adminEmail: data.email.trim(),
+          adminPassword: data.password,
+          ...(data.licenseNumber.trim() ? { licenseNumber: data.licenseNumber.trim() } : {}),
+          ...(data.phoneNumber.trim() ? { phone: data.phoneNumber.trim() } : {}),
+          ...(data.address?.trim() ? { address: data.address.trim() } : {}),
+        },
+        accessToken,
+      );
+      showToast('Clinic tenant, main branch, and admin created successfully!');
+    } else {
+      const roleObj = systemRoles.find((r) => r.name === data.role);
+      const staffProfile = {
+        ...(data.phoneNumber.trim() ? { phoneNumber: data.phoneNumber.trim() } : {}),
+        ...(data.licenseNumber.trim() ? { licenseNumber: data.licenseNumber.trim() } : {}),
+      };
+      const payload: CreateUserPayload = {
+        email: data.email,
+        password: data.password,
+        displayName: data.displayName,
+        roleIds: roleObj ? [roleObj.id] : [],
+        ...(Object.keys(staffProfile).length > 0 ? { staffProfile } : {}),
+      };
+      await adminUsersApi.create(payload, accessToken);
+      showToast('Super Admin account created successfully!');
+    }
     void fetchData();
   };
 
   const handleUpdateUser = async (data: ClinicAdminFormData) => {
     if (!accessToken || !editingUser) return;
     const roleObj = systemRoles.find((r) => r.name === data.role);
+    const staffProfile = {
+      ...(data.phoneNumber.trim() ? { phoneNumber: data.phoneNumber.trim() } : {}),
+      ...(data.licenseNumber.trim() ? { licenseNumber: data.licenseNumber.trim() } : {}),
+    };
     const payload: UpdateUserPayload = {
       displayName: data.displayName,
       roleIds: roleObj ? [roleObj.id] : [],
-      staffProfile: data.phoneNumber ? { phoneNumber: data.phoneNumber } : undefined,
+      ...(Object.keys(staffProfile).length > 0 ? { staffProfile } : {}),
     };
     await adminUsersApi.update(editingUser.id, payload, accessToken);
+
+    if (editingUser.tenantId && (data.clinicName || data.licenseNumber)) {
+      await adminTenantsApi.update(
+        editingUser.tenantId,
+        {
+          ...(data.clinicName ? { name: data.clinicName } : {}),
+          ...(data.licenseNumber ? { licenseNumber: data.licenseNumber } : {}),
+          ...(data.phoneNumber ? { phone: data.phoneNumber } : {}),
+          ...(data.address ? { address: data.address } : {}),
+        },
+        accessToken,
+      );
+    }
+
     showToast('Admin account updated successfully!');
     void fetchData();
   };
@@ -442,7 +627,7 @@ export default function UsersRolesPage() {
                     type="text"
                     value={search}
                     onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                    placeholder="Search by name or email"
+                    placeholder="Search by name, clinic, or email"
                     className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                   />
                 </div>
@@ -481,9 +666,10 @@ export default function UsersRolesPage() {
                   <thead>
                     <tr className="border-b border-gray-100">
                       <th className="text-left text-xs font-medium text-gray-500 px-5 py-3">Administrator</th>
+                      <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">Clinic & Main Branch</th>
+                      <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">License No.</th>
                       <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">Role</th>
                       <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">Phone</th>
-                      <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">Since</th>
                       <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">Status</th>
                       <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">Actions</th>
                     </tr>
@@ -510,13 +696,35 @@ export default function UsersRolesPage() {
                             </div>
                           </td>
                           <td className="px-3 py-3.5">
+                            {u.tenantName ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <Building size={13} className="text-blue-500 shrink-0" />
+                                <span className="text-xs font-medium text-gray-800">{u.tenantName}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-semibold border border-blue-100">
+                                  Main Branch
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">
+                                Platform-Wide
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3.5">
+                            {u.staffProfile?.licenseNumber ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/60 rounded">
+                                <FileText size={11} className="text-emerald-500 shrink-0" />
+                                {u.staffProfile.licenseNumber}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 italic text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3.5">
                             <RoleBadge role={u.roles[0] ?? 'User'} />
                           </td>
                           <td className="px-3 py-3.5 text-xs text-gray-500">
-                            {u.staffProfile?.phoneNumber ?? <span className="text-gray-300 italic">â€”</span>}
-                          </td>
-                          <td className="px-3 py-3.5 text-xs text-gray-500">
-                            {new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {u.staffProfile?.phoneNumber ?? <span className="text-gray-300 italic">—</span>}
                           </td>
                           <td className="px-3 py-3.5">
                             <StatusBadge

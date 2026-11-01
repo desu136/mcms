@@ -116,7 +116,20 @@ export class LabsService {
     if (tenantId) where.tenantId = tenantId;
     if (branchId) where.branchId = branchId;
     if (patientId) where.patientId = patientId;
-    if (status) where.status = status as LabOrderStatus;
+    if (status) {
+      const upper = status.toUpperCase();
+      if (upper === 'PENDING') {
+        where.status = {
+          in: [
+            LabOrderStatus.ORDERED,
+            LabOrderStatus.SAMPLE_COLLECTED,
+            LabOrderStatus.IN_LAB,
+          ],
+        };
+      } else if (Object.values(LabOrderStatus).includes(upper as LabOrderStatus)) {
+        where.status = upper as LabOrderStatus;
+      }
+    }
 
     const orders = await this.prisma.labOrder.findMany({
       where: where as any,

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Users,
@@ -24,69 +24,145 @@ import {
   Phone,
   Mail,
   MapPin,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
-
 import dynamic from 'next/dynamic';
 
 import ReceptionistBanner from '../../../components/receptionist/ReceptionistBanner';
 import ReceptionistStatCard from '../../../components/receptionist/ReceptionistStatCard';
 import ReceptionistPageShell from '../../../components/receptionist/ReceptionistPageShell';
+import { useAuth } from '../../../lib/auth/auth-context';
+import { fetchPatients } from '../../../lib/api';
+import type { PatientDTO } from '@mcms/contracts';
 
 const NewAppointmentModal = dynamic(() => import('../../../components/receptionist/NewAppointmentModal'), { ssr: false });
 const CheckInModal = dynamic(() => import('../../../components/receptionist/CheckInModal'), { ssr: false });
-import {
-  PATIENTS_DIRECTORY_KPIS,
-  FULL_PATIENTS_DIRECTORY,
-  PatientDirectoryRow,
-  PATIENT_NOTES_LIST,
-  TODAY_DASHBOARD_APPOINTMENTS,
-} from '../../../components/receptionist/receptionistMockData';
+
+function calculateAge(dobIso?: string | null): string {
+  if (!dobIso) return '30';
+  try {
+    const dob = new Date(dobIso);
+    const diffMs = Date.now() - dob.getTime();
+    const ageDate = new Date(diffMs);
+    return String(Math.abs(ageDate.getUTCFullYear() - 1970));
+  } catch {
+    return '30';
+  }
+}
 
 export default function ReceptionistPatientsPage() {
-  const [filterTab, setFilterTab] = useState<'All' | 'Recent' | 'New' | 'Active' | 'Inactive'>('All');
+  const { accessToken } = useAuth();
+
+  const [filterTab, setFilterTab] = useState<'All' | 'Active' | 'Inactive'>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<PatientDirectoryRow>(FULL_PATIENTS_DIRECTORY[0]!);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [loading, setLoading] = useState(true);
+
+  const [patients, setPatients] = useState<PatientDTO[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
   const [checkInModalOpen, setCheckInModalOpen] = useState(false);
 
-  const filteredPatients = FULL_PATIENTS_DIRECTORY.filter((p) => {
-    const matchesFilter =
-      filterTab === 'All' ||
-      (filterTab === 'Active' && p.status === 'Active') ||
-      (filterTab === 'Inactive' && p.status === 'Inactive') ||
-      filterTab === 'Recent' ||
-      filterTab === 'New';
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-    const matchesSearch =
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.pid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.phone.includes(searchQuery);
+  // Load patients
+  const loadPatients = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const res = await fetchPatients(accessToken, {
+        search: debouncedQuery ? debouncedQuery : undefined,
+        page,
+        limit,
+      });
+      setPatients(res.data);
+      setTotalCount(res.total);
+      if (res.data.length > 0 && !selectedPatientId) {
+        setSelectedPatientId(res.data[0]?.id ?? null);
+      }
+    } catch {
+      // Fallback
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, debouncedQuery, page, limit, selectedPatientId]);
 
-    return matchesFilter && matchesSearch;
-  });
+  useEffect(() => {
+    void loadPatients();
+  }, [loadPatients]);
+
+  const selectedPatient = useMemo(() => {
+    return patients.find((p) => p.id === selectedPatientId) ?? patients[0] ?? null;
+  }, [patients, selectedPatientId]);
+
+  // Client filter for active/inactive tabs
+  const filteredPatients = useMemo(() => {
+    if (filterTab === 'All') return patients;
+    return patients.filter((p) => p.status?.toLowerCase() === filterTab.toLowerCase());
+  }, [patients, filterTab]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+
+  // KPIs
+  const patientsKpis: Array<{
+    title: string;
+    value: string;
+    change?: string | undefined;
+    trend?: 'up' | 'down' | undefined;
+    trendLabel?: string | undefined;
+    iconName?: ('users' | 'calendar' | 'check-circle' | 'receipt' | 'clock' | 'dollar') | undefined;
+    color?: ('blue' | 'emerald' | 'cyan' | 'amber' | 'purple' | 'rose') | undefined;
+  }> = [
+    { title: 'Total Registered', value: String(totalCount), change: 'Total', trend: 'up', trendLabel: 'Lifetime', iconName: 'users', color: 'blue' },
+    { title: 'Active Patients', value: String(totalCount), change: 'Active status', trend: 'up', trendLabel: 'In system', iconName: 'check-circle', color: 'emerald' },
+    { title: 'Shown on Page', value: String(patients.length), change: `Page ${page} of ${totalPages}`, iconName: 'calendar', color: 'cyan' },
+    { title: 'Page Size', value: `${limit}/page`, change: 'Configurable', iconName: 'receipt', color: 'purple' },
+  ];
 
   return (
     <>
       <ReceptionistPageShell
         banner={
           <ReceptionistBanner
-            title="Patients"
-            subtitle="Search, view and manage patient information, appointments and medical history."
+            title="Patients Directory"
+            subtitle="Search, view and manage patient medical records, contact information, and appointments."
             icon={Users}
             actionElement={
-              <Link
-                href="/receptionist/registration"
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                Register New Patient
-              </Link>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void loadPatients()}
+                  title="Refresh Patients"
+                  className="flex items-center justify-center p-2 rounded-xl bg-white/80 hover:bg-white text-slate-700 text-xs font-bold shadow-2xs border border-slate-200 transition-colors"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                </button>
+                <Link
+                  href="/receptionist/registration"
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Register New Patient
+                </Link>
+              </div>
             }
           />
         }
         kpis={
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-            {PATIENTS_DIRECTORY_KPIS.map((kpi, idx) => (
+            {patientsKpis.map((kpi, idx) => (
               <ReceptionistStatCard
                 key={idx}
                 title={kpi.title}
@@ -102,7 +178,7 @@ export default function ReceptionistPatientsPage() {
         }
         subnav={
           <div className="space-y-2.5">
-            {/* ─── Search Bar & Filter Controls ─── */}
+            {/* Search Bar & Controls */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 bg-white p-2.5 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-2xs">
               <div className="relative flex-1 w-full">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -110,12 +186,9 @@ export default function ReceptionistPatientsPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search patients by name, phone number, national ID, or patient ID..."
-                  className="w-full pl-9 pr-20 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 bg-slate-50"
+                  placeholder="Search patients by name, phone number, or patient ID..."
+                  className="w-full pl-9 pr-4 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 bg-slate-50"
                 />
-                <kbd className="hidden sm:inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-semibold text-slate-400 bg-white border border-slate-200 rounded-md absolute right-3 top-1/2 -translate-y-1/2 shadow-2xs">
-                  Ctrl + K
-                </kbd>
               </div>
 
               <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
@@ -126,38 +199,22 @@ export default function ReceptionistPatientsPage() {
                   <Filter className="w-3.5 h-3.5" />
                   Filter
                 </button>
-                <button
-                  type="button"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors"
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                  Advanced Search
-                </button>
-                <button
-                  type="button"
-                  className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors"
-                  title="Toggle View"
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                </button>
               </div>
             </div>
 
-            {/* ─── Filter Tabs ─── */}
+            {/* Filter Tabs */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold">
               {[
-                { id: 'All', label: 'All Patients', count: '1,248' },
-                { id: 'Recent', label: 'Recent', count: '50' },
-                { id: 'New', label: 'New', count: '142' },
-                { id: 'Active', label: 'Active', count: '1,186' },
-                { id: 'Inactive', label: 'Inactive', count: '62' },
+                { id: 'All', label: 'All Patients', count: totalCount },
+                { id: 'Active', label: 'Active', count: totalCount },
+                { id: 'Inactive', label: 'Inactive', count: 0 },
               ].map((tab) => {
                 const isActive = filterTab === tab.id;
                 return (
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setFilterTab(tab.id as any)}
+                    onClick={() => setFilterTab(tab.id as typeof filterTab)}
                     className={`px-3.5 py-1.5 rounded-xl transition-all whitespace-nowrap text-xs ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-xs'
@@ -179,370 +236,243 @@ export default function ReceptionistPatientsPage() {
                 <Users className="w-4 h-4 text-blue-600" />
                 <h3 className="text-sm font-bold text-slate-800">Patient Details</h3>
               </div>
-              <button
-                type="button"
-                className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700"
-              >
-                <Edit2 className="w-3 h-3" />
-                Edit
-              </button>
             </div>
 
-            {/* Profile Avatar Card */}
-            <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={selectedPatient.avatar}
-                alt={selectedPatient.name}
-                className="w-12 h-12 rounded-full object-cover shrink-0 ring-2 ring-blue-500/20"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900 text-sm truncate">
-                    {selectedPatient.name}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
-                    {selectedPatient.status}
-                  </span>
+            {selectedPatient ? (
+              <>
+                {/* Profile Card */}
+                <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <div className="w-12 h-12 rounded-full bg-blue-600 text-white font-black flex items-center justify-center text-sm shrink-0 ring-2 ring-blue-500/20">
+                    {selectedPatient.fullName.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-sm truncate">
+                        {selectedPatient.fullName}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                        {selectedPatient.status}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5 font-mono">
+                      {selectedPatient.pid} • {selectedPatient.gender} • {calculateAge(selectedPatient.dateOfBirth)} yrs
+                    </div>
+                    <div className="text-[11px] text-slate-600 mt-1 flex items-center gap-1.5">
+                      <Phone className="w-3 h-3 text-slate-400" />
+                      <span>{selectedPatient.phoneNumber ?? 'No phone number'}</span>
+                    </div>
+                    {selectedPatient.email && (
+                      <div className="text-[11px] text-slate-500 flex items-center gap-1.5 truncate mt-0.5">
+                        <Mail className="w-3 h-3 text-slate-400" />
+                        <span className="truncate">{selectedPatient.email}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-[11px] text-slate-500 mt-0.5">
-                  {selectedPatient.pid} • {selectedPatient.gender} • {selectedPatient.age} yrs
+
+                {/* Demographics */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Date of Birth</span>
+                    <span className="font-bold text-slate-800 mt-0.5 block">
+                      {selectedPatient.dateOfBirth ? selectedPatient.dateOfBirth.split('T')[0] : 'Not specified'}
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">City</span>
+                    <span className="font-bold text-slate-800 mt-0.5 block">{selectedPatient.city || 'Addis Ababa'}</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Blood Group</span>
+                    <span className="font-bold text-slate-800 mt-0.5 block">{selectedPatient.bloodType || 'Unknown'}</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Registered</span>
+                    <span className="font-bold text-slate-800 mt-0.5 block">
+                      {selectedPatient.createdAt ? selectedPatient.createdAt.split('T')[0] : 'Today'}
+                    </span>
+                  </div>
                 </div>
-                <div className="text-[11px] text-slate-600 mt-1 flex items-center gap-1.5">
-                  <Phone className="w-3 h-3 text-slate-400" />
-                  <span>{selectedPatient.phone}</span>
+
+                {/* Address & Emergency Contact */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs space-y-1">
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Address &amp; Emergency</div>
+                  <div className="flex items-center gap-1.5 text-slate-700">
+                    <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span>{selectedPatient.address || selectedPatient.city || 'Addis Ababa, Ethiopia'}</span>
+                  </div>
+                  {selectedPatient.emergencyContactName && (
+                    <div className="text-slate-600 text-[11px] pt-1 border-t border-slate-200 mt-1">
+                      Emergency: <span className="font-semibold text-slate-800">{selectedPatient.emergencyContactName}</span> ({selectedPatient.emergencyContactRel ?? 'Contact'}) • {selectedPatient.emergencyContactPhone ?? 'No phone'}
+                    </div>
+                  )}
                 </div>
-                <div className="text-[11px] text-slate-500 flex items-center gap-1.5 truncate mt-0.5">
-                  <Mail className="w-3 h-3 text-slate-400" />
-                  <span className="truncate">{selectedPatient.name.toLowerCase().replace(' ', '')}@gmail.com</span>
+
+                {/* Patient Quick Actions */}
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCheckInModalOpen(true)}
+                      className="flex items-center justify-center gap-1.5 p-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs transition"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      Check In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAppointmentModalOpen(true)}
+                      className="flex items-center justify-center gap-1.5 p-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      Book Appt
+                    </button>
+                  </div>
                 </div>
+              </>
+            ) : (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                No patient selected
               </div>
-            </div>
-
-            {/* Demographics */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Date of Birth</span>
-                <span className="font-bold text-slate-800 mt-0.5 block">{selectedPatient.dob || 'Oct 19, 1998'}</span>
-              </div>
-              <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">National ID</span>
-                <span className="font-bold text-slate-800 mt-0.5 block">{selectedPatient.nationalId || '1-2345-6789-0'}</span>
-              </div>
-              <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Blood Group</span>
-                <span className="font-bold text-slate-800 mt-0.5 block">{selectedPatient.bloodGroup || 'O+'}</span>
-              </div>
-              <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Marital Status</span>
-                <span className="font-bold text-slate-800 mt-0.5 block">{selectedPatient.maritalStatus || 'Single'}</span>
-              </div>
-            </div>
-
-            {/* Contact Information */}
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
-              <div className="font-bold text-slate-800 text-[10px] uppercase tracking-wider mb-0.5">
-                Contact Information
-              </div>
-              <div className="text-slate-600">
-                <span className="text-slate-400">Address: </span>
-                <span className="font-semibold text-slate-800">{selectedPatient.address || 'Bole Medhanialem, Addis Ababa'}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-1 text-[10px]">
-                <div>
-                  <span className="text-slate-400">City: </span>
-                  <span className="font-semibold text-slate-800">{selectedPatient.city || 'Addis Ababa'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Woreda: </span>
-                  <span className="font-semibold text-slate-800">{selectedPatient.woreda || 'Bole'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Kebele: </span>
-                  <span className="font-semibold text-slate-800">{selectedPatient.kebele || '01'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Emergency Contact */}
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
-              <div className="font-bold text-slate-800 text-[10px] uppercase tracking-wider mb-0.5">
-                Emergency Contact
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Name: <span className="font-semibold text-slate-800">{selectedPatient.emergencyName || 'Tadesse Mulu'}</span></span>
-                <span className="text-slate-600">Rel: <span className="font-semibold text-slate-800">{selectedPatient.emergencyRel || 'Brother'}</span></span>
-              </div>
-              <div className="text-slate-600">
-                Phone: <span className="font-semibold text-slate-800">{selectedPatient.emergencyPhone || '+251 911 111 222'}</span>
-              </div>
-            </div>
-
-            {/* Current Visit */}
-            <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-100 space-y-1 text-xs">
-              <div className="font-bold text-blue-900 text-[10px] uppercase tracking-wider mb-0.5">
-                Current Visit
-              </div>
-              <div className="grid grid-cols-2 gap-1.5 text-slate-700 text-[11px]">
-                <div>Visit: <span className="font-bold text-slate-900">{selectedPatient.visitType || 'Follow-up'}</span></div>
-                <div>Dept: <span className="font-bold text-slate-900">{selectedPatient.department || 'Internal Medicine'}</span></div>
-                <div>Doctor: <span className="font-bold text-blue-700">{selectedPatient.doctor || 'Dr. Tadesse'}</span></div>
-                <div>Check-in: <span className="font-medium text-slate-600">{selectedPatient.checkInTime || 'Oct 19, 08:45 AM'}</span></div>
-              </div>
-            </div>
-
-            {/* Quick Actions (2x3 grid) */}
-            <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-              <button
-                type="button"
-                className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-center"
-              >
-                <FileText className="w-3.5 h-3.5 text-blue-600 mb-1" />
-                <span className="text-[10px] font-bold text-slate-700 leading-none">View Records</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setAppointmentModalOpen(true)}
-                className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-center"
-              >
-                <Calendar className="w-3.5 h-3.5 text-blue-600 mb-1" />
-                <span className="text-[10px] font-bold text-slate-700 leading-none">Book Appt</span>
-              </button>
-
-              <Link
-                href="/receptionist/billing"
-                className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-center"
-              >
-                <CreditCard className="w-3.5 h-3.5 text-blue-600 mb-1" />
-                <span className="text-[10px] font-bold text-slate-700 leading-none">Create Bill</span>
-              </Link>
-
-              <Link
-                href="/receptionist/appointments"
-                className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-center"
-              >
-                <Clock className="w-3.5 h-3.5 text-blue-600 mb-1" />
-                <span className="text-[10px] font-bold text-slate-700 leading-none">View Appts</span>
-              </Link>
-
-              <button
-                type="button"
-                className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-center"
-              >
-                <History className="w-3.5 h-3.5 text-blue-600 mb-1" />
-                <span className="text-[10px] font-bold text-slate-700 leading-none">History</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-center"
-              >
-                <Tag className="w-3.5 h-3.5 text-blue-600 mb-1" />
-                <span className="text-[10px] font-bold text-slate-700 leading-none">Print Label</span>
-              </button>
-            </div>
+            )}
           </div>
         }
       >
         {/* Table Card */}
         <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-400 font-semibold">
-                    <th className="pb-3 font-medium">Patient ID</th>
-                    <th className="pb-3 font-medium">Name</th>
-                    <th className="pb-3 font-medium">Age</th>
-                    <th className="pb-3 font-medium">Gender</th>
-                    <th className="pb-3 font-medium">Phone Number</th>
-                    <th className="pb-3 font-medium">Last Visit</th>
-                    <th className="pb-3 font-medium">Status</th>
-                    <th className="pb-3 font-medium text-center">Actions</th>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-100 text-slate-400 font-semibold">
+                  <th className="pb-3 font-medium">Patient ID</th>
+                  <th className="pb-3 font-medium">Name</th>
+                  <th className="pb-3 font-medium">Gender</th>
+                  <th className="pb-3 font-medium">Phone Number</th>
+                  <th className="pb-3 font-medium">City</th>
+                  <th className="pb-3 font-medium">Status</th>
+                  <th className="pb-3 font-medium text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredPatients.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                      {loading ? 'Loading patient records...' : 'No patient records found.'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredPatients.map((patient) => {
-                    const isSelected = selectedPatient.pid === patient.pid;
+                ) : (
+                  filteredPatients.map((patient) => {
+                    const isSelected = selectedPatient?.id === patient.id;
                     return (
                       <tr
-                        key={patient.pid}
-                        onClick={() => setSelectedPatient(patient)}
+                        key={patient.id}
+                        onClick={() => setSelectedPatientId(patient.id)}
                         className={`hover:bg-blue-50/40 cursor-pointer transition-colors ${
                           isSelected ? 'bg-blue-50/70' : ''
                         }`}
                       >
-                        <td className="py-2.5 font-bold text-slate-500 whitespace-nowrap">
+                        <td className="py-2.5 font-bold font-mono text-blue-600 whitespace-nowrap">
                           {patient.pid}
                         </td>
                         <td className="py-2.5 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={patient.avatar}
-                              alt={patient.name}
-                              className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-slate-200"
-                            />
-                            <span className="font-bold text-slate-800">{patient.name}</span>
+                            <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs shrink-0">
+                              {patient.fullName.slice(0, 1).toUpperCase()}
+                            </div>
+                            <span className="font-bold text-slate-800">{patient.fullName}</span>
                           </div>
                         </td>
-                        <td className="py-2.5 text-slate-700">{patient.age}</td>
                         <td className="py-2.5 text-slate-700">{patient.gender}</td>
-                        <td className="py-2.5 text-slate-600 whitespace-nowrap">{patient.phone}</td>
-                        <td className="py-2.5 text-slate-500 whitespace-nowrap">{patient.lastVisit}</td>
+                        <td className="py-2.5 text-slate-600 whitespace-nowrap">
+                          {patient.phoneNumber || 'None'}
+                        </td>
+                        <td className="py-2.5 text-slate-600 whitespace-nowrap">
+                          {patient.city || 'Addis Ababa'}
+                        </td>
                         <td className="py-2.5 whitespace-nowrap">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
                             {patient.status}
                           </span>
                         </td>
                         <td className="py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            className="p-1 text-slate-400 hover:text-slate-600 rounded"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              title="Check In"
+                              onClick={() => {
+                                setSelectedPatientId(patient.id);
+                                setCheckInModalOpen(true);
+                              }}
+                              className="px-2 py-1 rounded-md bg-teal-50 text-teal-700 hover:bg-teal-100 font-bold text-[10px] transition"
+                            >
+                              Check-in
+                            </button>
+                            <button
+                              type="button"
+                              title="Book Appointment"
+                              onClick={() => {
+                                setSelectedPatientId(patient.id);
+                                setAppointmentModalOpen(true);
+                              }}
+                              className="px-2 py-1 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[10px] transition"
+                            >
+                              Appt
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination Footer */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
-              <div>Showing 1-10 of 1,248 patients</div>
-
-              <div className="flex items-center gap-1">
-                <button className="p-1 rounded border border-slate-200 text-slate-400 hover:bg-slate-50">
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <button className="px-2.5 py-1 rounded bg-blue-600 text-white font-bold text-xs">
-                  1
-                </button>
-                <button className="px-2.5 py-1 rounded hover:bg-slate-100 text-slate-600 text-xs">
-                  2
-                </button>
-                <button className="px-2.5 py-1 rounded hover:bg-slate-100 text-slate-600 text-xs">
-                  3
-                </button>
-                <button className="px-2.5 py-1 rounded hover:bg-slate-100 text-slate-600 text-xs">
-                  4
-                </button>
-                <button className="px-2.5 py-1 rounded hover:bg-slate-100 text-slate-600 text-xs">
-                  5
-                </button>
-                <span className="px-1 text-slate-400">...</span>
-                <button className="px-2.5 py-1 rounded hover:bg-slate-100 text-slate-600 text-xs">
-                  125
-                </button>
-                <button className="p-1 rounded border border-slate-200 text-slate-400 hover:bg-slate-50">
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <select className="border border-slate-200 rounded px-2 py-0.5 text-xs bg-white text-slate-700">
-                  <option>10 / page</option>
-                  <option>20 / page</option>
-                  <option>50 / page</option>
-                </select>
-              </div>
-            </div>
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
 
-          {/* ─── Bottom Split: Recent Appointments & Patient Notes ─── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {/* Recent Appointments */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-xs font-bold text-slate-800">Recent Appointments</h3>
-                </div>
-                <Link
-                  href="/receptionist/appointments"
-                  className="text-xs font-bold text-blue-600 hover:text-blue-700"
-                >
-                  View All
-                </Link>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-slate-400 font-semibold">
-                      <th className="pb-2 font-medium">Date &amp; Time</th>
-                      <th className="pb-2 font-medium">Patient Name</th>
-                      <th className="pb-2 font-medium">Doctor</th>
-                      <th className="pb-2 font-medium">Type</th>
-                      <th className="pb-2 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {TODAY_DASHBOARD_APPOINTMENTS.map((apt) => (
-                      <tr key={apt.id} className="hover:bg-slate-50/70">
-                        <td className="py-2 text-slate-400 text-[11px] whitespace-nowrap">
-                          Oct 19, {apt.time}
-                        </td>
-                        <td className="py-2 font-bold text-slate-800 whitespace-nowrap">
-                          {apt.patientName}
-                        </td>
-                        <td className="py-2 text-slate-600 whitespace-nowrap">{apt.doctor}</td>
-                        <td className="py-2 text-slate-600">{apt.type}</td>
-                        <td className="py-2 whitespace-nowrap">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              apt.status === 'Checked In'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : apt.status === 'Waiting'
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-blue-100 text-blue-700'
-                            }`}
-                          >
-                            {apt.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          {/* Pagination Footer */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+            <div>
+              Showing {filteredPatients.length > 0 ? (page - 1) * limit + 1 : 0}-
+              {Math.min(page * limit, totalCount)} of {totalCount} patients
             </div>
 
-            {/* Patient Notes */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-xs font-bold text-slate-800">Patient Notes</h3>
-                </div>
-                <span className="text-xs font-bold text-blue-600 cursor-pointer hover:underline">
-                  View All
-                </span>
-              </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="p-1 rounded border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="px-2.5 py-1 text-xs font-semibold text-slate-700">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="p-1 rounded border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
-              <div className="space-y-2.5">
-                {PATIENT_NOTES_LIST.map((n, idx) => (
-                  <div
-                    key={idx}
-                    className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs space-y-0.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800">{n.name}</span>
-                      <span className="text-[10px] text-slate-400">{n.date}</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-                      {n.note}
-                    </p>
-                  </div>
-                ))}
-              </div>
+            <div className="flex items-center gap-1.5">
+              <select
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  setPage(1);
+                }}
+                className="border border-slate-200 rounded px-2 py-0.5 text-xs bg-white text-slate-700"
+              >
+                <option value={10}>10 / page</option>
+                <option value={20}>20 / page</option>
+                <option value={50}>50 / page</option>
+              </select>
             </div>
           </div>
-
+        </div>
       </ReceptionistPageShell>
 
       {/* Modals */}
@@ -550,15 +480,24 @@ export default function ReceptionistPatientsPage() {
         <NewAppointmentModal
           isOpen={appointmentModalOpen}
           onClose={() => setAppointmentModalOpen(false)}
+          preselectedPatient={
+            selectedPatient
+              ? { id: selectedPatient.id, fullName: selectedPatient.fullName, pid: selectedPatient.pid }
+              : null
+          }
         />
       )}
       {checkInModalOpen && (
         <CheckInModal
           isOpen={checkInModalOpen}
           onClose={() => setCheckInModalOpen(false)}
+          preselectedPatient={
+            selectedPatient
+              ? { id: selectedPatient.id, fullName: selectedPatient.fullName, pid: selectedPatient.pid }
+              : null
+          }
         />
       )}
     </>
   );
 }
-

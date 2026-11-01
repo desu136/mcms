@@ -18,7 +18,7 @@ import {
   ChevronRight,
   ShieldCheck,
 } from 'lucide-react';
-import { CURRENT_NURSE } from './nurseMockData';
+import { useAuth } from '../../lib/auth/auth-context';
 
 interface NurseSidebarProps {
   isCollapsed: boolean;
@@ -47,6 +47,9 @@ function NurseSidebar({
   onCloseMobile,
 }: NurseSidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const nurseName = user?.displayName || 'Nurse';
+  const nurseRole = user?.staffProfile?.jobTitle || 'Registered Nurse';
 
   return (
     <>
@@ -159,10 +162,10 @@ function NurseSidebar({
             {!isCollapsed && (
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-bold text-white truncate flex items-center gap-1.5">
-                  {CURRENT_NURSE.name}
+                  {nurseName}
                 </div>
                 <div className="text-[11px] text-slate-400 font-medium truncate flex items-center gap-1.5 mt-0.5">
-                  <span>{CURRENT_NURSE.role}</span>
+                  <span>{nurseRole}</span>
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   <span className="text-emerald-400 text-[10px]">Online</span>
                 </div>

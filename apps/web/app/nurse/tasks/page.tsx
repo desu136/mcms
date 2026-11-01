@@ -1,14 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import NurseStatCard from '@/components/nurse/NurseStatCard';
-import { NURSE_TASKS, NURSE_PATIENTS, NursePatient } from '@/components/nurse/nurseMockData';
+import { NURSE_TASKS, NURSE_PATIENTS, NursePatient, NursingTask } from '@/components/nurse/nurseMockData';
 import NursePatientDetailsModal from '@/components/nurse/NursePatientDetailsModal';
+import { useAuth } from '@/lib/auth/auth-context';
+import { fetchNursingTasks, updateNursingTask } from '@/lib/api/clinical';
+import type { NursingTaskDTO } from '@mcms/contracts';
 import {
   ClipboardList, CheckCircle2, Clock, AlertTriangle, MoreVertical,
   ChevronLeft, ChevronRight, Filter, Search, CheckSquare, Pill,
   Activity, Heart, FlaskConical, BookOpen, SlidersHorizontal,
-  Eye,
+  Eye, RefreshCw,
 } from 'lucide-react';
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -50,6 +53,9 @@ const PROGRESS_CATEGORIES = [
 ];
 
 export default function NurseTasksPage() {
+  const { accessToken } = useAuth();
+  const [tasks, setTasks] = useState<NursingTask[]>(NURSE_TASKS);
+  const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('All Priorities');
@@ -59,13 +65,81 @@ export default function NurseTasksPage() {
   const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
   const rowsPerPage = 10;
 
+  const loadTasks = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const data = await fetchNursingTasks(accessToken);
+      if (data && data.length > 0) {
+        const typeMap: Record<string, NursingTask['type']> = {
+          MEDICATION: 'Medication',
+          VITALS: 'Vital Signs',
+          WOUND_CARE: 'Wound Care',
+          LAB_SAMPLE: 'Lab Sample',
+          EDUCATION: 'Education',
+        };
+        const priorityMap: Record<string, NursingTask['priority']> = {
+          HIGH: 'High',
+          MEDIUM: 'Medium',
+          LOW: 'Low',
+        };
+        const statusMap: Record<string, NursingTask['status']> = {
+          PENDING: 'Pending',
+          IN_PROGRESS: 'In Progress',
+          SCHEDULED: 'Scheduled',
+          COMPLETED: 'Completed',
+        };
+
+        const mapped: NursingTask[] = data.map((dto, idx) => {
+          const due = dto.dueTime ? new Date(dto.dueTime) : new Date();
+          return {
+            id: dto.id,
+            patientId: dto.patientId,
+            patientName: dto.patientName || 'Assigned Patient',
+            patientPid: `PID-${dto.patientId.slice(0, 6).toUpperCase()}`,
+            room: (NURSE_TASKS[idx % NURSE_TASKS.length] as NursingTask)?.room || 'Room 3',
+            title: dto.title,
+            type: typeMap[dto.taskType.toUpperCase()] || 'Other',
+            priority: priorityMap[dto.priority.toUpperCase()] || 'Medium',
+            dueTime: due.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            dueDate: due.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            status: statusMap[dto.status.toUpperCase()] || 'Pending',
+            ...(dto.details ? { details: dto.details } : {}),
+            ...(dto.completedAt ? { completedAt: dto.completedAt } : {}),
+          };
+        });
+        setTasks(mapped);
+      }
+    } catch (err) {
+      console.error('Failed to load nursing tasks:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
+
+  const handleToggleTaskStatus = async (taskId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'Completed' ? 'Pending' : 'Completed';
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus as any } : t));
+    if (!accessToken) return;
+    try {
+      await updateNursingTask(taskId, { status: newStatus.toUpperCase() }, accessToken);
+    } catch (err) {
+      console.error('Failed to toggle task status:', err);
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: currentStatus as any } : t));
+    }
+  };
+
   const handleOpenDetails = (patientPid: string, patientName: string) => {
     const p = NURSE_PATIENTS.find(np => np.pid === patientPid || np.name === patientName) || NURSE_PATIENTS[0]!;
     setSelectedPatient(p);
     setDetailsOpen(true);
   };
 
-  const filtered = NURSE_TASKS.filter(t => {
+  const filtered = tasks.filter(t => {
     const q = searchQuery.toLowerCase();
     const matchQ = !q || t.patientName.toLowerCase().includes(q) || t.title.toLowerCase().includes(q) || t.room.toLowerCase().includes(q);
     const matchTab = activeTab === 'all' || t.type === activeTab;
@@ -76,9 +150,9 @@ export default function NurseTasksPage() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const paginated = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
-  const completedCount = NURSE_TASKS.filter(t => t.status === 'Completed').length;
-  const totalCount = NURSE_TASKS.length;
-  const pct = Math.round((completedCount / totalCount) * 100);
+  const completedCount = tasks.filter(t => t.status === 'Completed').length;
+  const totalCount = tasks.length;
+  const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
     <div className="h-full flex overflow-hidden bg-[#F4F7FC]">
@@ -103,6 +177,14 @@ export default function NurseTasksPage() {
                 <button className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100"><ChevronRight size={11} /></button>
               </div>
             </div>
+            <button
+              onClick={() => void loadTasks()}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 shadow-xs transition-colors disabled:opacity-50"
+              title="Refresh Tasks"
+            >
+              <RefreshCw size={13} className={`text-blue-600 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
+            </button>
             <button className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 shadow-xs transition-colors">
               <CheckSquare size={13} className="text-blue-600" /> Mark All as Read
             </button>
@@ -205,7 +287,13 @@ export default function NurseTasksPage() {
                           >
                             <Eye size={13} />
                           </button>
-                          <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-green-50 text-green-500 transition-colors" title="Complete"><CheckCircle2 size={13} /></button>
+                          <button
+                            onClick={() => void handleToggleTaskStatus(task.id, task.status)}
+                            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-green-50 text-green-500 transition-colors"
+                            title={task.status === 'Completed' ? 'Mark as Pending' : 'Mark as Completed'}
+                          >
+                            <CheckCircle2 size={13} className={task.status === 'Completed' ? 'text-green-600 fill-green-100' : 'text-gray-400 hover:text-green-500'} />
+                          </button>
                           <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 transition-colors" title="More"><MoreVertical size={13} /></button>
                         </div>
                       </td>

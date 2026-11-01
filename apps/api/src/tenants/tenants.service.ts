@@ -12,7 +12,8 @@ import type {
   UpdateTenantRequest,
 } from '@mcms/contracts';
 import { AuditEventType } from '@mcms/domain';
-import { TenantStatus } from '@prisma/client';
+import { TenantStatus, BranchStatus } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class TenantsService {
@@ -43,6 +44,7 @@ export class TenantsService {
       address: t.address ? `${t.address}${t.city ? ', ' + t.city : ''}` : t.city ?? null,
       phone: t.contactPhone,
       email: t.contactEmail,
+      licenseNumber: (settings.licenseNumber as string) ?? null,
       currency: (settings.currency as string) ?? 'ETB',
       timezone: (settings.timezone as string) ?? 'Africa/Addis_Ababa',
       logoUrl: t.logoUrl,
@@ -57,7 +59,7 @@ export class TenantsService {
   }
 
   async findAll(user: AuthenticatedUserEntity): Promise<TenantDTO[]> {
-    const isSuperAdmin = user.userRoles.some((ur) => ur.role.name === 'SUPER_ADMIN');
+    const isSuperAdmin = user.userRoles?.some((ur) => ur.role?.name === 'SUPER_ADMIN') ?? false;
     const where = isSuperAdmin ? {} : { id: user.tenantId ?? 'none' };
 
     const tenants = await this.prisma.tenant.findMany({
@@ -101,7 +103,7 @@ export class TenantsService {
   }
 
   async findById(id: string, user: AuthenticatedUserEntity): Promise<TenantDTO> {
-    const isSuperAdmin = user.userRoles.some((ur) => ur.role.name === 'SUPER_ADMIN');
+    const isSuperAdmin = user.userRoles?.some((ur) => ur.role?.name === 'SUPER_ADMIN') ?? false;
     if (!isSuperAdmin && user.tenantId !== id) {
       throw new ForbiddenException('Access denied to other tenants');
     }
@@ -126,48 +128,141 @@ export class TenantsService {
   }
 
   async create(dto: CreateTenantRequest, user: AuthenticatedUserEntity): Promise<TenantDTO> {
-    const isSuperAdmin = user.userRoles.some((ur) => ur.role.name === 'SUPER_ADMIN');
+    const isSuperAdmin = user.userRoles?.some((ur) => ur.role?.name === 'SUPER_ADMIN') ?? false;
     if (!isSuperAdmin) {
       throw new ForbiddenException('Only platform administrators can create tenants');
     }
 
-    const existingSlug = await this.prisma.tenant.findUnique({ where: { slug: dto.slug } });
+    const slug = (
+      dto.slug ||
+      dto.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+    ).toLowerCase().trim();
+
+    const code = (
+      dto.code ||
+      dto.name
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 6)
+        .toUpperCase() ||
+      'CLINIC'
+    ).toUpperCase().trim();
+
+    const existingSlug = await this.prisma.tenant.findUnique({ where: { slug } });
     if (existingSlug) {
-      throw new ConflictException(`Tenant with slug '${dto.slug}' already exists`);
+      throw new ConflictException(`Tenant with slug '${slug}' already exists`);
     }
 
-    const existingCode = await this.prisma.tenant.findUnique({ where: { code: dto.code } });
+    const existingCode = await this.prisma.tenant.findUnique({ where: { code } });
     if (existingCode) {
-      throw new ConflictException(`Tenant with code '${dto.code}' already exists`);
+      throw new ConflictException(`Tenant with code '${code}' already exists`);
     }
 
-    const created = await this.prisma.tenant.create({
-      data: {
-        name: dto.name,
-        slug: dto.slug.toLowerCase().trim(),
-        code: dto.code.toUpperCase().trim(),
-        status: TenantStatus.ACTIVE,
-        ...(dto.address ? { address: dto.address } : {}),
-        ...(dto.phone ? { contactPhone: dto.phone } : {}),
-        ...(dto.email ? { contactEmail: dto.email } : {}),
-        ...(dto.logoUrl ? { logoUrl: dto.logoUrl } : {}),
-        settings: {
-          currency: dto.currency ?? 'ETB',
-          timezone: dto.timezone ?? 'Africa/Addis_Ababa',
-          subscriptionPlan: dto.subscriptionPlan ?? 'PROFESSIONAL',
-          maxBranches: dto.maxBranches ?? 5,
-          maxUsers: dto.maxUsers ?? 100,
-        },
-      },
-      include: {
-        _count: {
-          select: {
-            branches: true,
-            users: true,
+    if (dto.adminEmail) {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email: dto.adminEmail.toLowerCase().trim() },
+      });
+      if (existingUser) {
+        throw new ConflictException(`User with email '${dto.adminEmail}' already exists`);
+      }
+    }
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({
+        data: {
+          name: dto.name,
+          slug,
+          code,
+          status: TenantStatus.ACTIVE,
+          ...(dto.address ? { address: dto.address } : {}),
+          ...(dto.phone ? { contactPhone: dto.phone } : {}),
+          ...(dto.email ? { contactEmail: dto.email } : {}),
+          ...(dto.logoUrl ? { logoUrl: dto.logoUrl } : {}),
+          settings: {
+            currency: dto.currency ?? 'ETB',
+            timezone: dto.timezone ?? 'Africa/Addis_Ababa',
+            subscriptionPlan: dto.subscriptionPlan ?? 'PROFESSIONAL',
+            maxBranches: dto.maxBranches ?? 5,
+            maxUsers: dto.maxUsers ?? 100,
+            ...(dto.licenseNumber ? { licenseNumber: dto.licenseNumber } : {}),
           },
         },
-      },
+      });
+
+      // Automatically create Main Branch with the clinic name
+      const mainBranch = await tx.branch.create({
+        data: {
+          tenantId: tenant.id,
+          name: dto.name,
+          code: 'MAIN',
+          isMainBranch: true,
+          status: BranchStatus.ACTIVE,
+          ...(dto.address ? { address: dto.address } : {}),
+          ...(dto.phone ? { phone: dto.phone } : {}),
+          ...(dto.email ? { email: dto.email } : {}),
+        },
+      });
+
+      // Provision CLINIC_ADMIN user if credentials provided
+      if (dto.adminEmail && dto.adminPassword) {
+        const passwordHash = await bcrypt.hash(dto.adminPassword, 12);
+
+        const clinicAdminRole = await tx.role.findUnique({
+          where: { name: 'CLINIC_ADMIN' },
+        });
+
+        await tx.user.create({
+          data: {
+            email: dto.adminEmail.toLowerCase().trim(),
+            displayName: dto.adminName || `${dto.name} Administrator`,
+            passwordHash,
+            tenantId: tenant.id,
+            userBranches: {
+              create: {
+                branchId: mainBranch.id,
+                isPrimary: true,
+              },
+            },
+            ...(clinicAdminRole
+              ? {
+                  userRoles: {
+                    create: {
+                      roleId: clinicAdminRole.id,
+                    },
+                  },
+                }
+              : {}),
+            staffProfile: {
+              create: {
+                jobTitle: 'Clinic Administrator',
+                department: 'Administration',
+                licenseNumber: dto.licenseNumber ?? null,
+                phoneNumber: dto.phone ?? null,
+              },
+            },
+          },
+        });
+      }
+
+      return tx.tenant.findUnique({
+        where: { id: tenant.id },
+        include: {
+          _count: {
+            select: {
+              branches: true,
+              users: true,
+            },
+          },
+        },
+      });
     });
+
+    if (!created) {
+      throw new NotFoundException('Failed to retrieve created tenant');
+    }
 
     await this.prisma.auditLog.create({
       data: {
@@ -186,8 +281,8 @@ export class TenantsService {
     dto: UpdateTenantRequest,
     user: AuthenticatedUserEntity,
   ): Promise<TenantDTO> {
-    const isSuperAdmin = user.userRoles.some((ur) => ur.role.name === 'SUPER_ADMIN');
-    const isClinicAdmin = user.userRoles.some((ur) => ur.role.name === 'CLINIC_ADMIN');
+    const isSuperAdmin = user.userRoles?.some((ur) => ur.role?.name === 'SUPER_ADMIN') ?? false;
+    const isClinicAdmin = user.userRoles?.some((ur) => ur.role?.name === 'CLINIC_ADMIN') ?? false;
 
     if (!isSuperAdmin && (!isClinicAdmin || user.tenantId !== id)) {
       throw new ForbiddenException('Not authorized to update this tenant');
@@ -203,6 +298,7 @@ export class TenantsService {
       ...existingSettings,
       ...(dto.currency ? { currency: dto.currency } : {}),
       ...(dto.timezone ? { timezone: dto.timezone } : {}),
+      ...(dto.licenseNumber ? { licenseNumber: dto.licenseNumber } : {}),
       ...(isSuperAdmin && dto.subscriptionPlan ? { subscriptionPlan: dto.subscriptionPlan } : {}),
       ...(isSuperAdmin && dto.maxBranches !== undefined ? { maxBranches: dto.maxBranches } : {}),
       ...(isSuperAdmin && dto.maxUsers !== undefined ? { maxUsers: dto.maxUsers } : {}),
