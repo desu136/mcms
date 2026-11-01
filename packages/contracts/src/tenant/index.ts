@@ -6,6 +6,7 @@ export interface TenantDTO {
   address?: string | null;
   phone?: string | null;
   email?: string | null;
+  licenseNumber?: string | null;
   currency: string;
   timezone: string;
   logoUrl?: string | null;
@@ -20,8 +21,9 @@ export interface TenantDTO {
 
 export interface CreateTenantRequest {
   name: string;
-  slug: string;
-  code: string;
+  slug?: string;
+  code?: string;
+  licenseNumber?: string;
   address?: string;
   phone?: string;
   email?: string;
@@ -31,10 +33,14 @@ export interface CreateTenantRequest {
   subscriptionPlan?: string;
   maxBranches?: number;
   maxUsers?: number;
+  adminName?: string;
+  adminEmail?: string;
+  adminPassword?: string;
 }
 
 export interface UpdateTenantRequest {
   name?: string;
+  licenseNumber?: string;
   address?: string;
   phone?: string;
   email?: string;

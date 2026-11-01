@@ -12,6 +12,7 @@ import type {
   CreateUserRequest,
   UpdateUserRequest,
   UserSummaryDTO,
+  StaffProfileDTO,
 } from '@mcms/contracts';
 import type { AuthenticatedUserEntity } from '../auth/types/authenticated-user.type';
 import * as bcrypt from 'bcrypt';
@@ -32,6 +33,10 @@ export class UsersService {
     const users = await this.prisma.user.findMany({
       where: where as any,
       include: {
+        tenant: {
+          select: { id: true, name: true, settings: true },
+        },
+        staffProfile: true,
         userRoles: {
           include: {
             role: {
@@ -50,6 +55,9 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
       include: {
+        tenant: {
+          select: { id: true, name: true, settings: true },
+        },
         userRoles: {
           include: {
             role: {
@@ -90,6 +98,7 @@ export class UsersService {
       displayName: dto.displayName,
       passwordHash,
       accountStatus: 'ACTIVE',
+      ...(dto.tenantId ? { tenant: { connect: { id: dto.tenantId } } } : {}),
       userRoles: {
         create: dto.roleIds.map((roleId: string) => ({
           roleId,
@@ -113,6 +122,9 @@ export class UsersService {
     const user = await this.prisma.user.create({
       data: createData,
       include: {
+        tenant: {
+          select: { id: true, name: true, settings: true },
+        },
         userRoles: {
           include: {
             role: {
@@ -159,6 +171,9 @@ export class UsersService {
             : {}),
         },
         include: {
+          tenant: {
+            select: { id: true, name: true, settings: true },
+          },
           userRoles: {
             include: {
               role: {
@@ -285,6 +300,25 @@ export class UsersService {
       ),
     );
 
+    const tenantLicenseNumber = (user.tenant?.settings as Record<string, unknown> | null)?.licenseNumber as string | undefined;
+
+    let staffProfile: StaffProfileDTO | undefined = undefined;
+    if (user.staffProfile) {
+      staffProfile = {
+        ...(user.staffProfile.employeeNumber ? { employeeNumber: user.staffProfile.employeeNumber } : {}),
+        ...(user.staffProfile.jobTitle ? { jobTitle: user.staffProfile.jobTitle } : {}),
+        ...(user.staffProfile.department ? { department: user.staffProfile.department } : {}),
+        ...(user.staffProfile.phoneNumber ? { phoneNumber: user.staffProfile.phoneNumber } : {}),
+        ...(user.staffProfile.licenseNumber || tenantLicenseNumber
+          ? { licenseNumber: user.staffProfile.licenseNumber ?? tenantLicenseNumber }
+          : {}),
+      };
+    } else if (tenantLicenseNumber) {
+      staffProfile = {
+        licenseNumber: tenantLicenseNumber,
+      };
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -294,6 +328,9 @@ export class UsersService {
       roles,
       permissions,
       createdAt: user.createdAt.toISOString(),
+      ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      ...(user.tenant?.name ? { tenantName: user.tenant.name } : {}),
+      ...(staffProfile ? { staffProfile } : {}),
     };
   }
 }

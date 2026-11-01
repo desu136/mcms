@@ -70,9 +70,11 @@ export enum PermissionSlug {
 
   // Tenants & Branches
   TENANTS_READ = 'tenants:read',
-  TENANTS_WRITE = 'tenants:write',
+  TENANTS_WRITE = 'tenants:manage',
+  TENANTS_MANAGE = 'tenants:manage',
   BRANCHES_READ = 'branches:read',
-  BRANCHES_WRITE = 'branches:write',
+  BRANCHES_WRITE = 'branches:manage',
+  BRANCHES_MANAGE = 'branches:manage',
   DEPARTMENTS_READ = 'departments:read',
   DEPARTMENTS_MANAGE = 'departments:manage',
   ROOMS_READ = 'rooms:read',

@@ -73,7 +73,12 @@ export class MedicationsService {
     if (tenantId) where.tenantId = tenantId;
     if (patientId) where.patientId = patientId;
     if (admissionId) where.admissionId = admissionId;
-    if (status) where.status = status as MedAdminStatus;
+    if (status) {
+      const upper = status.toUpperCase();
+      if (Object.values(MedAdminStatus).includes(upper as MedAdminStatus)) {
+        where.status = upper as MedAdminStatus;
+      }
+    }
 
     const admins = await this.prisma.medicationAdministration.findMany({
       where: where as any,

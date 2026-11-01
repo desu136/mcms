@@ -174,7 +174,7 @@ export default function DoctorHeader({ onOpenSearch, onOpenMobileSidebar }: Doct
               <div className="px-3 py-2.5 border-b border-slate-100">
                 <div className="text-xs font-bold text-slate-800">{doctorName}</div>
                 <div className="text-[11px] text-blue-600 font-medium">{doctorSpecialty}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">doctor@mcms.local</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">{user?.email || 'doctor@mcms.local'}</div>
               </div>
 
               <div className="py-1">

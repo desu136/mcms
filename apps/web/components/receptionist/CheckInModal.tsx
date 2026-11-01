@@ -1,41 +1,166 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, UserCheck, Printer, CheckCircle2 } from 'lucide-react';
-import { DOCTOR_AVAILABILITY_LIST } from './receptionistMockData';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, UserCheck, Printer, CheckCircle2, Search, Loader2 } from 'lucide-react';
+import { useAuth } from '../../lib/auth/auth-context';
+import { addToQueue, fetchPatients, fetchDoctors, fetchDepartments } from '../../lib/api';
+import type { PatientDTO, DoctorDTO, ClinicDepartmentDTO } from '@mcms/contracts';
+
+export interface PreselectedPatientInfo {
+  id: string;
+  fullName: string;
+  pid: string;
+}
 
 interface CheckInModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
-  preselectedPatient?: string;
+  preselectedPatient?: PreselectedPatientInfo | string | null;
 }
 
 export default function CheckInModal({
   isOpen,
   onClose,
   onSuccess,
-  preselectedPatient = '',
+  preselectedPatient,
 }: CheckInModalProps) {
-  const [patientName, setPatientName] = useState(preselectedPatient || 'Aster Mulu (P-2026-001245)');
-  const [department, setDepartment] = useState('General');
-  const [doctor, setDoctor] = useState(DOCTOR_AVAILABILITY_LIST[0]?.name || 'Dr. Tadesse');
+  const { accessToken } = useAuth();
+
+  const [patientSearch, setPatientSearch] = useState('');
+  const [patientResults, setPatientResults] = useState<PatientDTO[]>([]);
+  const [searchingPatients, setSearchingPatients] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<{ id: string; fullName: string; pid: string } | null>(null);
+
+  const [doctors, setDoctors] = useState<DoctorDTO[]>([]);
+  const [departments, setDepartments] = useState<ClinicDepartmentDTO[]>([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('');
   const [visitType, setVisitType] = useState('Follow-up');
-  const [generatedQueue, setGeneratedQueue] = useState<string | null>(null);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [generatedTicket, setGeneratedTicket] = useState<{ ticketNumber: string; patientName: string } | null>(null);
+
+  // Initialize preselected patient if given
+  useEffect(() => {
+    if (preselectedPatient) {
+      if (typeof preselectedPatient === 'object' && preselectedPatient.id) {
+        setSelectedPatient(preselectedPatient);
+        setPatientSearch(`${preselectedPatient.fullName} (${preselectedPatient.pid})`);
+      } else if (typeof preselectedPatient === 'string' && preselectedPatient.trim()) {
+        setPatientSearch(preselectedPatient);
+      }
+    }
+  }, [preselectedPatient]);
+
+  // Load doctors & departments
+  useEffect(() => {
+    if (!isOpen || !accessToken) return;
+    let isMounted = true;
+
+    async function loadMetadata() {
+      try {
+        const [docs, depts] = await Promise.all([
+          fetchDoctors(accessToken),
+          fetchDepartments(accessToken),
+        ]);
+        if (isMounted) {
+          setDoctors(docs);
+          setDepartments(depts);
+          if (docs.length > 0 && docs[0]) setSelectedDoctorId(docs[0].id);
+          if (depts.length > 0 && depts[0]) setSelectedDeptId(depts[0].id);
+        }
+      } catch {
+        // Fallback gracefully
+      }
+    }
+
+    void loadMetadata();
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, accessToken]);
+
+  // Live search patients
+  const searchPatients = useCallback(
+    async (query: string) => {
+      if (!query.trim() || query.length < 2 || !accessToken) {
+        setPatientResults([]);
+        return;
+      }
+      setSearchingPatients(true);
+      try {
+        const res = await fetchPatients(accessToken, { search: query.trim(), limit: 5 });
+        setPatientResults(res.data);
+      } catch {
+        setPatientResults([]);
+      } finally {
+        setSearchingPatients(false);
+      }
+    },
+    [accessToken],
+  );
+
+  useEffect(() => {
+    if (!isOpen || selectedPatient) return;
+    const timer = setTimeout(() => {
+      void searchPatients(patientSearch);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [patientSearch, searchPatients, isOpen, selectedPatient]);
 
   if (!isOpen) return null;
 
-  const handleCheckIn = (e: React.FormEvent) => {
+  const handleSelectPatient = (patient: PatientDTO) => {
+    setSelectedPatient({ id: patient.id, fullName: patient.fullName, pid: patient.pid });
+    setPatientSearch(`${patient.fullName} (${patient.pid})`);
+    setPatientResults([]);
+  };
+
+  const handleCheckIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    const nextQueue = `Q-${Math.floor(10 + Math.random() * 89)}`;
-    setGeneratedQueue(nextQueue);
-    onSuccess?.();
+    setError(null);
+
+    if (!selectedPatient) {
+      setError('Please select a valid registered patient from the list.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const priority = visitType === 'Emergency' ? 'HIGH' : 'NORMAL';
+      const res = await addToQueue(
+        {
+          patientId: selectedPatient.id,
+          assignedDoctorId: selectedDoctorId ? selectedDoctorId : undefined,
+          departmentId: selectedDeptId ? selectedDeptId : undefined,
+          priority,
+        },
+        accessToken,
+      );
+
+      setGeneratedTicket({
+        ticketNumber: res.ticketNumber,
+        patientName: res.patientName || selectedPatient.fullName,
+      });
+      onSuccess?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to issue ticket and check in.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleFinish = () => {
-    setGeneratedQueue(null);
+    setGeneratedTicket(null);
+    setSelectedPatient(null);
+    setPatientSearch('');
     onClose();
   };
+
+  const selectedDoctorObj = doctors.find((d) => d.id === selectedDoctorId);
+  const selectedDeptObj = departments.find((d) => d.id === selectedDeptId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -60,20 +185,26 @@ export default function CheckInModal({
           </button>
         </div>
 
-        {generatedQueue ? (
+        {error && (
+          <div className="mx-6 mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
+            {error}
+          </div>
+        )}
+
+        {generatedTicket ? (
           <div className="p-6 text-center">
             <CheckCircle2 className="w-12 h-12 text-teal-600 mx-auto mb-2" />
             <h3 className="text-lg font-bold text-slate-900">Patient Checked In!</h3>
-            <p className="text-xs text-slate-500 mb-4">{patientName} is now in queue.</p>
+            <p className="text-xs text-slate-500 mb-4">{generatedTicket.patientName} is now in queue.</p>
 
             {/* Ticket Card */}
             <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-4 my-3 text-center">
               <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 Queue Ticket Number
               </div>
-              <div className="text-3xl font-black text-blue-600 my-1">{generatedQueue}</div>
+              <div className="text-3xl font-black text-blue-600 my-1">{generatedTicket.ticketNumber}</div>
               <div className="text-xs text-slate-600 font-medium">
-                {department} • {doctor}
+                {selectedDeptObj?.name ?? 'General'} • {selectedDoctorObj?.displayName ?? 'Assigned Doctor'}
               </div>
               <div className="text-[11px] text-slate-400 mt-2">
                 Estimated waiting time: ~15 mins
@@ -100,47 +231,79 @@ export default function CheckInModal({
           </div>
         ) : (
           <form onSubmit={handleCheckIn} className="p-6 space-y-4">
-            <div>
+            <div className="relative">
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 Patient Name / ID *
               </label>
-              <input
-                type="text"
-                required
-                value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-teal-500"
-              />
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  required
+                  placeholder="Type name or PID to search..."
+                  value={patientSearch}
+                  onChange={(e) => {
+                    setPatientSearch(e.target.value);
+                    if (selectedPatient) setSelectedPatient(null);
+                  }}
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-teal-500"
+                />
+                {searchingPatients && (
+                  <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin absolute right-3 top-1/2 -translate-y-1/2" />
+                )}
+              </div>
+
+              {/* Patient suggestions dropdown */}
+              {patientResults.length > 0 && !selectedPatient && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-48 overflow-y-auto">
+                  {patientResults.map((p) => (
+                    <button
+                      type="button"
+                      key={p.id}
+                      onClick={() => handleSelectPatient(p)}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-teal-50 border-b border-slate-100 last:border-0 flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="font-semibold text-slate-800">{p.fullName}</div>
+                        <div className="text-[10px] text-slate-400">{p.phoneNumber ?? 'No phone'}</div>
+                      </div>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">
+                        {p.pid}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
                 <select
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
+                  value={selectedDeptId}
+                  onChange={(e) => setSelectedDeptId(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-teal-500 bg-white"
                 >
-                  <option>General</option>
-                  <option>Internal Medicine</option>
-                  <option>Gynecology</option>
-                  <option>Pediatrics</option>
-                  <option>Cardiology</option>
-                  <option>Orthopedics</option>
-                  <option>Dermatology</option>
+                  <option value="">General</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Doctor</label>
                 <select
-                  value={doctor}
-                  onChange={(e) => setDoctor(e.target.value)}
+                  value={selectedDoctorId}
+                  onChange={(e) => setSelectedDoctorId(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-teal-500 bg-white"
                 >
-                  {DOCTOR_AVAILABILITY_LIST.map((doc) => (
-                    <option key={doc.name} value={doc.name}>
-                      {doc.name}
+                  <option value="">Any Available Doctor</option>
+                  {doctors.map((doc) => (
+                    <option key={doc.id} value={doc.id}>
+                      {doc.displayName} {doc.specialty ? `(${doc.specialty})` : ''}
                     </option>
                   ))}
                 </select>
@@ -165,14 +328,17 @@ export default function CheckInModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                disabled={submitting}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-md shadow-teal-500/20 transition-colors"
+                disabled={submitting || !selectedPatient}
+                className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-md shadow-teal-500/20 transition-colors disabled:opacity-50"
               >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Issue Ticket & Check In
               </button>
             </div>

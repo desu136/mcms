@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   FlaskConical,
   Plus,
@@ -25,9 +25,14 @@ import {
   History,
   CalendarCheck,
   BarChart2,
+  RefreshCw,
 } from 'lucide-react';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
+import { useAuth } from '../../../lib/auth/auth-context';
+import { fetchLabOrders } from '../../../lib/api/clinical';
+import { fetchPatients } from '../../../lib/api/patients';
+import type { LabOrderDTO, PatientDTO } from '@mcms/contracts';
 
 /* ─── Types ─────────────────────────────────────────── */
 type LabStatus = 'Completed' | 'Pending' | 'Abnormal';
@@ -130,14 +135,77 @@ const statusStyle: Record<LabStatus, string> = {
 
 /* ─── Page ───────────────────────────────────────────── */
 export default function DoctorLabResultsPage() {
+  const { accessToken } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [search, setSearch]       = useState('');
   const [activeTab, setActiveTab] = useState<ActiveTab>('All');
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(true);
+  const [orders, setOrders] = useState<LabOrderDTO[]>([]);
+  const [patients, setPatients] = useState<PatientDTO[]>([]);
+
+  const loadData = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const [orderRes, patRes] = await Promise.all([
+        fetchLabOrders(accessToken),
+        fetchPatients(accessToken).then((r) => r.data).catch(() => []),
+      ]);
+      setOrders(orderRes);
+      setPatients(patRes);
+    } catch (err) {
+      console.error('Failed to load lab orders:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const activeResults: LabRow[] = orders.length > 0
+    ? orders.map((o) => {
+        const hasAbnormal = o.results?.some((r) => r.isAbnormal);
+        const isCompleted = o.status === 'COMPLETED';
+        const status: LabStatus = hasAbnormal ? 'Abnormal' : isCompleted ? 'Completed' : 'Pending';
+        const firstResult = o.results?.[0];
+        const testName = firstResult?.testName || o.samples?.[0]?.sampleType || 'General Lab Order';
+        const department = firstResult?.testCategory || 'General Laboratory';
+        const resultText = o.results?.length
+          ? o.results.map((r) => `${r.testName}: ${r.value} ${r.unit || ''}`.trim()).join('\n')
+          : 'Pending Processing';
+        const refText = o.results?.length
+          ? o.results.map((r) => r.referenceRange || '-').join('\n')
+          : '-';
+        const d = new Date(o.orderedAt);
+        const dateStr = isNaN(d.getTime())
+          ? 'Recent'
+          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const timeStr = isNaN(d.getTime())
+          ? '10:00 AM'
+          : d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+        return {
+          id: o.id,
+          patient: o.patientName,
+          pid: o.patientPid,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(o.patientName)}`,
+          test: testName,
+          department,
+          result: resultText,
+          reference: refText,
+          status,
+          date: dateStr,
+          time: timeStr,
+        };
+      })
+    : ALL_RESULTS;
 
   /* filter */
-  const filtered = ALL_RESULTS.filter((r) => {
+  const filtered = activeResults.filter((r) => {
     const matchTab =
       activeTab === 'All' ||
       r.status === activeTab;
@@ -151,10 +219,10 @@ export default function DoctorLabResultsPage() {
   });
 
   const counts = {
-    All: ALL_RESULTS.length,
-    Completed: ALL_RESULTS.filter((r) => r.status === 'Completed').length,
-    Pending:   ALL_RESULTS.filter((r) => r.status === 'Pending').length,
-    Abnormal:  ALL_RESULTS.filter((r) => r.status === 'Abnormal').length,
+    All: activeResults.length,
+    Completed: activeResults.filter((r) => r.status === 'Completed').length,
+    Pending:   activeResults.filter((r) => r.status === 'Pending').length,
+    Abnormal:  activeResults.filter((r) => r.status === 'Abnormal').length,
   };
 
   const toggleCheck = (id: string) => {
@@ -165,6 +233,8 @@ export default function DoctorLabResultsPage() {
     });
   };
 
+  const highlightedPatient = patients.length > 0 ? patients[0] : null;
+
   /* ─── Header ──────────────────────────────────────── */
   const header = (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -173,7 +243,17 @@ export default function DoctorLabResultsPage() {
           <FlaskConical className="w-5 h-5" />
         </div>
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Lab Results</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Lab Results</h1>
+            <button
+              onClick={loadData}
+              disabled={isLoading}
+              title="Refresh results"
+              className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
+            </button>
+          </div>
           <p className="text-xs sm:text-sm text-slate-500 font-medium">
             View and manage laboratory test results, upload new results, and track patient progress.
           </p>
@@ -184,12 +264,12 @@ export default function DoctorLabResultsPage() {
         <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-2xs text-xs font-semibold text-slate-700">
           <Calendar className="w-3.5 h-3.5 text-blue-500" />
           <div className="leading-tight">
-            <div className="font-bold text-slate-800">Oct 19, 2026</div>
-            <div className="text-[10px] text-slate-400 font-medium">Monday</div>
-          </div>
-          <div className="flex items-center ml-1">
-            <button className="p-0.5 hover:text-blue-600 transition-colors cursor-pointer"><ChevronLeft className="w-3.5 h-3.5" /></button>
-            <button className="p-0.5 hover:text-blue-600 transition-colors cursor-pointer"><ChevronRight className="w-3.5 h-3.5" /></button>
+            <div className="font-bold text-slate-800">
+              {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </div>
+            <div className="text-[10px] text-slate-400 font-medium">
+              {new Date().toLocaleDateString('en-US', { weekday: 'long' })}
+            </div>
           </div>
         </div>
         <button
@@ -213,11 +293,10 @@ export default function DoctorLabResultsPage() {
         </div>
         <div className="min-w-0">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">Total Tests</div>
-          <div className="text-2xl font-black text-slate-900 leading-tight">128</div>
+          <div className="text-2xl font-black text-slate-900 leading-tight">{counts.All}</div>
           <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold mt-0.5">
             <TrendingUp className="w-3 h-3" />
-            <span>12%</span>
-            <span className="text-slate-400 font-medium">vs. last week</span>
+            <span>Live Sync</span>
           </div>
         </div>
       </div>
@@ -229,11 +308,10 @@ export default function DoctorLabResultsPage() {
         </div>
         <div className="min-w-0">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">Completed</div>
-          <div className="text-2xl font-black text-slate-900 leading-tight">102</div>
+          <div className="text-2xl font-black text-slate-900 leading-tight">{counts.Completed}</div>
           <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold mt-0.5">
             <TrendingUp className="w-3 h-3" />
-            <span>18%</span>
-            <span className="text-slate-400 font-medium">vs. last week</span>
+            <span>Verified</span>
           </div>
         </div>
       </div>
@@ -245,11 +323,10 @@ export default function DoctorLabResultsPage() {
         </div>
         <div className="min-w-0">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">Pending</div>
-          <div className="text-2xl font-black text-slate-900 leading-tight">18</div>
-          <div className="flex items-center gap-1 text-[10px] text-rose-500 font-bold mt-0.5">
-            <TrendingDown className="w-3 h-3" />
-            <span>10%</span>
-            <span className="text-slate-400 font-medium">vs. last week</span>
+          <div className="text-2xl font-black text-slate-900 leading-tight">{counts.Pending}</div>
+          <div className="flex items-center gap-1 text-[10px] text-amber-500 font-bold mt-0.5">
+            <Clock className="w-3 h-3" />
+            <span>In Pipeline</span>
           </div>
         </div>
       </div>
@@ -261,11 +338,10 @@ export default function DoctorLabResultsPage() {
         </div>
         <div className="min-w-0">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">Abnormal</div>
-          <div className="text-2xl font-black text-slate-900 leading-tight">8</div>
+          <div className="text-2xl font-black text-slate-900 leading-tight">{counts.Abnormal}</div>
           <div className="flex items-center gap-1 text-[10px] text-rose-500 font-bold mt-0.5">
-            <TrendingDown className="w-3 h-3" />
-            <span>20%</span>
-            <span className="text-slate-400 font-medium">vs. last week</span>
+            <AlertTriangle className="w-3 h-3" />
+            <span>Attention</span>
           </div>
         </div>
       </div>
@@ -287,38 +363,50 @@ export default function DoctorLabResultsPage() {
 
         <div className="mt-3 flex items-start gap-3">
           <img
-            src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
-            alt="Aster Mulu"
+            src={
+              highlightedPatient
+                ? `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(highlightedPatient.fullName || highlightedPatient.firstName)}`
+                : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+            }
+            alt={highlightedPatient?.fullName || highlightedPatient?.firstName || 'Aster Mulu'}
             className="w-14 h-14 rounded-full object-cover ring-2 ring-blue-100 shrink-0"
           />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-sm font-black text-slate-900">Aster Mulu</span>
+              <span className="text-sm font-black text-slate-900">
+                {highlightedPatient ? (highlightedPatient.fullName || `${highlightedPatient.firstName} ${highlightedPatient.lastName}`) : 'Aster Mulu'}
+              </span>
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
                 <span className="w-1 h-1 rounded-full bg-emerald-500" />
                 Active
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-semibold mt-0.5">PID-001024</p>
+            <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+              {highlightedPatient?.pid || 'PID-001024'}
+            </p>
           </div>
         </div>
 
         <div className="mt-3 space-y-1.5 text-[11px]">
           <div className="flex items-center gap-2 text-slate-600">
             <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>28 years / Female</span>
+            <span>
+              {highlightedPatient
+                ? `${highlightedPatient.gender || 'Unknown'}`
+                : '28 years / Female'}
+            </span>
           </div>
           <div className="flex items-center gap-2 text-slate-600">
             <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>+251 912 345 678</span>
+            <span>{highlightedPatient?.phoneNumber || '+251 912 345 678'}</span>
           </div>
           <div className="flex items-center gap-2 text-slate-600">
             <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span className="truncate">aster.mulu@email.com</span>
+            <span className="truncate">{highlightedPatient?.email || 'aster.mulu@email.com'}</span>
           </div>
           <div className="flex items-center gap-2 text-slate-600">
             <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>Addis Ababa, Ethiopia</span>
+            <span>{highlightedPatient?.address || 'Addis Ababa, Ethiopia'}</span>
           </div>
         </div>
 
@@ -597,7 +685,11 @@ export default function DoctorLabResultsPage() {
         </div>
       </DoctorPageShell>
 
-      <DoctorLabOrderModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
+      <DoctorLabOrderModal
+        isOpen={modalOpen}
+        onClose={() => { void loadData(); setModalOpen(false); }}
+        {...(highlightedPatient?.id ? { patientId: highlightedPatient.id } : {})}
+      />
     </>
   );
 }

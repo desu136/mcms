@@ -1,8 +1,11 @@
-﻿'use client';
+'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Pill, Check, AlertCircle } from 'lucide-react';
 import { NURSE_PATIENTS } from './nurseMockData';
+import { useAuth } from '@/lib/auth/auth-context';
+import { createMedAdmin } from '@/lib/api/clinical';
+import { fetchPatients } from '@/lib/api/patients';
 
 interface AdministerMedModalProps {
   isOpen: boolean;
@@ -17,6 +20,8 @@ export default function AdministerMedModal({
   selectedPatientId,
   onAdminister,
 }: AdministerMedModalProps) {
+  const { accessToken } = useAuth();
+  const [patientsList, setPatientsList] = useState<{ id: string; name: string; pid: string }[]>([]);
   const [patientId, setPatientId] = useState(selectedPatientId || NURSE_PATIENTS[0]!.id);
   const [medication, setMedication] = useState('Amoxicillin 500mg');
   const [dosage, setDosage] = useState('1 Tablet Oral');
@@ -24,11 +29,54 @@ export default function AdministerMedModal({
   const [verifiedFiveRights, setVerifiedFiveRights] = useState(true);
   const [note, setNote] = useState('');
   const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (selectedPatientId) setPatientId(selectedPatientId);
+  }, [selectedPatientId]);
+
+  useEffect(() => {
+    if (!accessToken || !isOpen) return;
+    void (async () => {
+      try {
+        const res = await fetchPatients(accessToken, { limit: 50 });
+        if (res.data.length > 0) {
+          setPatientsList(
+            res.data.map((p) => ({
+              id: p.id,
+              name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+              pid: p.pid,
+            })),
+          );
+        }
+      } catch (err) {
+        console.error('Failed to load patients in AdministerMedModal:', err);
+      }
+    })();
+  }, [accessToken, isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
+    if (accessToken) {
+      try {
+        await createMedAdmin(
+          {
+            patientId,
+            medicationName: medication,
+            dose: dosage,
+            route,
+            ...(note.trim() ? { instructions: note.trim() } : {}),
+          },
+          accessToken,
+        );
+      } catch (err) {
+        console.error('Failed to record med administration in API:', err);
+      }
+    }
+    setIsSaving(false);
     setIsSaved(true);
     if (onAdminister) {
       onAdminister({
@@ -79,11 +127,17 @@ export default function AdministerMedModal({
               onChange={(e) => setPatientId(e.target.value)}
               className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 bg-white"
             >
-              {NURSE_PATIENTS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.pid}) â€” Room {p.room}
-                </option>
-              ))}
+              {patientsList.length > 0
+                ? patientsList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.pid})
+                    </option>
+                  ))
+                : NURSE_PATIENTS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.pid}) — Room {p.room}
+                    </option>
+                  ))}
             </select>
           </div>
 

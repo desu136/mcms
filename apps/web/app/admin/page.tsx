@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth/auth-context';
+import { fetchClinicDashboardStats } from '../../lib/api/staff';
+import type { ClinicDashboardStatsDTO } from '@mcms/contracts';
 import {
   Users,
   CalendarDays,
@@ -17,6 +19,7 @@ import {
   FileText,
   BarChart2,
   ChevronLeft,
+  Activity,
 } from 'lucide-react';
 import {
   LineChart,
@@ -178,12 +181,41 @@ const MiniCalendar = () => {
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function ClinicAdminDashboard() {
-  const { user } = useAuth();
+  const { user, accessToken } = useAuth();
   const firstName = user?.displayName?.split(' ')[0] ?? 'Admin';
 
-  const now = new Date(2026, 9, 19);
+  const [stats, setStats] = useState<ClinicDashboardStatsDTO | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const dayStr = now.toLocaleDateString('en-US', { weekday: 'long' });
+
+  const loadStats = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const data = await fetchClinicDashboardStats(accessToken);
+      if (data) setStats(data);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
+
+  const chartData = stats?.weeklyTrends ?? appointmentsOverview;
+  const deptData = stats?.departmentBreakdown?.length
+    ? stats.departmentBreakdown.map((d, i) => ({
+        name: d.name,
+        value: d.patientVisits,
+        color: departmentVisits[i]?.color ?? '#B0BEC5',
+      }))
+    : departmentVisits;
+  const recentAppts = stats?.recentAppointments ?? [];
+  const fmt = (n: number | undefined) => (isLoading ? '—' : (n ?? 0).toLocaleString());
 
   return (
     <div className="flex gap-0 h-full">
@@ -233,7 +265,7 @@ export default function ClinicAdminDashboard() {
           <StatCard
             icon={<Users size={22} />}
             label="Total Patients"
-            value="1,248"
+            value={fmt(stats?.totalPatients)}
             change={12}
             changeLabel="vs. last month"
             iconBg="#E3F2FD"
@@ -242,7 +274,7 @@ export default function ClinicAdminDashboard() {
           <StatCard
             icon={<CalendarDays size={22} />}
             label="Today's Appointments"
-            value="36"
+            value={fmt(stats?.todayAppointmentsCount)}
             change={8}
             changeLabel="vs. yesterday"
             iconBg="#E8F5E9"
@@ -251,18 +283,18 @@ export default function ClinicAdminDashboard() {
           <StatCard
             icon={<Stethoscope size={22} />}
             label="Active Doctors"
-            value="12"
+            value={fmt(stats?.totalDoctors)}
             change={0}
-            changeLabel="vs. last month"
+            changeLabel="registered staff"
             iconBg="#F3E5F5"
             iconColor="#6A1B9A"
           />
           <StatCard
-            icon={<Receipt size={22} />}
-            label="Pending Bills"
-            value="8"
-            change={-33}
-            changeLabel="vs. last month"
+            icon={<Activity size={22} />}
+            label="Active Queue"
+            value={fmt(stats?.activeQueueCount)}
+            change={0}
+            changeLabel="in waiting queue"
             iconBg="#FFF3E0"
             iconColor="#E65100"
           />
@@ -284,7 +316,7 @@ export default function ClinicAdminDashboard() {
               </div>
             </div>
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={appointmentsOverview} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                 <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
@@ -305,7 +337,7 @@ export default function ClinicAdminDashboard() {
                 <ResponsiveContainer width={130} height={130}>
                   <PieChart>
                     <Pie
-                      data={departmentVisits}
+                      data={deptData}
                       cx="50%"
                       cy="50%"
                       innerRadius={42}
@@ -313,25 +345,27 @@ export default function ClinicAdminDashboard() {
                       dataKey="value"
                       strokeWidth={0}
                     >
-                      {departmentVisits.map((entry, i) => (
+                      {deptData.map((entry, i) => (
                         <Cell key={i} fill={entry.color} />
                       ))}
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-lg font-bold text-gray-800">1,248</span>
+                  <span className="text-lg font-bold text-gray-800">
+                    {deptData.reduce((acc, d) => acc + d.value, 0).toLocaleString()}
+                  </span>
                   <span className="text-[9px] text-gray-400 font-medium">Total Visits</span>
                 </div>
               </div>
               <div className="flex-1 space-y-1.5">
-                {departmentVisits.map((d, i) => (
+                {deptData.map((d, i) => (
                   <div key={i} className="flex items-center justify-between text-xs">
                     <span className="flex items-center gap-1.5 text-gray-600 truncate">
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
                       {d.name}
                     </span>
-                    <span className="font-semibold text-gray-700 ml-1">{d.value}%</span>
+                    <span className="font-semibold text-gray-700 ml-1">{d.value}</span>
                   </div>
                 ))}
               </div>
@@ -405,22 +439,38 @@ export default function ClinicAdminDashboard() {
             <button className="text-xs text-[#2979FF] font-medium hover:underline">View All</button>
           </div>
           <div className="space-y-3">
-            {upcomingAppointments.map((a, i) => (
-              <div key={i} className="flex items-center gap-3 group hover:bg-gray-50 rounded-xl px-2 py-2 -mx-2 transition-colors cursor-pointer">
-                <div className="text-xs font-semibold text-gray-500 w-16 flex-shrink-0">{a.time}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-gray-800 truncate">{a.patient}</div>
-                  <div className="text-[10px] text-gray-400 truncate">{a.doctor}</div>
+            {recentAppts.length > 0 ? (
+              recentAppts.slice(0, 5).map((a) => (
+                <div key={a.id} className="flex items-center gap-3 group hover:bg-gray-50 rounded-xl px-2 py-2 -mx-2 transition-colors cursor-pointer">
+                  <div className="text-xs font-semibold text-gray-500 w-16 flex-shrink-0">{a.startTime || '—'}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-gray-800 truncate">{a.patientName}</div>
+                    <div className="text-[10px] text-gray-400 truncate">{a.doctorName}</div>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 bg-blue-50 text-blue-700">
+                    {a.departmentName || a.status}
+                  </span>
+                  <ChevronRight size={13} className="text-gray-300 flex-shrink-0 opacity-0 group-hover:opacity-100 transition" />
                 </div>
-                <span
-                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: a.deptColor, color: a.deptText }}
-                >
-                  {a.dept.split(' ')[0]}
-                </span>
-                <ChevronRight size={13} className="text-gray-300 flex-shrink-0 opacity-0 group-hover:opacity-100 transition" />
-              </div>
-            ))}
+              ))
+            ) : (
+              upcomingAppointments.map((a, i) => (
+                <div key={i} className="flex items-center gap-3 group hover:bg-gray-50 rounded-xl px-2 py-2 -mx-2 transition-colors cursor-pointer">
+                  <div className="text-xs font-semibold text-gray-500 w-16 flex-shrink-0">{a.time}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-gray-800 truncate">{a.patient}</div>
+                    <div className="text-[10px] text-gray-400 truncate">{a.doctor}</div>
+                  </div>
+                  <span
+                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: a.deptColor, color: a.deptText }}
+                  >
+                    {a.dept.split(' ')[0]}
+                  </span>
+                  <ChevronRight size={13} className="text-gray-300 flex-shrink-0 opacity-0 group-hover:opacity-100 transition" />
+                </div>
+              ))
+            )}
           </div>
         </div>
 

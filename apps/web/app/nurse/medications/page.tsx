@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Pill,
   CheckCircle2,
@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   History,
   ClipboardList,
+  RefreshCw,
 } from 'lucide-react';
 import {
   NURSE_MEDICATIONS,
@@ -28,8 +29,14 @@ import {
 } from '@/components/nurse/nurseMockData';
 import NurseMedicationDetailsModal from '@/components/nurse/NurseMedicationDetailsModal';
 import AdministerMedModal from '@/components/nurse/AdministerMedModal';
+import { useAuth } from '@/lib/auth/auth-context';
+import { fetchMedAdmins } from '@/lib/api/clinical';
+import type { MedicationAdminDTO } from '@mcms/contracts';
 
 export default function NurseMedicationsPage() {
+  const { accessToken } = useAuth();
+  const [liveMeds, setLiveMeds] = useState<NurseMedicationRecord[]>(NURSE_MEDICATIONS);
+  const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'records' | 'pending' | 'missed' | 'refills'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
@@ -43,9 +50,63 @@ export default function NurseMedicationsPage() {
   const [administerModalOpen, setAdministerModalOpen] = useState(false);
   const [medForAdminister, setMedForAdminister] = useState<NurseMedicationRecord | null>(null);
 
+  const loadMedAdmins = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const data = await fetchMedAdmins(accessToken);
+      if (data && data.length > 0) {
+        const statusMap: Record<string, NurseMedicationRecord['status']> = {
+          ADMINISTERED: 'Administered',
+          PENDING: 'Pending',
+          DUE_SOON: 'Due Soon',
+          MISSED: 'Missed',
+          REFILL_DUE: 'Refill Due',
+        };
+        const mapped: NurseMedicationRecord[] = data.map((dto, idx) => {
+          const mock = NURSE_MEDICATIONS[idx % NURSE_MEDICATIONS.length] as NurseMedicationRecord;
+          return {
+            id: dto.id,
+            patientId: dto.patientId,
+            patientName: dto.patientName || mock?.patientName || 'Assigned Patient',
+            patientPid: `PID-${dto.patientId.slice(0, 6).toUpperCase()}`,
+            patientAvatar: mock?.patientAvatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=160',
+            age: mock?.age ?? 35,
+            gender: mock?.gender ?? 'Female',
+            room: mock?.room ?? 'Room 3A-01',
+            phone: mock?.phone ?? '—',
+            email: mock?.email ?? '—',
+            address: mock?.address ?? 'Addis Ababa',
+            department: mock?.department ?? 'General',
+            medicationName: dto.medicationName,
+            condition: mock?.condition ?? 'General care',
+            dose: dto.dose,
+            route: (dto.route as any) || 'Oral',
+            schedule: (dto.schedule as any) || 'BID',
+            nextDue: dto.scheduledTime ? new Date(dto.scheduledTime).toLocaleString() : (mock?.nextDue ?? 'Today'),
+            status: statusMap[dto.status.toUpperCase()] || 'Pending',
+            prescribingDoctor: mock?.prescribingDoctor ?? 'Dr. Fitsum Alemu',
+            instructions: dto.instructions || mock?.instructions || 'As prescribed',
+            ...(dto.administeredAt ? { lastAdministered: new Date(dto.administeredAt).toLocaleString() } : {}),
+          };
+        });
+        setLiveMeds(mapped);
+        setSelectedMed(mapped[0]!);
+      }
+    } catch (err) {
+      console.error('Failed to load medication records:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadMedAdmins();
+  }, [loadMedAdmins]);
+
   // Filtered medications
   const filteredMeds = useMemo(() => {
-    return NURSE_MEDICATIONS.filter((med) => {
+    return liveMeds.filter((med) => {
       // Tab filter
       if (activeTab === 'pending' && med.status !== 'Pending' && med.status !== 'Due Soon') return false;
       if (activeTab === 'missed' && med.status !== 'Missed') return false;
@@ -70,7 +131,7 @@ export default function NurseMedicationsPage() {
 
       return true;
     });
-  }, [activeTab, selectedStatus, selectedDept, searchQuery]);
+  }, [activeTab, selectedStatus, selectedDept, searchQuery, liveMeds]);
 
   const totalPages = Math.max(1, Math.ceil(filteredMeds.length / rowsPerPage));
   const paginatedMeds = useMemo(() => {
@@ -131,6 +192,16 @@ export default function NurseMedicationsPage() {
                   </button>
                 </div>
               </div>
+
+              <button
+                onClick={() => void loadMedAdmins()}
+                disabled={isLoading}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors shrink-0 disabled:opacity-50"
+                title="Refresh Medications"
+              >
+                <RefreshCw size={13} className={`text-blue-600 ${isLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
 
               <button
                 onClick={() => handleOpenAdminister()}
@@ -660,7 +731,10 @@ export default function NurseMedicationsPage() {
       {/* Administer Medication Modal */}
       <AdministerMedModal
         isOpen={administerModalOpen}
-        onClose={() => setAdministerModalOpen(false)}
+        onClose={() => {
+          setAdministerModalOpen(false);
+          void loadMedAdmins();
+        }}
         selectedPatientId={medForAdminister?.patientId || selectedMed.patientId}
       />
     </div>

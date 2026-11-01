@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
+import { Gender } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthenticatedUserEntity } from '../auth/types/authenticated-user.type';
 import type {
@@ -17,6 +18,14 @@ import type { TenantContext } from '../common/tenant/tenant-context.interface';
 @Injectable()
 export class PatientsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private normalizeGender(gender?: string | null): Gender {
+    if (!gender) return Gender.FEMALE;
+    const upper = gender.trim().toUpperCase();
+    if (upper === 'MALE' || upper === 'M') return Gender.MALE;
+    if (upper === 'FEMALE' || upper === 'F') return Gender.FEMALE;
+    return Gender.OTHER;
+  }
 
   private generatePid(existingCount: number): string {
     const padded = String(existingCount + 1).padStart(6, '0');
@@ -143,7 +152,7 @@ export class PatientsService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         fullName,
-        gender: dto.gender as any ?? 'FEMALE',
+        gender: this.normalizeGender(dto.gender),
         ...(dto.dateOfBirth ? { dateOfBirth: new Date(dto.dateOfBirth) } : {}),
         ...(dto.phoneNumber ? { phoneNumber: dto.phoneNumber } : {}),
         ...(dto.email ? { email: dto.email } : {}),
@@ -194,7 +203,7 @@ export class PatientsService {
         ...(dto.firstName ? { firstName: dto.firstName } : {}),
         ...(dto.lastName ? { lastName: dto.lastName } : {}),
         ...(fullName ? { fullName } : {}),
-        ...(dto.gender ? { gender: dto.gender as any } : {}),
+        ...(dto.gender ? { gender: this.normalizeGender(dto.gender) } : {}),
         ...(dto.dateOfBirth ? { dateOfBirth: new Date(dto.dateOfBirth) } : {}),
         ...(dto.phoneNumber !== undefined ? { phoneNumber: dto.phoneNumber } : {}),
         ...(dto.email !== undefined ? { email: dto.email } : {}),

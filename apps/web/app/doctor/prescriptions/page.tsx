@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Pill,
   Plus,
@@ -26,206 +26,23 @@ import {
   XCircle,
   ChevronDown,
 } from 'lucide-react';
-import { INITIAL_PATIENTS, CURRENT_DOCTOR, PatientItem } from '../../../components/doctor/doctorMockData';
+import type { PrescriptionDTO, PatientDTO } from '@mcms/contracts';
+import { INITIAL_PATIENTS, PatientItem } from '../../../components/doctor/doctorMockData';
 import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescriptionModal';
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 import DoctorStatCard from '../../../components/doctor/DoctorStatCard';
-
-interface PrescriptionItem {
-  id: string;
-  prescriptionId: string;
-  patient: {
-    name: string;
-    pid: string;
-    avatar: string;
-    age: number;
-    gender: string;
-  };
-  medication: string;
-  dosage: string;
-  duration: string;
-  prescribedDate: string;
-  status: 'Active' | 'Completed' | 'Pending Refill' | 'Cancelled';
-  department: string;
-}
-
-const PRESCRIPTIONS_DATA: PrescriptionItem[] = [
-  {
-    id: 'rx-1',
-    prescriptionId: 'RX-2026-048',
-    patient: {
-      name: 'Aster Mulu',
-      pid: 'PID-001024',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      age: 28,
-      gender: 'Female',
-    },
-    medication: 'Amoxicillin 500mg',
-    dosage: '500mg TID',
-    duration: '7 days',
-    prescribedDate: 'Oct 19, 2026 09:15 AM',
-    status: 'Active',
-    department: 'Cardiology',
-  },
-  {
-    id: 'rx-2',
-    prescriptionId: 'RX-2026-047',
-    patient: {
-      name: 'Samuel Girma',
-      pid: 'PID-001087',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-      age: 45,
-      gender: 'Male',
-    },
-    medication: 'Metformin 500mg',
-    dosage: '500mg BID',
-    duration: '30 days',
-    prescribedDate: 'Oct 18, 2026 04:20 PM',
-    status: 'Active',
-    department: 'Internal Medicine',
-  },
-  {
-    id: 'rx-3',
-    prescriptionId: 'RX-2026-046',
-    patient: {
-      name: 'Lidya Kebede',
-      pid: 'PID-001062',
-      avatar: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=150&auto=format&fit=crop&q=80',
-      age: 39,
-      gender: 'Female',
-    },
-    medication: 'Atorvastatin 20mg',
-    dosage: '20mg OD',
-    duration: '30 days',
-    prescribedDate: 'Oct 18, 2026 11:10 AM',
-    status: 'Active',
-    department: 'Cardiology',
-  },
-  {
-    id: 'rx-4',
-    prescriptionId: 'RX-2026-045',
-    patient: {
-      name: 'Getachew Tadesse',
-      pid: 'PID-001076',
-      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-      age: 52,
-      gender: 'Male',
-    },
-    medication: 'Lisinopril 10mg',
-    dosage: '10mg OD',
-    duration: '30 days',
-    prescribedDate: 'Oct 17, 2026 03:45 PM',
-    status: 'Active',
-    department: 'Cardiology',
-  },
-  {
-    id: 'rx-5',
-    prescriptionId: 'RX-2026-044',
-    patient: {
-      name: 'Betlehem Abebe',
-      pid: 'PID-001098',
-      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
-      age: 32,
-      gender: 'Female',
-    },
-    medication: 'Paracetamol 500mg',
-    dosage: '500mg TID',
-    duration: '5 days',
-    prescribedDate: 'Oct 16, 2026 10:30 AM',
-    status: 'Completed',
-    department: 'Internal Medicine',
-  },
-  {
-    id: 'rx-6',
-    prescriptionId: 'RX-2026-043',
-    patient: {
-      name: 'Daniel Wondimu',
-      pid: 'PID-001099',
-      avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150&auto=format&fit=crop&q=80',
-      age: 41,
-      gender: 'Male',
-    },
-    medication: 'Omeprazole 20mg',
-    dosage: '20mg OD',
-    duration: '14 days',
-    prescribedDate: 'Oct 16, 2026 09:20 AM',
-    status: 'Active',
-    department: 'Gastroenterology',
-  },
-  {
-    id: 'rx-7',
-    prescriptionId: 'RX-2026-042',
-    patient: {
-      name: 'Tigist Alemu',
-      pid: 'PID-001045',
-      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-      age: 26,
-      gender: 'Female',
-    },
-    medication: 'Vitamin D3 1000IU',
-    dosage: '1000IU OD',
-    duration: '30 days',
-    prescribedDate: 'Oct 15, 2026 02:15 PM',
-    status: 'Active',
-    department: 'Endocrinology',
-  },
-  {
-    id: 'rx-8',
-    prescriptionId: 'RX-2026-041',
-    patient: {
-      name: 'Abebe Assefa',
-      pid: 'PID-001087',
-      avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
-      age: 48,
-      gender: 'Male',
-    },
-    medication: 'Amlodipine 5mg',
-    dosage: '5mg OD',
-    duration: '30 days',
-    prescribedDate: 'Oct 14, 2026 11:40 AM',
-    status: 'Active',
-    department: 'Cardiology',
-  },
-  {
-    id: 'rx-9',
-    prescriptionId: 'RX-2026-040',
-    patient: {
-      name: 'Sofiya Mohamed',
-      pid: 'PID-001131',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      age: 34,
-      gender: 'Female',
-    },
-    medication: 'Ibuprofen 400mg',
-    dosage: '400mg TID',
-    duration: '5 days',
-    prescribedDate: 'Oct 13, 2026 04:05 PM',
-    status: 'Pending Refill',
-    department: 'Rheumatology',
-  },
-  {
-    id: 'rx-10',
-    prescriptionId: 'RX-2026-039',
-    patient: {
-      name: 'Yonas Gebre',
-      pid: 'PID-001120',
-      avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
-      age: 38,
-      gender: 'Male',
-    },
-    medication: 'Losartan 50mg',
-    dosage: '50mg OD',
-    duration: '30 days',
-    prescribedDate: 'Oct 12, 2026 09:50 AM',
-    status: 'Cancelled',
-    department: 'Cardiology',
-  },
-];
+import { useAuth } from '../../../lib/auth/auth-context';
+import { fetchPrescriptions } from '../../../lib/api/clinical';
+import { fetchPatients } from '../../../lib/api/patients';
 
 export default function DoctorPrescriptionsPage() {
-  const [prescriptions] = useState<PrescriptionItem[]>(PRESCRIPTIONS_DATA);
-  const [filterTab, setFilterTab] = useState<'All' | 'Active' | 'Pending Refills' | 'Completed' | 'Cancelled'>('All');
+  const { accessToken } = useAuth();
+  const [prescriptions, setPrescriptions] = useState<PrescriptionDTO[]>([]);
+  const [patients, setPatients] = useState<PatientDTO[]>([]);
+  const [selectedRx, setSelectedRx] = useState<PrescriptionDTO | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [filterTab, setFilterTab] = useState<'All' | 'Active' | 'Dispensed' | 'Cancelled'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
   const [selectedStatus, setSelectedStatus] = useState('All Statuses');
@@ -237,37 +54,78 @@ export default function DoctorPrescriptionsPage() {
   const [selectedPatientForDrawer, setSelectedPatientForDrawer] = useState<PatientItem | null>(null);
   const [selectedRightTab, setSelectedRightTab] = useState<'Overview' | 'Medical History' | 'Appointments'>('Overview');
 
-  // Active highlighted patient for the right panel (defaults to Aster Mulu)
-  const [activePatient, setActivePatient] = useState({
-    name: 'Aster Mulu',
-    pid: 'PID-001024',
+
+  const now = new Date();
+  const dateLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const dayLabel = now.toLocaleDateString('en-US', { weekday: 'long' });
+
+  const loadData = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const [rxRes, patRes] = await Promise.allSettled([
+        fetchPrescriptions(accessToken),
+        fetchPatients(accessToken, { limit: 50 }),
+      ]);
+      if (rxRes.status === 'fulfilled') {
+        setPrescriptions(rxRes.value);
+        if (rxRes.value.length > 0 && !selectedRx) {
+          setSelectedRx(rxRes.value[0] || null);
+        }
+      }
+      if (patRes.status === 'fulfilled') {
+        setPatients(patRes.value.data);
+      }
+    } catch (err) {
+      console.error('Failed to load prescriptions:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken, selectedRx]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  // Find patient for the selected prescription
+  const matchedPatient = patients.find((p) => p.id === selectedRx?.patientId);
+
+  const activePatient = {
+    name: selectedRx?.patientName || matchedPatient?.fullName || 'No patient selected',
+    pid: selectedRx?.patientPid || matchedPatient?.pid || '—',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    age: 28,
-    gender: 'Female',
-    phone: '+251 912 345 678',
-    email: 'aster.mulu@email.com',
-    address: 'Addis Ababa, Ethiopia',
-    lastVisitDate: 'Oct 18, 2026',
+    age: matchedPatient?.dateOfBirth
+      ? Math.max(0, new Date().getFullYear() - new Date(matchedPatient.dateOfBirth).getFullYear())
+      : 30,
+    gender: matchedPatient?.gender === 'FEMALE' ? 'Female' : 'Male',
+    phone: matchedPatient?.phoneNumber || '—',
+    email: matchedPatient?.email || '—',
+    address: matchedPatient?.address || 'Addis Ababa, Ethiopia',
+    lastVisitDate: 'Recent',
     lastVisitDept: 'Cardiology',
-    nextAppointmentDate: 'Oct 25, 2026',
-    nextAppointmentTime: '09:00 AM • Cardiology',
-  });
+    nextAppointmentDate: 'Upcoming',
+    nextAppointmentTime: '10:00 AM',
+  };
+
+  const activeList = prescriptions.filter((p) => p.status === 'ACTIVE');
+  const dispensedList = prescriptions.filter((p) => p.status === 'DISPENSED');
+  const cancelledList = prescriptions.filter((p) => p.status === 'CANCELLED');
 
   const filteredPrescriptions = prescriptions.filter((item) => {
-    if (filterTab === 'Active' && item.status !== 'Active') return false;
-    if (filterTab === 'Pending Refills' && item.status !== 'Pending Refill') return false;
-    if (filterTab === 'Completed' && item.status !== 'Completed') return false;
-    if (filterTab === 'Cancelled' && item.status !== 'Cancelled') return false;
+    if (filterTab === 'Active' && item.status !== 'ACTIVE') return false;
+    if (filterTab === 'Dispensed' && item.status !== 'DISPENSED') return false;
+    if (filterTab === 'Cancelled' && item.status !== 'CANCELLED') return false;
 
-    if (selectedDept !== 'All Departments' && item.department !== selectedDept) return false;
-    if (selectedStatus !== 'All Statuses' && item.status !== selectedStatus) return false;
+    if (selectedStatus !== 'All Statuses' && item.status !== selectedStatus.toUpperCase()) return false;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
+      const medName = item.items?.map((i) => i.medicationName).join(' ').toLowerCase() || '';
       return (
-        item.patient.name.toLowerCase().includes(q) ||
-        item.medication.toLowerCase().includes(q) ||
-        item.prescriptionId.toLowerCase().includes(q)
+        item.patientName.toLowerCase().includes(q) ||
+        (item.patientPid && item.patientPid.toLowerCase().includes(q)) ||
+        medName.includes(q) ||
+        item.id.toLowerCase().includes(q)
       );
     }
     return true;
@@ -291,9 +149,32 @@ export default function DoctorPrescriptionsPage() {
     window.print();
   };
 
-  const openDrawerForPatient = (pid: string) => {
-    const p = INITIAL_PATIENTS.find((item) => item.id === pid) ?? INITIAL_PATIENTS[0]!;
-    setSelectedPatientForDrawer(p);
+  const openDrawerForPatient = (patientId: string) => {
+    const match = patients.find((p) => p.id === patientId || p.pid === patientId);
+    if (match) {
+      const age = match.dateOfBirth
+        ? Math.max(0, new Date().getFullYear() - new Date(match.dateOfBirth).getFullYear())
+        : 30;
+      setSelectedPatientForDrawer({
+        id: match.id,
+        name: match.fullName || `${match.firstName} ${match.lastName}`.trim(),
+        pid: match.pid || match.id.slice(0, 8),
+        age,
+        gender: match.gender === 'FEMALE' ? 'Female' : 'Male',
+        phone: match.phoneNumber || '—',
+        email: match.email || '—',
+        address: match.address || 'Addis Ababa, Ethiopia',
+        department: 'General Medicine',
+        lastVisit: 'Recent',
+        lastVisitReason: 'Prescription Requisition',
+        status: 'Active',
+        avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+        totalVisits: 1,
+        conditions: [],
+      });
+    } else {
+      setSelectedPatientForDrawer(INITIAL_PATIENTS[0] ?? null);
+    }
   };
 
   const headerContent = (
@@ -313,9 +194,18 @@ export default function DoctorPrescriptionsPage() {
       <div className="flex items-center gap-2.5">
         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-2xs">
           <Calendar className="w-4 h-4 text-blue-600" />
-          <span>Oct 19, 2026</span>
-          <span className="text-slate-400">Monday</span>
+          <span>{dateLabel}</span>
+          <span className="text-slate-400">{dayLabel}</span>
         </div>
+
+        <button
+          type="button"
+          onClick={() => void loadData()}
+          title="Refresh"
+          className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 shadow-2xs transition-all cursor-pointer"
+        >
+          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+        </button>
 
         <button
           type="button"
@@ -329,35 +219,33 @@ export default function DoctorPrescriptionsPage() {
     </div>
   );
 
+  const uniquePatientsCount = new Set(prescriptions.map((p) => p.patientId)).size;
+
   const kpisContent = (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <DoctorStatCard
         title="Total Prescriptions"
-        value={48}
+        value={isLoading ? '—' : prescriptions.length}
         icon={Pill}
         color="blue"
-        change={{ value: '12%', trend: 'up', label: 'vs. last month' }}
       />
       <DoctorStatCard
         title="Active Prescriptions"
-        value={42}
+        value={isLoading ? '—' : activeList.length}
         icon={CheckCircle2}
         color="emerald"
-        change={{ value: '16%', trend: 'up', label: 'vs. last month' }}
       />
       <DoctorStatCard
-        title="Refills Pending"
-        value={6}
+        title="Dispensed"
+        value={isLoading ? '—' : dispensedList.length}
         icon={Clock}
         color="purple"
-        change={{ value: '2%', trend: 'up', label: 'vs. last month' }}
       />
       <DoctorStatCard
         title="Unique Patients"
-        value={28}
+        value={isLoading ? '—' : uniquePatientsCount}
         icon={Users}
         color="amber"
-        change={{ value: '8%', trend: 'up', label: 'vs. last month' }}
       />
     </div>
   );
@@ -530,7 +418,7 @@ export default function DoctorPrescriptionsPage() {
 
               <button
                 type="button"
-                onClick={() => handlePrint('RX-2026-048')}
+                onClick={() => handlePrint(selectedRx?.id ?? '')}
                 className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-center transition-all group cursor-pointer"
               >
                 <Printer className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform mb-1.5" />
@@ -662,7 +550,7 @@ export default function DoctorPrescriptionsPage() {
               }`}
             >
               <Pill className="w-3.5 h-3.5" />
-              All Prescriptions (48)
+              All Prescriptions ({prescriptions.length})
             </button>
             <button
               type="button"
@@ -674,31 +562,19 @@ export default function DoctorPrescriptionsPage() {
               }`}
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
-              Active (42)
+              Active ({activeList.length})
             </button>
             <button
               type="button"
-              onClick={() => setFilterTab('Pending Refills')}
+              onClick={() => setFilterTab('Dispensed')}
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                filterTab === 'Pending Refills'
+                filterTab === 'Dispensed'
                   ? 'bg-blue-600 text-white shadow-2xs'
                   : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
               }`}
             >
               <Clock className="w-3.5 h-3.5" />
-              Pending Refills (6)
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterTab('Completed')}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                filterTab === 'Completed'
-                  ? 'bg-blue-600 text-white shadow-2xs'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Completed (0)
+              Dispensed ({dispensedList.length})
             </button>
             <button
               type="button"
@@ -710,7 +586,7 @@ export default function DoctorPrescriptionsPage() {
               }`}
             >
               <XCircle className="w-3.5 h-3.5" />
-              Cancelled (0)
+              Cancelled ({cancelledList.length})
             </button>
           </div>
 
@@ -720,7 +596,7 @@ export default function DoctorPrescriptionsPage() {
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search by patient name, medication, or prescription ID..."
+                placeholder="Search by patient name, PID, or medication..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 text-xs bg-transparent border-0 text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-0"
@@ -730,42 +606,17 @@ export default function DoctorPrescriptionsPage() {
             <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
               <div className="relative">
                 <select
-                  value={selectedDept}
-                  onChange={(e) => setSelectedDept(e.target.value)}
-                  className="appearance-none pl-3 pr-8 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white hover:border-slate-300 focus:outline-hidden cursor-pointer"
-                >
-                  <option>All Departments</option>
-                  <option>Cardiology</option>
-                  <option>Internal Medicine</option>
-                  <option>Gastroenterology</option>
-                  <option>Endocrinology</option>
-                  <option>Rheumatology</option>
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-
-              <div className="relative">
-                <select
                   value={selectedStatus}
                   onChange={(e) => setSelectedStatus(e.target.value)}
                   className="appearance-none pl-3 pr-8 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white hover:border-slate-300 focus:outline-hidden cursor-pointer"
                 >
                   <option>All Statuses</option>
                   <option>Active</option>
-                  <option>Pending Refill</option>
-                  <option>Completed</option>
+                  <option>Dispensed</option>
                   <option>Cancelled</option>
                 </select>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
-
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-2xs transition-all cursor-pointer"
-              >
-                <Filter className="w-3.5 h-3.5 text-slate-500" />
-                Filter
-              </button>
             </div>
           </div>
 
@@ -785,7 +636,7 @@ export default function DoctorPrescriptionsPage() {
                     <th className="py-3 px-3">Prescription ID</th>
                     <th className="py-3 px-3">Patient</th>
                     <th className="py-3 px-3">Medication(s)</th>
-                    <th className="py-3 px-3">Dosage</th>
+                    <th className="py-3 px-3">Dosage / Frequency</th>
                     <th className="py-3 px-3">Duration</th>
                     <th className="py-3 px-3">Prescribed Date</th>
                     <th className="py-3 px-3 text-center">Status</th>
@@ -793,165 +644,122 @@ export default function DoctorPrescriptionsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredPrescriptions.map((row) => {
-                    const isChecked = Boolean(selectedRows[row.id]);
-                    return (
-                      <tr
-                        key={row.id}
-                        className={`hover:bg-blue-50/40 transition-colors ${
-                          isChecked ? 'bg-blue-50/30' : ''
-                        }`}
-                      >
-                        <td className="py-3 px-3.5 text-center">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => toggleRow(row.id)}
-                            className="rounded-sm border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
-                          />
-                        </td>
-                        <td className="py-3 px-3 font-mono font-bold text-slate-700 text-[11px]">
-                          {row.prescriptionId}
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-2.5">
-                            <img
-                              src={row.patient.avatar}
-                              alt={row.patient.name}
-                              className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-slate-100 shadow-2xs"
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-400 text-xs">
+                        Loading prescriptions...
+                      </td>
+                    </tr>
+                  ) : filteredPrescriptions.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-400 text-xs">
+                        No prescriptions found in this category.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPrescriptions.map((row) => {
+                      const isChecked = Boolean(selectedRows[row.id]);
+                      const isSelected = selectedRx?.id === row.id;
+                      const medNames = row.items?.map((i) => i.medicationName).join(', ') || 'Medication';
+                      const dosageStr = row.items?.map((i) => `${i.dosage}${i.frequency ? ` (${i.frequency})` : ''}`).join(', ') || '—';
+                      const durationStr = row.items?.[0]?.duration || '—';
+                      const rxDate = row.createdAt ? new Date(row.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+                      return (
+                        <tr
+                          key={row.id}
+                          onClick={() => setSelectedRx(row)}
+                          className={`hover:bg-blue-50/40 cursor-pointer transition-colors ${
+                            isSelected ? 'bg-blue-50/40' : isChecked ? 'bg-blue-50/20' : ''
+                          }`}
+                        >
+                          <td className="py-3 px-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleRow(row.id)}
+                              className="rounded-sm border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
                             />
-                            <div>
-                              <div
-                                onClick={() => openDrawerForPatient(row.patient.pid)}
-                                className="font-extrabold text-slate-900 hover:text-blue-600 cursor-pointer truncate"
-                              >
-                                {row.patient.name}
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-slate-700 text-[11px]">
+                            {row.id.slice(0, 10).toUpperCase()}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center shrink-0">
+                                {row.patientName?.charAt(0) || 'P'}
                               </div>
-                              <div className="text-[10px] text-slate-400 font-medium">
-                                {row.patient.pid}
+                              <div>
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openDrawerForPatient(row.patientId);
+                                  }}
+                                  className="font-extrabold text-slate-900 hover:text-blue-600 cursor-pointer truncate"
+                                >
+                                  {row.patientName}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-medium">
+                                  {row.patientPid || row.patientId.slice(0, 8)}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 font-semibold text-slate-800">
-                          {row.medication}
-                        </td>
-                        <td className="py-3 px-3 text-slate-600">{row.dosage}</td>
-                        <td className="py-3 px-3 text-slate-600">{row.duration}</td>
-                        <td className="py-3 px-3 text-slate-500 text-[11px] whitespace-nowrap">
-                          {row.prescribedDate}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          {row.status === 'Active' && (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
-                              Active
-                            </span>
-                          )}
-                          {row.status === 'Completed' && (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-600 border border-blue-200">
-                              Completed
-                            </span>
-                          )}
-                          {row.status === 'Pending Refill' && (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-600 border border-amber-200">
-                              Pending Refill
-                            </span>
-                          )}
-                          {row.status === 'Cancelled' && (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
-                              Cancelled
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => openDrawerForPatient(row.patient.pid)}
-                              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/50 transition-colors"
-                              title="View Details"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handlePrint(row.prescriptionId)}
-                              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/50 transition-colors"
-                              title="Print Prescription"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 transition-colors"
-                              title="More Options"
-                            >
-                              <MoreVertical className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="py-3 px-3 font-semibold text-slate-800 max-w-xs truncate">
+                            {medNames}
+                          </td>
+                          <td className="py-3 px-3 text-slate-600">{dosageStr}</td>
+                          <td className="py-3 px-3 text-slate-600">{durationStr}</td>
+                          <td className="py-3 px-3 text-slate-500 text-[11px] whitespace-nowrap">
+                            {rxDate}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {row.status === 'ACTIVE' ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                                Active
+                              </span>
+                            ) : row.status === 'DISPENSED' ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-600 border border-blue-200">
+                                Dispensed
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
+                                {row.status}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openDrawerForPatient(row.patientId)}
+                                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/50 transition-colors cursor-pointer"
+                                title="View Patient Details"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePrint(row.id)}
+                                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/50 transition-colors cursor-pointer"
+                                title="Print Prescription"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
 
             {/* Pagination footer */}
             <div className="p-3.5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-              <div>Showing 1-10 of 48 prescriptions</div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  className="w-7 h-7 rounded-lg bg-blue-600 text-white font-bold text-xs flex items-center justify-center shadow-2xs"
-                >
-                  1
-                </button>
-                <button
-                  type="button"
-                  className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs flex items-center justify-center"
-                >
-                  2
-                </button>
-                <button
-                  type="button"
-                  className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs flex items-center justify-center"
-                >
-                  3
-                </button>
-                <button
-                  type="button"
-                  className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs flex items-center justify-center"
-                >
-                  4
-                </button>
-                <button
-                  type="button"
-                  className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs flex items-center justify-center"
-                >
-                  5
-                </button>
-                <button
-                  type="button"
-                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs">
-                <span>Rows per page:</span>
-                <select className="border border-slate-200 rounded-lg py-0.5 px-2 text-xs font-semibold text-slate-700 bg-white">
-                  <option>10</option>
-                  <option>25</option>
-                  <option>50</option>
-                </select>
+              <div>
+                Showing {filteredPrescriptions.length > 0 ? 1 : 0}-{filteredPrescriptions.length} of {prescriptions.length} prescriptions
               </div>
             </div>
           </div>
@@ -960,8 +768,12 @@ export default function DoctorPrescriptionsPage() {
       {/* Requisition Modal */}
       <DoctorPrescriptionModal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        defaultPatientId={activePatient.pid}
+        onClose={() => {
+          setModalOpen(false);
+          void loadData();
+        }}
+        patientId={selectedRx?.patientId || patients[0]?.id}
+        patientName={selectedRx?.patientName || patients[0]?.fullName}
       />
 
       {/* Patient EMR Drawer */}

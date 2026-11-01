@@ -110,6 +110,9 @@ export interface UserSummaryDTO {
   roles: string[];
   permissions: string[];
   createdAt: string;
+  tenantId?: string | null;
+  tenantName?: string | null;
+  staffProfile?: StaffProfileDTO;
 }
 
 export interface CreateUserRequest {
@@ -117,6 +120,7 @@ export interface CreateUserRequest {
   password: string;
   displayName: string;
   roleIds: string[];
+  tenantId?: string;
   staffProfile?: StaffProfileDTO;
 }
 

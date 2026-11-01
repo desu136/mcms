@@ -17,7 +17,7 @@ import {
   ChevronRight,
   Activity,
 } from 'lucide-react';
-import { CURRENT_DOCTOR } from './doctorMockData';
+import { useAuth } from '../../lib/auth/auth-context';
 
 interface DoctorSidebarProps {
   isCollapsed: boolean;
@@ -45,6 +45,9 @@ export default function DoctorSidebar({
   onCloseMobile,
 }: DoctorSidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const doctorName = user?.displayName ? (user.displayName.startsWith('Dr.') ? user.displayName : `Dr. ${user.displayName}`) : 'Doctor';
+  const doctorRole = user?.staffProfile?.jobTitle || 'Physician';
 
   return (
     <>
@@ -152,10 +155,10 @@ export default function DoctorSidebar({
             {!isCollapsed && (
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-bold text-white truncate tracking-tight">
-                  {CURRENT_DOCTOR.name}
+                  {doctorName}
                 </div>
                 <div className="text-[11px] text-slate-400 truncate">
-                  {CURRENT_DOCTOR.role}
+                  {doctorRole}
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />

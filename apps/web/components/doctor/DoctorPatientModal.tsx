@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { X, UserPlus, CheckCircle2 } from 'lucide-react';
 import { PatientItem } from './doctorMockData';
+import { useAuth } from '../../lib/auth/auth-context';
+import { createPatient } from '../../lib/api/patients';
 
 interface DoctorPatientModalProps {
   isOpen: boolean;
@@ -11,6 +13,7 @@ interface DoctorPatientModalProps {
 }
 
 export default function DoctorPatientModal({ isOpen, onClose, onPatientAdded }: DoctorPatientModalProps) {
+  const { accessToken } = useAuth();
   const [name, setName] = useState('');
   const [age, setAge] = useState<number | ''>('');
   const [gender, setGender] = useState<'Female' | 'Male'>('Female');
@@ -19,40 +22,73 @@ export default function DoctorPatientModal({ isOpen, onClose, onPatientAdded }: 
   const [address, setAddress] = useState('Addis Ababa, Ethiopia');
   const [department, setDepartment] = useState('Cardiology');
   const [reason, setReason] = useState('Consultation');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !age) return;
+    if (!name || age === '') return;
 
-    const newPatient: PatientItem = {
-      id: `p-${Date.now()}`,
-      name,
-      pid: `PID-${Math.floor(100000 + Math.random() * 900000)}`,
-      age: Number(age),
-      gender,
-      phone,
-      email: email || `${name.toLowerCase().replace(/\s+/g, '.')}@email.com`,
-      address,
-      department,
-      lastVisit: 'Oct 19, 2026',
-      lastVisitReason: reason,
-      status: 'Active',
-      avatar: gender === 'Female'
-        ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
-        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-      totalVisits: 1,
-      conditions: [{ title: reason, diagnosedDate: '2026-10-19', status: 'Active', type: 'general' }],
-    };
+    setIsLoading(true);
+    setError(null);
 
-    onPatientAdded?.(newPatient);
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      onClose();
-    }, 1200);
+    const nameParts = name.trim().split(/\s+/);
+    const firstName = nameParts[0] || 'Unknown';
+    const lastName = nameParts.slice(1).join(' ') || 'Patient';
+    const birthYear = new Date().getFullYear() - Number(age);
+    const dob = `${birthYear}-01-01`;
+
+    try {
+      const created = await createPatient(
+        {
+          firstName,
+          lastName,
+          dateOfBirth: dob,
+          gender: gender.toUpperCase(),
+          phoneNumber: phone,
+          ...(email.trim() ? { email: email.trim() } : {}),
+          ...(address.trim() ? { address: address.trim() } : {}),
+        },
+        accessToken,
+      );
+
+      const newPatientItem: PatientItem = {
+        id: created.id,
+        name: created.fullName || `${created.firstName} ${created.lastName}`.trim(),
+        pid: created.pid || created.id.slice(0, 8),
+        age: Number(age),
+        gender,
+        phone: created.phoneNumber || phone,
+        email: created.email || email,
+        address: created.address || address,
+        department,
+        lastVisit: 'Today',
+        lastVisitReason: reason,
+        status: 'Active',
+        avatar: gender === 'Female'
+          ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+        totalVisits: 1,
+        conditions: [{ title: reason, diagnosedDate: new Date().toISOString().split('T')[0]!, status: 'Active', type: 'general' }],
+      };
+
+      onPatientAdded?.(newPatientItem);
+      setSubmitted(true);
+      setTimeout(() => {
+        setSubmitted(false);
+        setName('');
+        setAge('');
+        setEmail('');
+        onClose();
+      }, 1200);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to register patient');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -209,6 +245,12 @@ export default function DoctorPatientModal({ isOpen, onClose, onPatientAdded }: 
               />
             </div>
 
+            {error && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-600 font-medium">
+                {error}
+              </div>
+            )}
+
             {/* Footer Buttons */}
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
               <button
@@ -220,9 +262,10 @@ export default function DoctorPatientModal({ isOpen, onClose, onPatientAdded }: 
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/25 transition-all"
+                disabled={isLoading}
+                className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/25 transition-all disabled:opacity-50 flex items-center gap-1.5"
               >
-                Register Patient
+                {isLoading ? 'Registering...' : 'Register Patient'}
               </button>
             </div>
           </form>

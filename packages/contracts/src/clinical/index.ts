@@ -25,34 +25,34 @@ export interface PatientDTO {
 export interface CreatePatientRequest {
   firstName: string;
   lastName: string;
-  dateOfBirth?: string;
-  gender?: string;
-  phoneNumber?: string;
-  email?: string;
-  address?: string;
-  city?: string;
-  bloodType?: string;
-  allergies?: string;
-  emergencyContactName?: string;
-  emergencyContactPhone?: string;
-  emergencyContactRel?: string;
+  dateOfBirth?: string | undefined;
+  gender?: string | undefined;
+  phoneNumber?: string | undefined;
+  email?: string | undefined;
+  address?: string | undefined;
+  city?: string | undefined;
+  bloodType?: string | undefined;
+  allergies?: string | undefined;
+  emergencyContactName?: string | undefined;
+  emergencyContactPhone?: string | undefined;
+  emergencyContactRel?: string | undefined;
 }
 
 export interface UpdatePatientRequest {
-  firstName?: string;
-  lastName?: string;
-  dateOfBirth?: string;
-  gender?: string;
-  phoneNumber?: string;
-  email?: string;
-  address?: string;
-  city?: string;
-  bloodType?: string;
-  allergies?: string;
-  emergencyContactName?: string;
-  emergencyContactPhone?: string;
-  emergencyContactRel?: string;
-  status?: string;
+  firstName?: string | undefined;
+  lastName?: string | undefined;
+  dateOfBirth?: string | undefined;
+  gender?: string | undefined;
+  phoneNumber?: string | undefined;
+  email?: string | undefined;
+  address?: string | undefined;
+  city?: string | undefined;
+  bloodType?: string | undefined;
+  allergies?: string | undefined;
+  emergencyContactName?: string | undefined;
+  emergencyContactPhone?: string | undefined;
+  emergencyContactRel?: string | undefined;
+  status?: string | undefined;
 }
 
 // ─── Queue ────────────────────────────────────────────────────────────────────
@@ -77,18 +77,18 @@ export interface QueueEntryDTO {
 
 export interface CreateQueueEntryRequest {
   patientId: string;
-  departmentId?: string;
-  roomId?: string;
-  assignedDoctorId?: string;
-  priority?: string;
+  departmentId?: string | undefined;
+  roomId?: string | undefined;
+  assignedDoctorId?: string | undefined;
+  priority?: string | undefined;
 }
 
 export interface UpdateQueueEntryRequest {
-  status?: string;
-  assignedDoctorId?: string;
-  roomId?: string;
-  departmentId?: string;
-  priority?: string;
+  status?: string | undefined;
+  assignedDoctorId?: string | undefined;
+  roomId?: string | undefined;
+  departmentId?: string | undefined;
+  priority?: string | undefined;
 }
 
 // ─── Appointment ──────────────────────────────────────────────────────────────
@@ -116,28 +116,28 @@ export interface AppointmentDTO {
 
 export interface CreateAppointmentRequest {
   patientId: string;
-  doctorId?: string;
-  departmentId?: string;
-  roomId?: string;
+  doctorId?: string | undefined;
+  departmentId?: string | undefined;
+  roomId?: string | undefined;
   appointmentDate: string;
   startTime: string;
-  endTime?: string;
-  type?: string;
-  reason?: string;
-  notes?: string;
+  endTime?: string | undefined;
+  type?: string | undefined;
+  reason?: string | undefined;
+  notes?: string | undefined;
 }
 
 export interface UpdateAppointmentRequest {
-  doctorId?: string;
-  departmentId?: string;
-  roomId?: string;
-  appointmentDate?: string;
-  startTime?: string;
-  endTime?: string;
-  type?: string;
-  status?: string;
-  reason?: string;
-  notes?: string;
+  doctorId?: string | undefined;
+  departmentId?: string | undefined;
+  roomId?: string | undefined;
+  appointmentDate?: string | undefined;
+  startTime?: string | undefined;
+  endTime?: string | undefined;
+  type?: string | undefined;
+  status?: string | undefined;
+  reason?: string | undefined;
+  notes?: string | undefined;
 }
 
 // ─── Admission ────────────────────────────────────────────────────────────────
