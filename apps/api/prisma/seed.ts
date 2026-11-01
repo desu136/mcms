@@ -55,6 +55,8 @@ const PERMISSIONS = [
   { slug: 'users:create', name: 'Create Users', module: 'users', description: 'Create new staff members' },
   { slug: 'users:update', name: 'Update Users', module: 'users', description: 'Update staff roles and branch assignments' },
   { slug: 'users:delete', name: 'Delete Users', module: 'users', description: 'Deactivate user accounts' },
+  { slug: 'users:activate', name: 'Activate Users', module: 'users', description: 'Reactivate user accounts' },
+  { slug: 'users:deactivate', name: 'Deactivate Users', module: 'users', description: 'Deactivate user accounts' },
 
   // Roles
   { slug: 'roles:read', name: 'View Roles', module: 'roles', description: 'View RBAC roles' },
@@ -109,6 +111,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tenants:read', 'branches:read', 'branches:manage',
     'departments:read', 'departments:manage', 'rooms:read', 'rooms:manage',
     'users:read', 'users:create', 'users:update', 'users:delete',
+    'users:activate', 'users:deactivate',
     'roles:read',
     'patients:read', 'appointments:read', 'queue:read',
     'vitals:read', 'prescriptions:read', 'lab:orders:read',

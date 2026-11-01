@@ -99,12 +99,14 @@ export class UsersService {
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
+    const targetTenantId = dto.tenantId ?? actor.tenantId;
+
     const createData: Prisma.UserCreateInput = {
       email,
       displayName: dto.displayName,
       passwordHash,
       accountStatus: 'ACTIVE',
-      ...(dto.tenantId ? { tenant: { connect: { id: dto.tenantId } } } : {}),
+      ...(targetTenantId ? { tenant: { connect: { id: targetTenantId } } } : {}),
       userRoles: {
         create: dto.roleIds.map((roleId: string) => ({
           roleId,
