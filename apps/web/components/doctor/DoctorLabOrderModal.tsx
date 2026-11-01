@@ -1,34 +1,67 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, FlaskConical, CheckCircle2 } from 'lucide-react';
-import { INITIAL_PATIENTS } from './doctorMockData';
+import React, { useState, useEffect } from 'react';
+import { X, FlaskConical, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { useAuth } from '../../lib/auth/auth-context';
+import { createLabOrder } from '../../lib/api/clinical';
+import { fetchPatients } from '../../lib/api/patients';
+import type { PatientDTO } from '@mcms/contracts';
 
 interface DoctorLabOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Real DB patient ID */
+  patientId?: string | undefined;
+  /** Display name for the patient */
+  patientName?: string | undefined;
   defaultPatientId?: string | undefined;
 }
 
 const AVAILABLE_TESTS = [
-  { id: 't-1', name: 'Complete Blood Count (CBC)', dept: 'Hematology', tat: '2 hrs' },
-  { id: 't-2', name: 'Comprehensive Lipid Profile', dept: 'Biochemistry', tat: '4 hrs' },
-  { id: 't-3', name: 'Cardiac Troponin I (High Sensitivity)', dept: 'Cardiac Markers', tat: '45 mins' },
-  { id: 't-4', name: 'Serum Creatinine & eGFR', dept: 'Renal Panel', tat: '2 hrs' },
-  { id: 't-5', name: 'HbA1c Glycated Hemoglobin', dept: 'Endocrinology', tat: '3 hrs' },
-  { id: 't-6', name: '12-Lead Diagnostic Electrocardiogram (ECG)', dept: 'Cardiology', tat: 'Immediate' },
+  { id: 't-1', name: 'Complete Blood Count (CBC)', dept: 'Hematology', tat: '2 hrs', sampleType: 'BLOOD' },
+  { id: 't-2', name: 'Comprehensive Lipid Profile', dept: 'Biochemistry', tat: '4 hrs', sampleType: 'BLOOD' },
+  { id: 't-3', name: 'Cardiac Troponin I (High Sensitivity)', dept: 'Cardiac Markers', tat: '45 mins', sampleType: 'BLOOD' },
+  { id: 't-4', name: 'Serum Creatinine & eGFR', dept: 'Renal Panel', tat: '2 hrs', sampleType: 'BLOOD' },
+  { id: 't-5', name: 'HbA1c Glycated Hemoglobin', dept: 'Endocrinology', tat: '3 hrs', sampleType: 'BLOOD' },
+  { id: 't-6', name: '12-Lead Diagnostic ECG', dept: 'Cardiology', tat: 'Immediate', sampleType: 'OTHER' },
 ];
 
 export default function DoctorLabOrderModal({
   isOpen,
   onClose,
-  defaultPatientId = 'p-1',
+  patientId,
+  patientName,
+  defaultPatientId,
 }: DoctorLabOrderModalProps) {
-  const [selectedPatientId, setSelectedPatientId] = useState(defaultPatientId);
-  const [selectedTests, setSelectedTests] = useState<string[]>(['t-2', 't-3']);
+  const { accessToken } = useAuth();
+  const [selectedPid, setSelectedPid] = useState(patientId ?? defaultPatientId ?? '');
+  const [patientList, setPatientList] = useState<PatientDTO[]>([]);
+  const [loadingPatients, setLoadingPatients] = useState(false);
+  const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [urgency, setUrgency] = useState<'ROUTINE' | 'URGENT' | 'STAT'>('ROUTINE');
-  const [clinicalNotes, setClinicalNotes] = useState('Evaluate atypical chest discomfort and rule out acute coronary syndrome.');
+  const [clinicalNotes, setClinicalNotes] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      const initialId = patientId ?? defaultPatientId ?? '';
+      setSelectedPid(initialId);
+      if (!initialId && accessToken) {
+        setLoadingPatients(true);
+        fetchPatients(accessToken, { limit: 100 })
+          .then((res) => {
+            setPatientList(res.data);
+            if (res.data.length > 0) {
+              setSelectedPid(res.data[0]!.id);
+            }
+          })
+          .catch(() => {})
+          .finally(() => setLoadingPatients(false));
+      }
+    }
+  }, [isOpen, patientId, defaultPatientId, accessToken]);
 
   if (!isOpen) return null;
 
@@ -38,13 +71,47 @@ export default function DoctorLabOrderModal({
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      onClose();
-    }, 1200);
+    const finalPatientId = selectedPid || patientId || defaultPatientId;
+    if (!finalPatientId) {
+      setError('Please select a patient.');
+      return;
+    }
+    if (selectedTests.length === 0) {
+      setError('Please select at least one test.');
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    try {
+      const selectedTestDetails = AVAILABLE_TESTS.filter((t) => selectedTests.includes(t.id));
+      await createLabOrder(
+        {
+          patientId: finalPatientId,
+          priority: urgency,
+          ...(clinicalNotes.trim() ? { clinicalNotes: clinicalNotes.trim() } : {}),
+          tests: selectedTestDetails.map((t) => ({
+            testName: t.name,
+            testCategory: t.dept,
+            sampleType: t.sampleType,
+          })),
+        },
+        accessToken,
+      );
+      setSubmitted(true);
+      setTimeout(() => {
+        setSubmitted(false);
+        setSelectedTests([]);
+        setClinicalNotes('');
+        setUrgency('ROUTINE');
+        onClose();
+      }, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create lab order.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -81,23 +148,45 @@ export default function DoctorLabOrderModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            {/* Patient Selector */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                Target Patient
-              </label>
-              <select
-                value={selectedPatientId}
-                onChange={(e) => setSelectedPatientId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white"
-              >
-                {INITIAL_PATIENTS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.pid}) — {p.age} yrs, {p.gender}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Patient Info or Dropdown */}
+            {patientName ? (
+              <div className="px-3.5 py-2.5 rounded-xl border border-orange-100 bg-orange-50/60 text-sm font-semibold text-orange-900 flex items-center justify-between">
+                <span>👤 {patientName}</span>
+                <span className="text-[10px] text-orange-600 bg-orange-100/70 px-2 py-0.5 rounded font-mono">Patient Selected</span>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Select Patient *
+                </label>
+                <select
+                  value={selectedPid}
+                  onChange={(e) => setSelectedPid(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 bg-white"
+                  required
+                >
+                  {loadingPatients ? (
+                    <option>Loading tenant patients...</option>
+                  ) : patientList.length === 0 ? (
+                    <option value="">No patients registered in clinic</option>
+                  ) : (
+                    patientList.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.fullName} ({p.pid})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+            )}
+
+            {/* Error Banner */}
+            {error && (
+              <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-red-200 bg-red-50 text-sm text-red-700">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {error}
+              </div>
+            )}
 
             {/* Test Selection Checkboxes */}
             <div>
@@ -190,10 +279,11 @@ export default function DoctorLabOrderModal({
               </button>
               <button
                 type="submit"
-                disabled={selectedTests.length === 0}
-                className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/25 transition-all disabled:opacity-50"
+                disabled={selectedTests.length === 0 || isLoading}
+                className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                Dispatch Lab Order ({selectedTests.length})
+                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isLoading ? 'Submitting...' : `Dispatch Lab Order (${selectedTests.length})`}
               </button>
             </div>
           </form>

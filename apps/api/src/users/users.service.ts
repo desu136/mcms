@@ -12,6 +12,7 @@ import type {
   CreateUserRequest,
   UpdateUserRequest,
   UserSummaryDTO,
+  StaffProfileDTO,
 } from '@mcms/contracts';
 import type { AuthenticatedUserEntity } from '../auth/types/authenticated-user.type';
 import * as bcrypt from 'bcrypt';
@@ -32,6 +33,13 @@ export class UsersService {
     const users = await this.prisma.user.findMany({
       where: where as any,
       include: {
+        tenant: {
+          select: { id: true, name: true, settings: true },
+        },
+        staffProfile: true,
+        userBranches: {
+          include: { branch: { select: { id: true, name: true, code: true } } },
+        },
         userRoles: {
           include: {
             role: {
@@ -50,6 +58,12 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
       include: {
+        tenant: {
+          select: { id: true, name: true, settings: true },
+        },
+        userBranches: {
+          include: { branch: { select: { id: true, name: true, code: true } } },
+        },
         userRoles: {
           include: {
             role: {
@@ -85,11 +99,14 @@ export class UsersService {
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
+    const targetTenantId = dto.tenantId ?? actor.tenantId;
+
     const createData: Prisma.UserCreateInput = {
       email,
       displayName: dto.displayName,
       passwordHash,
       accountStatus: 'ACTIVE',
+      ...(targetTenantId ? { tenant: { connect: { id: targetTenantId } } } : {}),
       userRoles: {
         create: dto.roleIds.map((roleId: string) => ({
           roleId,
@@ -97,6 +114,17 @@ export class UsersService {
         })),
       },
     };
+
+    if (dto.branchId) {
+      createData.userBranches = {
+        create: [
+          {
+            branchId: dto.branchId,
+            isPrimary: true,
+          },
+        ],
+      };
+    }
 
     if (dto.staffProfile) {
       createData.staffProfile = {
@@ -113,6 +141,12 @@ export class UsersService {
     const user = await this.prisma.user.create({
       data: createData,
       include: {
+        tenant: {
+          select: { id: true, name: true, settings: true },
+        },
+        userBranches: {
+          include: { branch: { select: { id: true, name: true, code: true } } },
+        },
         userRoles: {
           include: {
             role: {
@@ -159,6 +193,9 @@ export class UsersService {
             : {}),
         },
         include: {
+          tenant: {
+            select: { id: true, name: true, settings: true },
+          },
           userRoles: {
             include: {
               role: {
@@ -212,7 +249,40 @@ export class UsersService {
         });
       }
 
-      return updated;
+      // Update branch assignment if provided
+      if (dto.branchId !== undefined) {
+        if (dto.branchId) {
+          await tx.userBranch.deleteMany({ where: { userId: id } });
+          await tx.userBranch.create({
+            data: {
+              userId: id,
+              branchId: dto.branchId,
+              isPrimary: true,
+            },
+          });
+        }
+      }
+
+      // Re-fetch to include relations
+      return tx.user.findUnique({
+        where: { id },
+        include: {
+          tenant: {
+            select: { id: true, name: true, settings: true },
+          },
+          userBranches: {
+            include: { branch: { select: { id: true, name: true, code: true } } },
+          },
+          userRoles: {
+            include: {
+              role: {
+                include: { rolePermissions: { include: { permission: true } } },
+              },
+            },
+          },
+          staffProfile: true,
+        },
+      });
     });
 
     await this.prisma.auditLog.create({
@@ -227,6 +297,64 @@ export class UsersService {
     });
 
     return this.toSummaryDTO(updatedUser);
+  }
+
+  async transferBranch(
+    userId: string,
+    targetBranchId: string,
+    actor: AuthenticatedUserEntity,
+    ipAddress?: string,
+  ): Promise<UserSummaryDTO> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: {
+        userBranches: {
+          include: { branch: { select: { id: true, name: true, code: true } } },
+        },
+      },
+    });
+    if (!user) throw new NotFoundException(`User with id "${userId}" not found`);
+
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: targetBranchId },
+    });
+    if (!branch) throw new NotFoundException(`Branch with id "${targetBranchId}" not found`);
+
+    if (user.tenantId && branch.tenantId !== user.tenantId) {
+      throw new ForbiddenException('Cannot transfer staff to a branch of a different organization');
+    }
+
+    const previousBranch = user.userBranches?.find((ub) => ub.isPrimary) ?? user.userBranches?.[0];
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.userBranch.deleteMany({ where: { userId } });
+      await tx.userBranch.create({
+        data: {
+          userId,
+          branchId: targetBranchId,
+          isPrimary: true,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: user.tenantId,
+          userId: actor.id,
+          action: 'STAFF_BRANCH_TRANSFERRED',
+          resource: 'User',
+          resourceId: userId,
+          ipAddress: ipAddress ?? null,
+          payload: {
+            fromBranchId: previousBranch?.branchId ?? null,
+            fromBranchName: previousBranch?.branch?.name ?? null,
+            toBranchId: targetBranchId,
+            toBranchName: branch.name,
+          },
+        },
+      });
+    });
+
+    return this.findOne(userId);
   }
 
   async deactivate(id: string, actor: AuthenticatedUserEntity, ipAddress?: string): Promise<void> {
@@ -285,6 +413,31 @@ export class UsersService {
       ),
     );
 
+    const tenantLicenseNumber = (user.tenant?.settings as Record<string, unknown> | null)?.licenseNumber as string | undefined;
+
+    let staffProfile: StaffProfileDTO | undefined = undefined;
+    if (user.staffProfile) {
+      staffProfile = {
+        ...(user.staffProfile.employeeNumber ? { employeeNumber: user.staffProfile.employeeNumber } : {}),
+        ...(user.staffProfile.jobTitle ? { jobTitle: user.staffProfile.jobTitle } : {}),
+        ...(user.staffProfile.department ? { department: user.staffProfile.department } : {}),
+        ...(user.staffProfile.phoneNumber ? { phoneNumber: user.staffProfile.phoneNumber } : {}),
+        ...(user.staffProfile.licenseNumber || tenantLicenseNumber
+          ? { licenseNumber: user.staffProfile.licenseNumber ?? tenantLicenseNumber }
+          : {}),
+      };
+    } else if (tenantLicenseNumber) {
+      staffProfile = {
+        licenseNumber: tenantLicenseNumber,
+      };
+    }
+
+    const userBranches = user.userBranches ?? [];
+    const primaryBranch = userBranches.find((ub: any) => ub.isPrimary) ?? userBranches[0];
+    const primaryBranchId = primaryBranch?.branchId ?? null;
+    const primaryBranchName = primaryBranch?.branch?.name ?? null;
+    const branchIds = userBranches.map((ub: any) => ub.branchId);
+
     return {
       id: user.id,
       email: user.email,
@@ -294,6 +447,12 @@ export class UsersService {
       roles,
       permissions,
       createdAt: user.createdAt.toISOString(),
+      ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      ...(user.tenant?.name ? { tenantName: user.tenant.name } : {}),
+      primaryBranchId,
+      primaryBranchName,
+      branchIds,
+      ...(staffProfile ? { staffProfile } : {}),
     };
   }
 }

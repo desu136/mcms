@@ -110,6 +110,12 @@ export interface UserSummaryDTO {
   roles: string[];
   permissions: string[];
   createdAt: string;
+  tenantId?: string | null;
+  tenantName?: string | null;
+  primaryBranchId?: string | null;
+  primaryBranchName?: string | null;
+  branchIds?: string[];
+  staffProfile?: StaffProfileDTO;
 }
 
 export interface CreateUserRequest {
@@ -117,6 +123,8 @@ export interface CreateUserRequest {
   password: string;
   displayName: string;
   roleIds: string[];
+  tenantId?: string;
+  branchId?: string;
   staffProfile?: StaffProfileDTO;
 }
 
@@ -124,7 +132,12 @@ export interface UpdateUserRequest {
   displayName?: string;
   isActive?: boolean;
   roleIds?: string[];
+  branchId?: string;
   staffProfile?: StaffProfileDTO;
+}
+
+export interface TransferStaffBranchRequest {
+  branchId: string;
 }
 
 export interface RoleDTO {

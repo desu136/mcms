@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -44,9 +44,21 @@ import {
   RECENT_NURSE_ALERTS,
   NursePatient,
 } from '../../../components/nurse/nurseMockData';
+import { useAuth } from '../../../lib/auth/auth-context';
+import { fetchPatients } from '../../../lib/api/patients';
+import { fetchPatientVitals, recordVitals } from '../../../lib/api/clinical';
+import type { VitalReadingDTO } from '@mcms/contracts';
+
 
 export default function NurseVitalsPage() {
+  const { accessToken } = useAuth();
+
+  // Patient state - live from API
+  const [livePatients, setLivePatients] = useState<NursePatient[]>(NURSE_PATIENTS);
   const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
+  const [liveVitals, setLiveVitals] = useState<VitalReadingDTO[]>([]);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+
   const [activeMetricTab, setActiveMetricTab] = useState<'temp' | 'bp' | 'hr' | 'spo2'>('temp');
   const [departmentFilter, setDepartmentFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -61,6 +73,7 @@ export default function NurseVitalsPage() {
   const [spo2Input, setSpo2Input] = useState('98');
   const [noteInput, setNoteInput] = useState('');
   const [isSavedForm, setIsSavedForm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [entryMode, setEntryMode] = useState<'manual' | 'quick'>('manual');
 
   // Modals state
@@ -69,8 +82,66 @@ export default function NurseVitalsPage() {
   const [labModalOpen, setLabModalOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
 
+  // Load live patients and vitals
+  const loadPatients = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoadingPatients(true);
+    try {
+      const res = await fetchPatients(accessToken, { limit: 50 });
+      if (res.data.length > 0) {
+        // Map API patients to NursePatient shape (keep mock data shape for UI compatibility)
+        const mapped: NursePatient[] = res.data.map((p, idx) => {
+          const mock = NURSE_PATIENTS[idx % NURSE_PATIENTS.length] as NursePatient;
+          return {
+            id: p.id,
+            pid: p.pid,
+            name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+            age: p.dateOfBirth
+              ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
+              : 30,
+            gender: (p.gender === 'Female' ? 'Female' : 'Male'),
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.firstName)}`,
+            phone: p.phoneNumber || '—',
+            email: p.email || '—',
+            address: p.address || 'Addis Ababa, Ethiopia',
+            room: mock?.room ?? 'A-101',
+            bed: mock?.bed ?? 'Bed 01',
+            department: mock?.department ?? 'General',
+            visitReason: 'General consultation',
+            status: mock?.status ?? 'In Care',
+            vitalsStatus: 'Normal',
+            vitals: mock?.vitals ?? { bp: '118/76', hr: 72, temp: 36.8, spo2: 98 },
+            doctor: mock?.doctor ?? 'Dr. Fitsum Alemu',
+            admissionDate: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : 'N/A',
+          };
+        });
+        setLivePatients(mapped);
+        setSelectedPatient(mapped[0]!);
+      }
+    } catch (err) {
+      console.error('Failed to load patients for vitals:', err);
+    } finally {
+      setIsLoadingPatients(false);
+    }
+  }, [accessToken]);
+
+  const loadVitals = useCallback(async (patientId: string) => {
+    if (!accessToken || !patientId) return;
+    try {
+      const v = await fetchPatientVitals(patientId, accessToken);
+      setLiveVitals(v);
+    } catch (err) {
+      console.error('Failed to load vitals:', err);
+    }
+  }, [accessToken]);
+
+  useEffect(() => { void loadPatients(); }, [loadPatients]);
+  useEffect(() => {
+    if (selectedPatient?.id) void loadVitals(selectedPatient.id);
+  }, [selectedPatient, loadVitals]);
+
   // Filter patients
-  const filteredPatients = NURSE_PATIENTS.filter((p) => {
+  const filteredPatients = livePatients.filter((p) => {
     const matchesSearch =
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.pid.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -80,13 +151,38 @@ export default function NurseVitalsPage() {
     return matchesSearch && matchesDept && matchesStatus;
   });
 
-  const handleSaveVitals = (e: React.FormEvent) => {
+  const handleSaveVitals = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSavedForm(true);
-    setTimeout(() => {
-      setIsSavedForm(false);
-      setNoteInput('');
-    }, 1200);
+    if (!accessToken || !selectedPatient) return;
+    setIsSaving(true);
+    try {
+      const parsedTemp = parseFloat(tempInput);
+      const tempCelsius = tempUnit === 'F' ? Math.round(((parsedTemp - 32) * (5 / 9)) * 10) / 10 : parsedTemp;
+      await recordVitals(
+        {
+          patientId: selectedPatient.id,
+          temperature: tempCelsius,
+          systolicBp: parseInt(systolicInput, 10),
+          diastolicBp: parseInt(diastolicInput, 10),
+          heartRate: parseInt(hrInput, 10),
+          spo2: parseFloat(spo2Input),
+          ...(noteInput.trim() ? { notes: noteInput.trim() } : {}),
+        },
+        accessToken,
+      );
+      setIsSavedForm(true);
+      // Reload vitals for selected patient
+      void loadVitals(selectedPatient.id);
+      setTimeout(() => {
+        setIsSavedForm(false);
+        setNoteInput('');
+      }, 1500);
+    } catch (err) {
+      console.error('Failed to save vitals:', err);
+      alert('Failed to save vitals. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // ── Top Banner ──────────────────────────────────────────────────────────────

@@ -1,18 +1,39 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { Search, Bell, Menu } from 'lucide-react';
-import { CURRENT_RECEPTIONIST } from './receptionistMockData';
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  Search,
+  Bell,
+  Menu,
+  LogOut,
+  User,
+  Settings,
+  ChevronDown,
+  CalendarDays,
+  UserPlus,
+  AlertCircle,
+} from 'lucide-react';
+import { useAuth } from '../../lib/auth/auth-context';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 interface ReceptionistHeaderProps {
   onOpenSearch: () => void;
   onOpenMobileSidebar: () => void;
 }
 
-function ReceptionistHeader({
-  onOpenSearch,
-  onOpenMobileSidebar,
-}: ReceptionistHeaderProps) {
+function ReceptionistHeader({ onOpenSearch, onOpenMobileSidebar }: ReceptionistHeaderProps) {
+  const router = useRouter();
+  const { user, logout } = useAuth();
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const receptionistName = user?.displayName || 'Receptionist';
+  const receptionistRole = user?.staffProfile?.jobTitle || 'Front Desk';
+  const initials = receptionistName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+
   // Global Ctrl + K listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -25,9 +46,24 @@ function ReceptionistHeader({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onOpenSearch]);
 
+  // Click-outside to close dropdowns
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
+  };
+
   return (
     <header className="h-16 px-4 sm:px-6 bg-white border-b border-slate-200/80 flex items-center justify-between gap-4 shrink-0 z-30 shadow-2xs">
-      {/* Left: Mobile hamburger + Global Search Input */}
+      {/* Left: Mobile hamburger + Global Search */}
       <div className="flex items-center gap-3 flex-1 max-w-2xl">
         <button
           onClick={onOpenMobileSidebar}
@@ -37,7 +73,6 @@ function ReceptionistHeader({
           <Menu className="w-5 h-5" />
         </button>
 
-        {/* Search bar looking identical to design screenshot */}
         <div
           onClick={onOpenSearch}
           className="w-full flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:border-blue-400 hover:bg-white text-slate-400 cursor-pointer transition-all duration-150 group shadow-2xs"
@@ -52,42 +87,108 @@ function ReceptionistHeader({
         </div>
       </div>
 
-      {/* Right: Notifications + User Profile */}
-      <div className="flex items-center gap-3.5 shrink-0">
+      {/* Right: Notifications + Profile */}
+      <div className="flex items-center gap-3 shrink-0">
         {/* Notifications Bell */}
-        <button
-          type="button"
-          className="relative p-2 rounded-xl text-slate-600 hover:text-blue-600 hover:bg-blue-50/80 transition-colors"
-          title="Notifications"
-        >
-          <Bell className="w-5 h-5 text-blue-600" />
-          <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">
-            {CURRENT_RECEPTIONIST.unreadNotifications}
-          </span>
-        </button>
+        <div className="relative" ref={notifRef}>
+          <button
+            type="button"
+            onClick={() => setNotifOpen(!notifOpen)}
+            className="relative p-2 rounded-xl text-slate-600 hover:text-blue-600 hover:bg-blue-50/80 transition-colors"
+            title="Notifications"
+          >
+            <Bell className="w-5 h-5 text-blue-600" />
+            <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">
+              3
+            </span>
+          </button>
+
+          {notifOpen && (
+            <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Notifications</span>
+                <span className="text-[11px] text-blue-600 font-semibold cursor-pointer hover:underline">Mark all read</span>
+              </div>
+              <div className="py-1 space-y-1">
+                <div className="p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <UserPlus className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-slate-800">New Patient Walk-in</div>
+                    <div className="text-[11px] text-slate-500">Tigist Alemu — waiting at the front desk for registration.</div>
+                    <div className="text-[10px] text-slate-400 mt-1">5 mins ago</div>
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <CalendarDays className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-slate-800">Appointment Reminder</div>
+                    <div className="text-[11px] text-slate-500">Abebe Assefa has an unconfirmed 10:00 AM appointment.</div>
+                    <div className="text-[10px] text-slate-400 mt-1">30 mins ago</div>
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-slate-800">Payment Pending</div>
+                    <div className="text-[11px] text-slate-500">Invoice #INV-2047 has been outstanding for 3 days.</div>
+                    <div className="text-[10px] text-slate-400 mt-1">1 hr ago</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="h-6 w-px bg-slate-200 hidden sm:block" />
 
-        {/* Profile */}
-        <div className="flex items-center gap-3 pl-1">
-          <div className="relative">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={CURRENT_RECEPTIONIST.avatar}
-              alt={CURRENT_RECEPTIONIST.name}
-              className="w-9 h-9 rounded-full object-cover ring-2 ring-blue-500/20"
-            />
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
-          </div>
+        {/* Profile Dropdown */}
+        <div className="relative" ref={profileRef}>
+          <button
+            onClick={() => setProfileOpen(!profileOpen)}
+            className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
+          >
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-bold text-sm flex items-center justify-center ring-2 ring-blue-500/20">
+              {initials}
+            </div>
+            <div className="hidden md:block text-left">
+              <div className="text-xs font-bold text-slate-800 leading-tight">{receptionistName}</div>
+              <div className="text-[11px] text-slate-400 font-medium leading-none mt-0.5">{receptionistRole}</div>
+            </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden md:block" />
+          </button>
 
-          <div className="hidden md:block text-left">
-            <div className="text-xs font-bold text-slate-800 leading-tight">
-              {CURRENT_RECEPTIONIST.name}
+          {profileOpen && (
+            <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-200 p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-2.5 border-b border-slate-100">
+                <div className="text-xs font-bold text-slate-800">{receptionistName}</div>
+                <div className="text-[11px] text-blue-600 font-medium">{receptionistRole}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">{user?.email || ''}</div>
+              </div>
+              <div className="py-1">
+                <Link
+                  href="/receptionist/settings"
+                  onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <Settings className="w-4 h-4 text-slate-400" /> Settings
+                </Link>
+              </div>
+              <div className="pt-1 border-t border-slate-100">
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" /> Sign Out
+                </button>
+              </div>
             </div>
-            <div className="text-[11px] text-slate-400 font-medium leading-none mt-0.5">
-              {CURRENT_RECEPTIONIST.role}
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </header>
@@ -95,4 +196,3 @@ function ReceptionistHeader({
 }
 
 export default React.memo(ReceptionistHeader);
-

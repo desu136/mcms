@@ -1,39 +1,154 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, Calendar, Clock, User, CheckCircle2 } from 'lucide-react';
-import { DOCTOR_AVAILABILITY_LIST } from './receptionistMockData';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, Calendar, Clock, User, CheckCircle2, Search, Loader2 } from 'lucide-react';
+import { useAuth } from '../../lib/auth/auth-context';
+import { createAppointment, fetchPatients, fetchDoctors } from '../../lib/api';
+import type { PatientDTO, DoctorDTO } from '@mcms/contracts';
 
 interface NewAppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  preselectedPatient?: { id: string; fullName: string; pid: string } | string | null;
 }
 
 export default function NewAppointmentModal({
   isOpen,
   onClose,
   onSuccess,
+  preselectedPatient,
 }: NewAppointmentModalProps) {
-  const [patientName, setPatientName] = useState('');
-  const [selectedDoctor, setSelectedDoctor] = useState(DOCTOR_AVAILABILITY_LIST[0]?.name || '');
-  const [date, setDate] = useState('2026-10-19');
+  const { accessToken } = useAuth();
+
+  const [patientSearch, setPatientSearch] = useState('');
+  const [patientResults, setPatientResults] = useState<PatientDTO[]>([]);
+  const [searchingPatients, setSearchingPatients] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<{ id: string; fullName: string; pid: string } | null>(null);
+
+  const [doctors, setDoctors] = useState<DoctorDTO[]>([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState('');
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0] ?? '');
   const [time, setTime] = useState('09:00 AM');
   const [type, setType] = useState('General Consultation');
   const [notes, setNotes] = useState('');
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
+
+  // Initialize preselected patient if given
+  useEffect(() => {
+    if (preselectedPatient) {
+      if (typeof preselectedPatient === 'object' && preselectedPatient.id) {
+        setSelectedPatient(preselectedPatient);
+        setPatientSearch(`${preselectedPatient.fullName} (${preselectedPatient.pid})`);
+      } else if (typeof preselectedPatient === 'string' && preselectedPatient.trim()) {
+        setPatientSearch(preselectedPatient);
+      }
+    }
+  }, [preselectedPatient]);
+
+  // Load doctors
+  useEffect(() => {
+    if (!isOpen || !accessToken) return;
+    let isMounted = true;
+
+    async function loadDoctors() {
+      try {
+        const docs = await fetchDoctors(accessToken);
+        if (isMounted) {
+          setDoctors(docs);
+          if (docs.length > 0 && docs[0]) setSelectedDoctorId(docs[0].id);
+        }
+      } catch {
+        // Fallback gracefully
+      }
+    }
+
+    void loadDoctors();
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, accessToken]);
+
+  // Live search patients
+  const searchPatients = useCallback(
+    async (query: string) => {
+      if (!query.trim() || query.length < 2 || !accessToken) {
+        setPatientResults([]);
+        return;
+      }
+      setSearchingPatients(true);
+      try {
+        const res = await fetchPatients(accessToken, { search: query.trim(), limit: 5 });
+        setPatientResults(res.data);
+      } catch {
+        setPatientResults([]);
+      } finally {
+        setSearchingPatients(false);
+      }
+    },
+    [accessToken],
+  );
+
+  useEffect(() => {
+    if (!isOpen || selectedPatient) return;
+    const timer = setTimeout(() => {
+      void searchPatients(patientSearch);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [patientSearch, searchPatients, isOpen, selectedPatient]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitted(true);
-    setTimeout(() => {
-      setIsSubmitted(false);
-      onSuccess?.();
-      onClose();
-    }, 900);
+  const handleSelectPatient = (patient: PatientDTO) => {
+    setSelectedPatient({ id: patient.id, fullName: patient.fullName, pid: patient.pid });
+    setPatientSearch(`${patient.fullName} (${patient.pid})`);
+    setPatientResults([]);
   };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!selectedPatient) {
+      setError('Please select a valid registered patient.');
+      return;
+    }
+    if (!date) {
+      setError('Please select an appointment date.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await createAppointment(
+        {
+          patientId: selectedPatient.id,
+          doctorId: selectedDoctorId ? selectedDoctorId : undefined,
+          appointmentDate: date,
+          startTime: time,
+          type,
+          notes: notes.trim() ? notes.trim() : undefined,
+        },
+        accessToken,
+      );
+
+      setIsSubmitted(true);
+      setTimeout(() => {
+        setIsSubmitted(false);
+        onSuccess?.();
+        onClose();
+      }, 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to book appointment.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const selectedDoctorObj = doctors.find((d) => d.id === selectedDoctorId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -60,17 +175,23 @@ export default function NewAppointmentModal({
           </button>
         </div>
 
+        {error && (
+          <div className="mx-6 mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
+            {error}
+          </div>
+        )}
+
         {isSubmitted ? (
           <div className="p-8 text-center flex flex-col items-center">
             <CheckCircle2 className="w-12 h-12 text-emerald-500 animate-bounce mb-3" />
             <h3 className="text-lg font-bold text-slate-900">Appointment Booked!</h3>
             <p className="text-xs text-slate-500 mt-1">
-              Appointment for {patientName || 'Patient'} with {selectedDoctor} has been saved.
+              Appointment for {selectedPatient?.fullName ?? 'Patient'} with {selectedDoctorObj?.displayName ?? 'Doctor'} has been saved.
             </p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            <div>
+            <div className="relative">
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 Patient Name or ID *
               </label>
@@ -79,25 +200,54 @@ export default function NewAppointmentModal({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Aster Mulu (P-2026-001245)"
-                  value={patientName}
-                  onChange={(e) => setPatientName(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  placeholder="Search registered patient by name or PID..."
+                  value={patientSearch}
+                  onChange={(e) => {
+                    setPatientSearch(e.target.value);
+                    if (selectedPatient) setSelectedPatient(null);
+                  }}
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500"
                 />
+                {searchingPatients && (
+                  <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin absolute right-3 top-1/2 -translate-y-1/2" />
+                )}
               </div>
+
+              {/* Suggestions */}
+              {patientResults.length > 0 && !selectedPatient && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-48 overflow-y-auto">
+                  {patientResults.map((p) => (
+                    <button
+                      type="button"
+                      key={p.id}
+                      onClick={() => handleSelectPatient(p)}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 border-b border-slate-100 last:border-0 flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="font-semibold text-slate-800">{p.fullName}</div>
+                        <div className="text-[10px] text-slate-400">{p.phoneNumber ?? 'No phone'}</div>
+                      </div>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">
+                        {p.pid}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Doctor *</label>
                 <select
-                  value={selectedDoctor}
-                  onChange={(e) => setSelectedDoctor(e.target.value)}
+                  value={selectedDoctorId}
+                  onChange={(e) => setSelectedDoctorId(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 bg-white"
                 >
-                  {DOCTOR_AVAILABILITY_LIST.map((doc) => (
-                    <option key={doc.name} value={doc.name}>
-                      {doc.name} ({doc.specialty})
+                  <option value="">Any Available Doctor</option>
+                  {doctors.map((doc) => (
+                    <option key={doc.id} value={doc.id}>
+                      {doc.displayName} {doc.specialty ? `(${doc.specialty})` : ''}
                     </option>
                   ))}
                 </select>
@@ -123,6 +273,7 @@ export default function NewAppointmentModal({
                 <label className="block text-xs font-bold text-slate-700 mb-1">Date *</label>
                 <input
                   type="date"
+                  required
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500"
@@ -138,11 +289,18 @@ export default function NewAppointmentModal({
                 >
                   <option>08:30 AM</option>
                   <option>09:00 AM</option>
+                  <option>09:30 AM</option>
+                  <option>10:00 AM</option>
                   <option>10:30 AM</option>
+                  <option>11:00 AM</option>
                   <option>11:30 AM</option>
                   <option>01:00 PM</option>
+                  <option>01:30 PM</option>
+                  <option>02:00 PM</option>
                   <option>02:30 PM</option>
+                  <option>03:00 PM</option>
                   <option>03:30 PM</option>
+                  <option>04:00 PM</option>
                   <option>04:30 PM</option>
                 </select>
               </div>
@@ -163,14 +321,17 @@ export default function NewAppointmentModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                disabled={submitting}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20 transition-colors"
+                disabled={submitting || !selectedPatient}
+                className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20 transition-colors disabled:opacity-50"
               >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Confirm Booking
               </button>
             </div>

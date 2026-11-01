@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -25,6 +25,7 @@ import {
   Users,
   ShieldAlert,
   ClipboardList,
+  RefreshCw,
 } from 'lucide-react';
 import NursePageShell from '../../components/nurse/NursePageShell';
 import NurseStatCard from '../../components/nurse/NurseStatCard';
@@ -40,17 +41,59 @@ import {
   NURSE_NOTES,
   NursingTask,
 } from '../../components/nurse/nurseMockData';
+import { useAuth } from '../../lib/auth/auth-context';
+import { fetchPatients } from '../../lib/api/patients';
+import { fetchNursingTasks, fetchPatientVitals } from '../../lib/api/clinical';
+import type { NursingTaskDTO } from '@mcms/contracts';
+
 
 export default function NurseDashboardPage() {
+  const { accessToken, user } = useAuth();
   const [tasks, setTasks] = useState<NursingTask[]>(NURSE_TASKS.slice(0, 5));
   const [notes, setNotes] = useState(NURSE_NOTES);
-  const [selectedDate, setSelectedDate] = useState('Oct 19, 2026');
+  const [selectedDate, setSelectedDate] = useState(() =>
+    new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+  );
+
+  // Live data
+  const [liveTasks, setLiveTasks] = useState<NursingTaskDTO[]>([]);
+  const [patientCount, setPatientCount] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Modals state
   const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
+
+  const loadLiveData = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const [taskRes, patRes] = await Promise.allSettled([
+        fetchNursingTasks(accessToken),
+        fetchPatients(accessToken, { limit: 1 }),
+      ]);
+      if (taskRes.status === 'fulfilled') setLiveTasks(taskRes.value);
+      if (patRes.status === 'fulfilled') setPatientCount(patRes.value.total);
+    } catch (err) {
+      console.error('Nurse dashboard live data error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => { void loadLiveData(); }, [loadLiveData]);
+
+  // Derived KPIs from live data (fall back to mock if empty)
+  const totalPatients = patientCount || NURSE_PATIENTS.length;
+  const pendingTasks = liveTasks.length > 0
+    ? liveTasks.filter((t) => t.status === 'PENDING' || t.status === 'IN_PROGRESS').length
+    : NURSE_TASKS.filter((t) => t.status === 'Pending' || t.status === 'In Progress').length;
+  const completedTasks = liveTasks.length > 0
+    ? liveTasks.filter((t) => t.status === 'COMPLETED').length
+    : NURSE_TASKS.filter((t) => t.status === 'Completed').length;
+  const nurseName = user?.displayName || CURRENT_NURSE.name;
 
   const toggleTask = (id: string) => {
     setTasks((prev) =>
@@ -77,7 +120,7 @@ export default function NurseDashboardPage() {
             Nurse Dashboard
           </h1>
           <p className="text-xs text-slate-500 font-medium">
-            Good morning, {CURRENT_NURSE.name.split(' ')[0]}! Here&apos;s what&apos;s happening in your ward today.
+            Good morning, {nurseName.split(' ')[0]}! Here&apos;s what&apos;s happening in your ward today.
           </p>
         </div>
       </div>
@@ -106,27 +149,27 @@ export default function NurseDashboardPage() {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
       <NurseStatCard
         title="Total Patients"
-        value={48}
+        value={isLoading ? '—' : totalPatients}
         iconName="users"
-        trendText="↑ 12% vs. last month"
+        trendText={isLoading ? 'Loading…' : `${totalPatients} registered`}
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="blue"
       />
       <NurseStatCard
         title="Today's Appointments"
-        value={12}
+        value={NURSE_APPOINTMENTS.length}
         iconName="calendar"
-        trendText="↑ 20% vs. last week"
+        trendText="Today's schedule"
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="green"
       />
       <NurseStatCard
         title="Pending Tasks"
-        value={7}
+        value={isLoading ? '—' : pendingTasks}
         iconName="syringe"
-        trendText="↓ 30% vs. yesterday"
+        trendText={isLoading ? 'Loading…' : `${completedTasks} completed`}
         trendDirection="down"
         trendIsPositive={true}
         colorTheme="purple"

@@ -15,7 +15,12 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import { PermissionSlug } from '@mcms/domain';
 import type { AuthenticatedUserEntity } from '../auth/types/authenticated-user.type';
-import type { CreateUserRequest, UpdateUserRequest, UserSummaryDTO } from '@mcms/contracts';
+import type {
+  CreateUserRequest,
+  UpdateUserRequest,
+  UserSummaryDTO,
+  TransferStaffBranchRequest,
+} from '@mcms/contracts';
 
 @Controller('users')
 export class UsersController {
@@ -55,6 +60,18 @@ export class UsersController {
   ): Promise<UserSummaryDTO> {
     const ip = (req.headers['x-forwarded-for'] as string) ?? req.ip;
     return this.usersService.update(id, body, actor, ip);
+  }
+
+  @Post(':id/transfer-branch')
+  @RequirePermissions(PermissionSlug.USERS_UPDATE)
+  async transferBranch(
+    @Param('id') id: string,
+    @Body() body: TransferStaffBranchRequest,
+    @CurrentUser() actor: AuthenticatedUserEntity,
+    @Req() req: Request,
+  ): Promise<UserSummaryDTO> {
+    const ip = (req.headers['x-forwarded-for'] as string) ?? req.ip;
+    return this.usersService.transferBranch(id, body.branchId, actor, ip);
   }
 
   @Patch(':id/deactivate')

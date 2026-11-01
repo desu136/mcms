@@ -18,7 +18,7 @@ import {
   Activity,
   UserCheck,
 } from 'lucide-react';
-import { CURRENT_RECEPTIONIST } from './receptionistMockData';
+import { useAuth } from '../../lib/auth/auth-context';
 
 interface ReceptionistSidebarProps {
   isCollapsed: boolean;
@@ -46,6 +46,9 @@ function ReceptionistSidebar({
   onCloseMobile,
 }: ReceptionistSidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const receptionistName = user?.displayName || 'Receptionist';
+  const receptionistRole = user?.staffProfile?.jobTitle || 'Front Desk';
 
   return (
     <>
@@ -154,10 +157,10 @@ function ReceptionistSidebar({
             {!isCollapsed && (
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-bold text-white truncate tracking-tight">
-                  {CURRENT_RECEPTIONIST.name}
+                  {receptionistName}
                 </div>
                 <div className="text-[11px] text-slate-400 truncate">
-                  {CURRENT_RECEPTIONIST.role}
+                  {receptionistRole}
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />

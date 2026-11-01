@@ -14,12 +14,53 @@ import type {
   CreateAppointmentRequest,
   UpdateAppointmentRequest,
 } from '@mcms/contracts';
+import { QueueStatus, QueuePriority, AppointmentType, AppointmentStatus } from '@prisma/client';
 import type { TenantContext } from '../common/tenant/tenant-context.interface';
-import { QueueStatus, QueuePriority } from '@prisma/client';
 
 @Injectable()
 export class AppointmentsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private normalizeQueuePriority(priority?: string | null): QueuePriority {
+    if (!priority) return QueuePriority.ROUTINE;
+    const upper = priority.trim().toUpperCase();
+    if (upper === 'EMERGENCY' || upper === 'HIGH' || upper === 'CRITICAL') return QueuePriority.EMERGENCY;
+    if (upper === 'URGENT' || upper === 'MEDIUM') return QueuePriority.URGENT;
+    return QueuePriority.ROUTINE;
+  }
+
+  private normalizeQueueStatus(status?: string | null): QueueStatus {
+    if (!status) return QueueStatus.WAITING;
+    const upper = status.trim().toUpperCase().replace(/\s+/g, '_');
+    if (upper === 'IN_CONSULTATION' || upper === 'IN_PROGRESS' || upper === 'CONSULTATION') return QueueStatus.IN_CONSULTATION;
+    if (upper === 'CALLED') return QueueStatus.CALLED;
+    if (upper === 'COMPLETED' || upper === 'DONE' || upper === 'FINISHED') return QueueStatus.COMPLETED;
+    if (upper === 'CANCELLED') return QueueStatus.CANCELLED;
+    if (upper === 'NO_SHOW') return QueueStatus.NO_SHOW;
+    return QueueStatus.WAITING;
+  }
+
+  private normalizeAppointmentType(type?: string | null): AppointmentType {
+    if (!type) return AppointmentType.CONSULTATION;
+    const upper = type.trim().toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
+    if (upper.includes('FOLLOW')) return AppointmentType.FOLLOW_UP;
+    if (upper.includes('CHECK') || upper.includes('ROUTINE')) return AppointmentType.ROUTINE_CHECKUP;
+    if (upper.includes('PROCEDURE') || upper.includes('SURGERY')) return AppointmentType.PROCEDURE;
+    if (upper.includes('OUTPATIENT')) return AppointmentType.OUTPATIENT;
+    return AppointmentType.CONSULTATION;
+  }
+
+  private normalizeAppointmentStatus(status?: string | null): AppointmentStatus {
+    if (!status) return AppointmentStatus.SCHEDULED;
+    const upper = status.trim().toUpperCase().replace(/\s+/g, '_');
+    if (upper === 'CONFIRMED') return AppointmentStatus.CONFIRMED;
+    if (upper === 'CHECKED_IN' || upper === 'CHECK_IN') return AppointmentStatus.CHECKED_IN;
+    if (upper === 'IN_PROGRESS' || upper === 'IN_CONSULTATION') return AppointmentStatus.IN_PROGRESS;
+    if (upper === 'COMPLETED') return AppointmentStatus.COMPLETED;
+    if (upper === 'CANCELLED') return AppointmentStatus.CANCELLED;
+    if (upper === 'NO_SHOW') return AppointmentStatus.NO_SHOW;
+    return AppointmentStatus.SCHEDULED;
+  }
 
   // ─── Queue ────────────────────────────────────────────────────────────────
 
@@ -92,7 +133,7 @@ export class AppointmentsService {
         branchId,
         patientId: dto.patientId,
         ticketNumber: this.generateTicket(count),
-        priority: dto.priority as QueuePriority ?? QueuePriority.ROUTINE,
+        priority: this.normalizeQueuePriority(dto.priority),
         status: QueueStatus.WAITING,
         ...(dto.departmentId ? { departmentId: dto.departmentId } : {}),
         ...(dto.roomId ? { roomId: dto.roomId } : {}),
@@ -136,11 +177,11 @@ export class AppointmentsService {
     const updated = await this.prisma.queueEntry.update({
       where: { id },
       data: {
-        ...(dto.status ? { status: dto.status as QueueStatus } : {}),
+        ...(dto.status ? { status: this.normalizeQueueStatus(dto.status) } : {}),
         ...(dto.assignedDoctorId !== undefined ? { assignedDoctorId: dto.assignedDoctorId } : {}),
         ...(dto.roomId !== undefined ? { roomId: dto.roomId } : {}),
         ...(dto.departmentId !== undefined ? { departmentId: dto.departmentId } : {}),
-        ...(dto.priority ? { priority: dto.priority as QueuePriority } : {}),
+        ...(dto.priority ? { priority: this.normalizeQueuePriority(dto.priority) } : {}),
         ...(dto.status === 'CALLED' ? { calledTime: new Date() } : {}),
         ...(dto.status === 'COMPLETED' || dto.status === 'CANCELLED'
           ? { completedTime: new Date() }
@@ -181,17 +222,23 @@ export class AppointmentsService {
     const { tenantId, branchId, isSuperAdmin } = ctx;
 
     const where: Record<string, unknown> = {};
-    if (branchId) where.branchId = branchId;
-    else if (tenantId) where.tenantId = tenantId;
+    if (patientId) {
+      where.patientId = patientId;
+      if (tenantId) where.tenantId = tenantId;
+      // Do not restrict by branchId when querying a patient's historical encounters
+    } else {
+      if (branchId) where.branchId = branchId;
+      else if (tenantId) where.tenantId = tenantId;
+    }
     if (date) where.appointmentDate = new Date(date);
     if (doctorId) where.doctorId = doctorId;
-    if (patientId) where.patientId = patientId;
 
     const appointments = await this.prisma.appointment.findMany({
       where: where as any,
       include: {
         patient: { select: { fullName: true, pid: true } },
         doctor: { select: { displayName: true } },
+        branch: { select: { name: true } },
       },
       orderBy: [{ appointmentDate: 'asc' }, { startTime: 'asc' }],
     });
@@ -200,6 +247,7 @@ export class AppointmentsService {
       id: a.id,
       tenantId: a.tenantId,
       branchId: a.branchId,
+      branchName: a.branch?.name ?? null,
       patientId: a.patientId,
       patientName: a.patient.fullName,
       patientPid: a.patient.pid,
@@ -240,8 +288,8 @@ export class AppointmentsService {
         patientId: dto.patientId,
         appointmentDate: new Date(dto.appointmentDate),
         startTime: dto.startTime,
-        type: dto.type as any ?? 'OUTPATIENT',
-        status: 'SCHEDULED' as any,
+        type: this.normalizeAppointmentType(dto.type),
+        status: AppointmentStatus.SCHEDULED,
         ...(dto.doctorId ? { doctorId: dto.doctorId } : {}),
         ...(dto.departmentId ? { departmentId: dto.departmentId } : {}),
         ...(dto.roomId ? { roomId: dto.roomId } : {}),
@@ -297,8 +345,8 @@ export class AppointmentsService {
         ...(dto.appointmentDate ? { appointmentDate: new Date(dto.appointmentDate) } : {}),
         ...(dto.startTime ? { startTime: dto.startTime } : {}),
         ...(dto.endTime !== undefined ? { endTime: dto.endTime } : {}),
-        ...(dto.type ? { type: dto.type as any } : {}),
-        ...(dto.status ? { status: dto.status as any } : {}),
+        ...(dto.type ? { type: this.normalizeAppointmentType(dto.type) } : {}),
+        ...(dto.status ? { status: this.normalizeAppointmentStatus(dto.status) } : {}),
         ...(dto.reason !== undefined ? { reason: dto.reason } : {}),
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
       },

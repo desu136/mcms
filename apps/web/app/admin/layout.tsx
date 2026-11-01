@@ -11,6 +11,8 @@ import {
   CalendarDays,
   Stethoscope,
   Building2,
+  Building,
+  Hospital,
   Wrench,
   FolderOpen,
   CreditCard,
@@ -27,9 +29,11 @@ import {
 
 const adminNavItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/clinic-management', label: 'Clinic Management', icon: Hospital },
+  { href: '/admin/branches', label: 'Branches', icon: Building2 },
+  { href: '/admin/departments', label: 'Departments', icon: Building },
   { href: '/admin/staff', label: 'Staff & Roles', icon: UserCog },
   { href: '/admin/doctors', label: 'Doctors', icon: Stethoscope },
-  { href: '/admin/departments', label: 'Departments', icon: Building2 },
   { href: '/admin/patients', label: 'Patients', icon: Users },
   { href: '/admin/appointments', label: 'Appointments', icon: CalendarDays },
   { href: '/admin/services', label: 'Services', icon: Wrench },

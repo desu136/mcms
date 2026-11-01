@@ -39,10 +39,12 @@ const PERMISSIONS = [
   // Tenant & Organization
   { slug: 'tenants:read', name: 'View Tenants', module: 'tenants', description: 'View organization details' },
   { slug: 'tenants:manage', name: 'Manage Tenants', module: 'tenants', description: 'Create and configure organizations' },
+  { slug: 'tenants:write', name: 'Write Tenants', module: 'tenants', description: 'Create and configure organizations' },
 
   // Branches
   { slug: 'branches:read', name: 'View Branches', module: 'branches', description: 'View clinic branch locations' },
   { slug: 'branches:manage', name: 'Manage Branches', module: 'branches', description: 'Create and configure physical facilities' },
+  { slug: 'branches:write', name: 'Write Branches', module: 'branches', description: 'Create and configure physical facilities' },
 
   // Departments & Rooms
   { slug: 'departments:read', name: 'View Departments', module: 'departments', description: 'View clinical departments' },
@@ -55,6 +57,8 @@ const PERMISSIONS = [
   { slug: 'users:create', name: 'Create Users', module: 'users', description: 'Create new staff members' },
   { slug: 'users:update', name: 'Update Users', module: 'users', description: 'Update staff roles and branch assignments' },
   { slug: 'users:delete', name: 'Delete Users', module: 'users', description: 'Deactivate user accounts' },
+  { slug: 'users:activate', name: 'Activate Users', module: 'users', description: 'Reactivate user accounts' },
+  { slug: 'users:deactivate', name: 'Deactivate Users', module: 'users', description: 'Deactivate user accounts' },
 
   // Roles
   { slug: 'roles:read', name: 'View Roles', module: 'roles', description: 'View RBAC roles' },
@@ -109,6 +113,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tenants:read', 'branches:read', 'branches:manage',
     'departments:read', 'departments:manage', 'rooms:read', 'rooms:manage',
     'users:read', 'users:create', 'users:update', 'users:delete',
+    'users:activate', 'users:deactivate',
     'roles:read',
     'patients:read', 'appointments:read', 'queue:read',
     'vitals:read', 'prescriptions:read', 'lab:orders:read',
