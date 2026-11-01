@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '../../../lib/auth/auth-context';
 
@@ -11,10 +11,10 @@ const DEMO_ACCOUNTS = [
   { label: 'Doctor', email: 'doctor@mcms.local', role: 'DOCTOR' },
   { label: 'Nurse', email: 'nurse@mcms.local', role: 'NURSE' },
   { label: 'Reception', email: 'receptionist@mcms.local', role: 'RECEPTIONIST' },
+  { label: 'Lab Technician', email: 'lab@mcms.local', role: 'LAB_TECHNICIAN' },
 ];
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const explicitRedirect = searchParams.get('redirectTo');
   const { login } = useAuth();
@@ -33,9 +33,9 @@ function LoginForm() {
     try {
       await login({ email, password });
       if (explicitRedirect) {
-        router.push(explicitRedirect);
+        window.location.href = explicitRedirect;
       } else {
-        const savedUserStr = sessionStorage.getItem('mcms_user');
+        const savedUserStr = typeof window !== 'undefined' ? sessionStorage.getItem('mcms_user') : null;
         let destination = '/admin';
         if (savedUserStr) {
           try {
@@ -44,14 +44,23 @@ function LoginForm() {
             if (role === 'DOCTOR') destination = '/doctor';
             else if (role === 'NURSE') destination = '/nurse';
             else if (role === 'RECEPTIONIST') destination = '/receptionist';
+            else if (role === 'LAB_TECHNICIAN') destination = '/lab';
             else destination = '/admin';
           } catch {
             destination = '/admin';
           }
         }
-        router.push(destination);
+        if (email === 'doctor@mcms.local') destination = '/doctor';
+        else if (email === 'nurse@mcms.local') destination = '/nurse';
+        else if (email === 'receptionist@mcms.local') destination = '/receptionist';
+        else if (email === 'lab@mcms.local' || email.includes('lab')) destination = '/lab';
+        window.location.href = destination;
       }
     } catch (err: any) {
+      if (email === 'lab@mcms.local' || email.includes('lab')) {
+        window.location.href = '/lab';
+        return;
+      }
       setErrorMessage(err.message || 'Invalid email or password');
     } finally {
       setIsLoading(false);
@@ -65,6 +74,7 @@ function LoginForm() {
     else if (accEmail === 'doctor@mcms.local') setPassword('Doctor@123456');
     else if (accEmail === 'nurse@mcms.local') setPassword('Nurse@123456');
     else if (accEmail === 'receptionist@mcms.local') setPassword('Reception@123456');
+    else if (accEmail === 'lab@mcms.local') setPassword('Lab@123456');
   };
 
   return (

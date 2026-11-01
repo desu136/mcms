@@ -214,29 +214,25 @@ export default function DoctorDashboardPage() {
   );
 
   const kpisContent = (
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+    <div className="grid grid-cols-4 gap-2 sm:gap-2.5 xl:gap-3">
       <DoctorStatCard
         title="Today's Appointments"
         value={isLoading ? '—' : todayAppointments.length}
-        icon={Users}
         color="blue"
       />
       <DoctorStatCard
         title="Patients Seen Today"
         value={isLoading ? '—' : todayAppointments.filter(a => a.status === 'COMPLETED').length}
-        icon={CheckCircle2}
         color="emerald"
       />
       <DoctorStatCard
         title="Pending Prescriptions"
         value={isLoading ? '—' : pendingPrescriptions}
-        icon={Pill}
         color="purple"
       />
       <DoctorStatCard
         title="Lab Orders Pending"
         value={isLoading ? '—' : pendingLabOrders}
-        icon={FlaskConical}
         color="orange"
       />
     </div>
