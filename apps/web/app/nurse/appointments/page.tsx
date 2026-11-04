@@ -1,13 +1,16 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import NurseStatCard from '@/components/nurse/NurseStatCard';
-import { NURSE_APPOINTMENTS, NURSE_PATIENTS, NursePatient } from '@/components/nurse/nurseMockData';
+import { NURSE_APPOINTMENTS, NURSE_PATIENTS, NursePatient, NurseAppointment } from '@/components/nurse/nurseMockData';
 import NursePatientDetailsModal from '@/components/nurse/NursePatientDetailsModal';
 import {
   CalendarDays, Eye, Pencil, MoreVertical, ChevronLeft, ChevronRight,
-  UserCheck, RefreshCcw, FileText, Filter, Search,
+  UserCheck, RefreshCcw, FileText, Filter, Search, RefreshCw,
 } from 'lucide-react';
+import { useAuth } from '../../../lib/auth/auth-context';
+import { fetchAppointments } from '../../../lib/api/appointments';
+import type { AppointmentDTO } from '@mcms/contracts';
 
 const STATUS_STYLES: Record<string, string> = {
   'Checked In': 'bg-green-100 text-green-700',
@@ -82,6 +85,9 @@ const SCHED_STATUS: Record<string, string> = {
 };
 
 export default function NurseAppointmentsPage() {
+  const { accessToken } = useAuth();
+  const [liveAppointments, setLiveAppointments] = useState<NurseAppointment[]>(NURSE_APPOINTMENTS);
+  const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
@@ -91,24 +97,80 @@ export default function NurseAppointmentsPage() {
   const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
   const rowsPerPage = 10;
 
+  const loadAppointments = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const data = await fetchAppointments(accessToken);
+      if (data && data.length > 0) {
+        const statusMap: Record<string, NurseAppointment['status']> = {
+          SCHEDULED: 'Scheduled',
+          CONFIRMED: 'Upcoming',
+          CHECKED_IN: 'Checked In',
+          IN_PROGRESS: 'In Progress',
+          COMPLETED: 'Completed',
+          CANCELLED: 'Cancelled',
+          NO_SHOW: 'Cancelled',
+        };
+        const mapped: NurseAppointment[] = data.map((dto, idx) => {
+          const mock = NURSE_APPOINTMENTS[idx % NURSE_APPOINTMENTS.length] as NurseAppointment;
+          return {
+            id: dto.id,
+            patientId: dto.patientId,
+            patientName: dto.patientName,
+            patientPid: dto.patientPid,
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(dto.patientName)}`,
+            age: mock?.age ?? 32,
+            gender: mock?.gender ?? 'Female',
+            department: dto.branchName || mock?.department || 'General',
+            reason: dto.reason || 'General Consultation',
+            appointmentTime: dto.startTime || '09:00 AM',
+            date: dto.appointmentDate ? new Date(dto.appointmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Today',
+            status: statusMap[dto.status.toUpperCase()] || 'Scheduled',
+            doctor: dto.doctorName || mock?.doctor || 'Dr. Fitsum Alemu',
+          };
+        });
+        setLiveAppointments(mapped);
+      }
+    } catch (err) {
+      console.error('Failed to load appointments for nurse portal:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadAppointments();
+  }, [loadAppointments]);
+
   const handleOpenDetails = (patientPid: string, patientName: string) => {
     const p = NURSE_PATIENTS.find(np => np.pid === patientPid || np.name === patientName) || NURSE_PATIENTS[0]!;
     setSelectedPatient(p);
     setDetailsOpen(true);
   };
 
-  const filtered = NURSE_APPOINTMENTS.filter(a => {
+  const filtered = liveAppointments.filter(a => {
     const q = searchQuery.toLowerCase();
     const matchQ = !q || a.patientName.toLowerCase().includes(q) || a.patientPid.toLowerCase().includes(q) || a.reason.toLowerCase().includes(q);
     const matchDept = selectedDept === 'All Departments' || a.department === selectedDept;
     const matchStatus = selectedStatus === 'All Statuses' || a.status === selectedStatus;
-    return matchQ && matchDept && matchStatus;
+    const matchTab = activeTab === 'all'
+      || (activeTab === 'today' && (a.status === 'Checked In' || a.status === 'In Progress' || a.status === 'Waiting'))
+      || (activeTab === 'upcoming' && (a.status === 'Scheduled' || a.status === 'Upcoming' || a.status === 'On Time'))
+      || (activeTab === 'completed' && a.status === 'Completed')
+      || (activeTab === 'cancelled' && a.status === 'Cancelled');
+    return matchQ && matchDept && matchStatus && matchTab;
   });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const paginated = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
-  const departments = ['All Departments', ...Array.from(new Set(NURSE_APPOINTMENTS.map(a => a.department)))];
+  const departments = ['All Departments', ...Array.from(new Set(liveAppointments.map(a => a.department)))];
   const statuses = ['All Statuses', ...Object.keys(STATUS_STYLES)];
+
+  const totalCount = liveAppointments.length;
+  const todayCount = liveAppointments.filter(a => a.status === 'Checked In' || a.status === 'In Progress' || a.status === 'Waiting').length;
+  const completedCount = liveAppointments.filter(a => a.status === 'Completed').length;
+  const cancelledCount = liveAppointments.filter(a => a.status === 'Cancelled').length;
 
   return (
     <div className="h-full flex overflow-hidden bg-[#F4F7FC]">
@@ -125,28 +187,45 @@ export default function NurseAppointmentsPage() {
               <p className="text-xs text-gray-400 mt-0.5">View and manage your patient appointments, update status, and provide nursing care.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-xs">
-            <CalendarDays size={14} className="text-blue-600" />
-            <div className="text-right"><p className="text-[11px] text-gray-400">Oct 19, 2026</p><p className="text-[11px] font-medium text-gray-700">Monday</p></div>
-            <div className="flex gap-0.5 ml-1.5">
-              <button className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100"><ChevronLeft size={11} /></button>
-              <button className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100"><ChevronRight size={11} /></button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-xs">
+              <CalendarDays size={14} className="text-blue-600" />
+              <div className="text-right"><p className="text-[11px] text-gray-400">Oct 19, 2026</p><p className="text-[11px] font-medium text-gray-700">Monday</p></div>
+              <div className="flex gap-0.5 ml-1.5">
+                <button className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100"><ChevronLeft size={11} /></button>
+                <button className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100"><ChevronRight size={11} /></button>
+              </div>
             </div>
+            <button
+              onClick={() => void loadAppointments()}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 shadow-xs transition-colors disabled:opacity-50"
+              title="Refresh Appointments"
+            >
+              <RefreshCw size={13} className={`text-blue-600 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
           </div>
         </div>
 
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-          <NurseStatCard icon={<CalendarDays size={18} className="text-blue-600" />} iconBg="bg-blue-50" label="Total Appointments" value="48" trend="+12% vs. last week" trendUp />
-          <NurseStatCard icon={<CalendarDays size={18} className="text-cyan-600" />} iconBg="bg-cyan-50" label="Today's Appointments" value="12" trend="+20% vs. last week" trendUp />
-          <NurseStatCard icon={<UserCheck size={18} className="text-green-600" />} iconBg="bg-green-50" label="Completed" value="36" trend="+8% vs. last week" trendUp />
-          <NurseStatCard icon={<RefreshCcw size={18} className="text-red-500" />} iconBg="bg-red-50" label="Cancelled" value="4" trend="-33% vs. last week" trendUp={false} />
+          <NurseStatCard icon={<CalendarDays size={18} className="text-blue-600" />} iconBg="bg-blue-50" label="Total Appointments" value={isLoading ? '—' : totalCount} trend="+12% vs. last week" trendUp />
+          <NurseStatCard icon={<CalendarDays size={18} className="text-cyan-600" />} iconBg="bg-cyan-50" label="Today's Appointments" value={isLoading ? '—' : todayCount} trend="+20% vs. last week" trendUp />
+          <NurseStatCard icon={<UserCheck size={18} className="text-green-600" />} iconBg="bg-green-50" label="Completed" value={isLoading ? '—' : completedCount} trend="+8% vs. last week" trendUp />
+          <NurseStatCard icon={<RefreshCcw size={18} className="text-red-500" />} iconBg="bg-red-50" label="Cancelled" value={isLoading ? '—' : cancelledCount} trend="-33% vs. last week" trendUp={false} />
         </div>
 
         {/* Tab filters */}
         <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 shadow-xs w-fit flex-wrap">
-          {TABS.map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+          {[
+            { key: 'all',       label: 'All',       count: totalCount },
+            { key: 'today',     label: 'Today',     count: todayCount },
+            { key: 'upcoming',  label: 'Upcoming',  count: liveAppointments.filter(a => a.status === 'Scheduled' || a.status === 'Upcoming' || a.status === 'On Time').length },
+            { key: 'completed', label: 'Completed', count: completedCount },
+            { key: 'cancelled', label: 'Cancelled', count: cancelledCount },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => { setActiveTab(tab.key); setCurrentPage(1); }}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${activeTab === tab.key ? 'bg-blue-600 text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'}`}>
               {tab.label} ({tab.count})
             </button>

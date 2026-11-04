@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   User,
@@ -33,6 +33,7 @@ import {
   Camera,
   Activity,
   HeartPulse,
+  Loader2,
 } from 'lucide-react';
 import {
   PRIMARY_PATIENT,
@@ -40,12 +41,23 @@ import {
   PatientRecord,
   PatientOrderedTest,
 } from '../../../components/lab/patientLookupMockData';
+import { useAuth } from '../../../lib/auth/auth-context';
+import { fetchPatients } from '@/lib/api/patients';
+import { fetchLabOrders } from '@/lib/api/clinical';
+import type { PatientDTO, LabOrderDTO } from '@mcms/contracts';
 
 type ActiveTab = 'ordered' | 'results' | 'history' | 'specimen';
 
 export default function LabPatientLookupPage() {
+  const { accessToken } = useAuth();
+
   const [patient, setPatient] = useState<PatientRecord>(PRIMARY_PATIENT);
-  const [searchQuery, setSearchQuery] = useState('Aster Mulu');
+  const [livePatients, setLivePatients] = useState<PatientDTO[]>([]);
+  const [patientOrders, setPatientOrders] = useState<LabOrderDTO[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSearchingPatients, setIsSearchingPatients] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
   const [searchBy, setSearchBy] = useState('Name');
   const [department, setDepartment] = useState('All Departments');
   const [status, setStatus] = useState('All Statuses');
@@ -54,28 +66,166 @@ export default function LabPatientLookupPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [viewingTestResult, setViewingTestResult] = useState<PatientOrderedTest | null>(null);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [modalSearchInput, setModalSearchInput] = useState('');
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleSearch = () => {
-    const q = searchQuery.trim().toLowerCase();
+  // Load initial patients from API
+  const loadPatients = useCallback(async (query = '') => {
+    if (!accessToken) return;
+    setIsSearchingPatients(true);
+    try {
+      const res = await fetchPatients(accessToken, { search: query || undefined, limit: 15 });
+      setLivePatients(res.data);
+    } catch (err) {
+      console.error('Failed to search patients:', err);
+    } finally {
+      setIsSearchingPatients(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadPatients();
+  }, [loadPatients]);
+
+  // Load lab orders for current active patient
+  const loadPatientOrders = useCallback(async (pId: string) => {
+    if (!accessToken || !pId) return;
+    setIsLoading(true);
+    try {
+      const orders = await fetchLabOrders(accessToken, { patientId: pId });
+      setPatientOrders(orders);
+    } catch (err) {
+      console.error('Failed to load patient lab orders:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  // Handle selecting a live patient
+  const handleSelectPatient = (p: PatientDTO) => {
+    const age = p.dateOfBirth
+      ? Math.max(1, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
+      : 30;
+
+    const updatedRecord: PatientRecord = {
+      ...PRIMARY_PATIENT,
+      id: p.id,
+      name: `${p.firstName} ${p.lastName}`,
+      patientId: p.pid || p.id.slice(0, 8).toUpperCase(),
+      gender: p.gender === 'MALE' ? 'Male' : 'Female',
+      age,
+      dob: p.dateOfBirth
+        ? new Date(p.dateOfBirth).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+        : 'Jan 15, 1996',
+      phone: p.phoneNumber || '+251 911 234 567',
+      email: p.email || `${p.firstName.toLowerCase()}@mcms.local`,
+      address: p.address ? `${p.address}, ${p.city || 'Addis Ababa'}` : 'Bole, Addis Ababa, Ethiopia',
+      bloodGroup: p.bloodType || 'O+',
+      emergencyContact: p.emergencyContactName
+        ? `${p.emergencyContactName} (${p.emergencyContactRel || 'Relative'})`
+        : 'Not Specified',
+      allergies: p.allergies || 'NKDA (No Known Drug Allergies)',
+    };
+
+    setPatient(updatedRecord);
+    setSearchQuery(`${p.firstName} ${p.lastName}`);
+    setIsSearchModalOpen(false);
+    showToast(`Loaded records for ${p.firstName} ${p.lastName}`);
+    void loadPatientOrders(p.id);
+  };
+
+  // Perform search
+  const handleSearch = async () => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setPatient(PRIMARY_PATIENT);
+      return;
+    }
+
+    if (accessToken) {
+      setIsLoading(true);
+      try {
+        const res = await fetchPatients(accessToken, { search: q, limit: 5 });
+        if (res.data.length > 0) {
+          handleSelectPatient(res.data[0]!);
+          return;
+        }
+      } catch (err) {
+        console.error('API search failed, falling back to mock:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    // Fallback to local mock patients
     const found = ALL_MOCK_PATIENTS.find(
       (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.patientId.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q.toLowerCase()) ||
+        p.patientId.toLowerCase().includes(q.toLowerCase()) ||
         p.phone.includes(q)
     );
     if (found) {
       setPatient(found);
       showToast(`Loaded records for ${found.name}.`);
     } else {
-      showToast('No patient found with that query. Showing Aster Mulu.');
+      showToast('No patient found with that query. Showing default record.');
       setPatient(PRIMARY_PATIENT);
     }
   };
+
+  // Map patientOrders to PatientOrderedTest format
+  const mappedOrderedTests: PatientOrderedTest[] = useMemo(() => {
+    if (patientOrders.length === 0) {
+      return patient.orderedTests;
+    }
+
+    return patientOrders.map((ord, idx) => {
+      const isCompleted = ord.status === 'COMPLETED' || ord.status === 'VERIFIED';
+      const isProcessing = ord.status === 'SAMPLE_COLLECTED' || ord.status === 'IN_LAB';
+      const uiStatus: PatientOrderedTest['status'] = isCompleted
+        ? 'Completed'
+        : isProcessing
+        ? 'Processing'
+        : 'Pending';
+
+      const firstSample = ord.samples?.[0];
+      const rawSample = firstSample?.sampleType?.toLowerCase() || '';
+      let normalizedSample: PatientOrderedTest['sampleType'] = 'Blood';
+      if (rawSample.includes('urine')) normalizedSample = 'Urine';
+      else if (rawSample.includes('stool')) normalizedSample = 'Stool';
+      else if (rawSample.includes('swab')) normalizedSample = 'Swab';
+      else if (rawSample.includes('other')) normalizedSample = 'Other';
+
+      const hasResult = Boolean(ord.results && ord.results.length > 0);
+      const resultSummary = ord.results?.[0]
+        ? `${ord.results[0].testName}: ${ord.results[0].value} ${ord.results[0].unit || ''} (${ord.results[0].isAbnormal ? 'ABNORMAL' : 'Normal'})`
+        : 'Analysis pending';
+
+      return {
+        num: idx + 1,
+        testName: ord.results?.[0]?.testName || 'Diagnostic Laboratory Order',
+        sampleType: normalizedSample,
+        orderedDate: new Date(ord.orderedAt).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        status: uiStatus,
+        hasResult,
+        resultSummary,
+      };
+    });
+  }, [patientOrders, patient.orderedTests]);
 
   // Status badge helper for ordered tests
   const renderStatusBadge = (testStatus: PatientOrderedTest['status']) => {
@@ -132,7 +282,7 @@ export default function LabPatientLookupPage() {
             <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
             <div className="text-left">
               <div className="text-xs font-bold text-slate-800 leading-none">{calendarDate}</div>
-              <div className="text-[10px] text-slate-400 font-medium mt-0.5 leading-none">Tuesday</div>
+              <div className="text-[10px] text-slate-400 font-medium mt-0.5 leading-none">Live Clinical View</div>
             </div>
             <div className="flex items-center gap-0.5 ml-2 pl-2 border-l border-slate-200">
               <button
@@ -153,7 +303,10 @@ export default function LabPatientLookupPage() {
           </div>
 
           <button
-            onClick={() => setIsSearchModalOpen(true)}
+            onClick={() => {
+              void loadPatients();
+              setIsSearchModalOpen(true);
+            }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition active:scale-[0.98]"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -171,7 +324,7 @@ export default function LabPatientLookupPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            onKeyDown={(e) => e.key === 'Enter' && void handleSearch()}
             placeholder="Search by patient name, ID, phone number, or sample ID..."
             className="w-full pl-9 pr-4 py-2 text-xs sm:text-sm bg-slate-50/70 border border-slate-200/80 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
           />
@@ -179,10 +332,12 @@ export default function LabPatientLookupPage() {
 
         {/* Search Button */}
         <button
-          onClick={handleSearch}
-          className="px-6 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/20 transition shrink-0 active:scale-[0.98]"
+          onClick={() => void handleSearch()}
+          disabled={isLoading}
+          className="px-6 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/20 transition shrink-0 active:scale-[0.98] flex items-center gap-2"
         >
-          Search
+          {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+          <span>Search</span>
         </button>
 
         {/* Dropdowns */}
@@ -197,7 +352,6 @@ export default function LabPatientLookupPage() {
               <option value="Name">Name</option>
               <option value="Patient ID">Patient ID</option>
               <option value="Phone Number">Phone Number</option>
-              <option value="Sample ID">Sample ID</option>
             </select>
           </div>
 
@@ -362,14 +516,14 @@ export default function LabPatientLookupPage() {
 
         {/* ================= CENTER COLUMN (Stats, Tabs, Ordered Tests) ================= */}
         <div className="lg:col-span-6 space-y-4">
-          {/* 4 Stat KPI Cards - Compact & displayed at one row without icons */}
+          {/* 4 Stat KPI Cards */}
           <div className="grid grid-cols-4 gap-2 sm:gap-2.5 xl:gap-3">
             {/* Total Tests Ordered */}
             <div className="bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-xs transition flex flex-col justify-between">
               <div>
                 <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider truncate">Total Tests Ordered</div>
                 <div className="text-xl sm:text-2xl font-black text-slate-900 leading-tight mt-1">
-                  {patient.stats.totalTests}
+                  {mappedOrderedTests.length}
                 </div>
               </div>
               <div className="text-[10px] font-medium text-slate-400 mt-1">This visit</div>
@@ -380,10 +534,10 @@ export default function LabPatientLookupPage() {
               <div>
                 <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider truncate">Completed</div>
                 <div className="text-xl sm:text-2xl font-black text-slate-900 leading-tight mt-1">
-                  {patient.stats.completed}
+                  {mappedOrderedTests.filter((t) => t.status === 'Completed').length}
                 </div>
               </div>
-              <div className="text-[10px] font-bold text-emerald-600 mt-1">{patient.stats.completedPct}</div>
+              <div className="text-[10px] font-bold text-emerald-600 mt-1">Verified</div>
             </div>
 
             {/* Pending */}
@@ -391,10 +545,10 @@ export default function LabPatientLookupPage() {
               <div>
                 <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider truncate">Pending</div>
                 <div className="text-xl sm:text-2xl font-black text-slate-900 leading-tight mt-1">
-                  {patient.stats.pending}
+                  {mappedOrderedTests.filter((t) => t.status === 'Pending').length}
                 </div>
               </div>
-              <div className="text-[10px] font-bold text-amber-500 mt-1">{patient.stats.pendingChange}</div>
+              <div className="text-[10px] font-bold text-amber-500 mt-1">In Queue</div>
             </div>
 
             {/* Abnormal */}
@@ -402,14 +556,14 @@ export default function LabPatientLookupPage() {
               <div>
                 <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider truncate">Abnormal</div>
                 <div className="text-xl sm:text-2xl font-black text-slate-900 leading-tight mt-1">
-                  {patient.stats.abnormal}
+                  {mappedOrderedTests.filter((t) => t.resultSummary?.includes('ABNORMAL')).length}
                 </div>
               </div>
-              <div className="text-[10px] font-bold text-rose-500 mt-1">{patient.stats.abnormalChange}</div>
+              <div className="text-[10px] font-bold text-rose-500 mt-1">Flagged</div>
             </div>
           </div>
 
-          {/* Navigation Tabs matching screenshot */}
+          {/* Navigation Tabs */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
             <button
               onClick={() => setActiveTab('ordered')}
@@ -420,44 +574,24 @@ export default function LabPatientLookupPage() {
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>Ordered Tests</span>
+              <span>Ordered Tests ({mappedOrderedTests.length})</span>
             </button>
 
-            <button
-              onClick={() => setActiveTab('results')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'results'
-                  ? 'bg-blue-600 text-white shadow-blue-500/25'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
-              }`}
+            <Link
+              href="/lab/results"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80"
             >
               <ClipboardList className="w-3.5 h-3.5" />
               <span>Test Results</span>
-            </button>
+            </Link>
 
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'history'
-                  ? 'bg-blue-600 text-white shadow-blue-500/25'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
-              }`}
-            >
-              <BarChart2 className="w-3.5 h-3.5" />
-              <span>Lab History</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('specimen')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'specimen'
-                  ? 'bg-blue-600 text-white shadow-blue-500/25'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
-              }`}
+            <Link
+              href="/lab/samples"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80"
             >
               <TestTube2 className="w-3.5 h-3.5" />
-              <span>Specimen Details</span>
-            </button>
+              <span>Specimen Intake</span>
+            </Link>
           </div>
 
           {/* Tests Ordered for This Patient Table */}
@@ -465,14 +599,11 @@ export default function LabPatientLookupPage() {
             {/* Table Header Bar */}
             <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
               <h2 className="text-xs sm:text-sm font-bold text-slate-800">
-                Tests Ordered for This Patient
+                Tests Ordered for {patient.name}
               </h2>
-              <button
-                onClick={() => showToast('Displaying full test history...')}
-                className="text-xs font-semibold text-blue-600 hover:underline"
-              >
-                View All
-              </button>
+              <span className="text-xs font-semibold text-blue-600">
+                {mappedOrderedTests.length} workorders
+              </span>
             </div>
 
             {/* Table Content */}
@@ -489,7 +620,7 @@ export default function LabPatientLookupPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {patient.orderedTests.map((test) => (
+                  {mappedOrderedTests.map((test) => (
                     <tr key={test.num} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-3 text-center text-slate-400 font-bold">
                         {test.num}
@@ -501,10 +632,7 @@ export default function LabPatientLookupPage() {
                         {test.sampleType}
                       </td>
                       <td className="py-3 px-3 whitespace-nowrap text-slate-500">
-                        <div>{test.orderedDate.split(' ').slice(0, 3).join(' ')}</div>
-                        <div className="text-[10px] text-slate-400">
-                          {test.orderedDate.split(' ').slice(3).join(' ')}
-                        </div>
+                        <div>{test.orderedDate}</div>
                       </td>
                       <td className="py-3 px-3 whitespace-nowrap">
                         {renderStatusBadge(test.status)}
@@ -532,7 +660,7 @@ export default function LabPatientLookupPage() {
 
         {/* ================= RIGHT COLUMN (Quick Actions, History, Help) ================= */}
         <div className="lg:col-span-3 space-y-4">
-          {/* Card 1: Quick Actions (2x3 Grid matching screenshot) */}
+          {/* Card 1: Quick Actions */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5">
             <div className="flex items-center gap-2 pb-3.5 border-b border-slate-100 text-slate-800 font-bold text-xs sm:text-sm">
               <ShieldCheck className="w-4 h-4 text-blue-600" />
@@ -540,42 +668,31 @@ export default function LabPatientLookupPage() {
             </div>
 
             <div className="pt-3.5 grid grid-cols-3 gap-2.5">
-              {/* 1. View Patient Record */}
-              <button
-                onClick={() => showToast(`Opening record for ${patient.name}...`)}
-                className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/90 hover:border-blue-300 hover:bg-blue-50/50 transition group text-center"
-              >
-                <User className="w-5 h-5 text-blue-600 mb-1.5 group-hover:scale-110 transition-transform" />
-                <span className="text-[10px] font-bold text-slate-700 leading-tight">
-                  View Patient Record
-                </span>
-              </button>
-
-              {/* 2. View Test Orders */}
-              <button
-                onClick={() => showToast(`Opening orders for ${patient.name}...`)}
+              <Link
+                href="/lab/tests"
                 className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/90 hover:border-blue-300 hover:bg-blue-50/50 transition group text-center"
               >
                 <ClipboardList className="w-5 h-5 text-blue-600 mb-1.5 group-hover:scale-110 transition-transform" />
                 <span className="text-[10px] font-bold text-slate-700 leading-tight">
                   View Test Orders
                 </span>
-              </button>
+              </Link>
 
-              {/* 3. Add Test Result */}
-              <button
-                onClick={() => showToast('Opening test result entry form...')}
+              <Link
+                href="/lab/results"
                 className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/90 hover:border-blue-300 hover:bg-blue-50/50 transition group text-center"
               >
                 <FlaskConical className="w-5 h-5 text-blue-600 mb-1.5 group-hover:scale-110 transition-transform" />
                 <span className="text-[10px] font-bold text-slate-700 leading-tight">
                   Add Test Result
                 </span>
-              </button>
+              </Link>
 
-              {/* 4. Print Report */}
               <button
-                onClick={() => showToast(`Printing comprehensive lab report for ${patient.name}...`)}
+                onClick={() => {
+                  window.print();
+                  showToast(`Printed clinical summary for ${patient.name}`);
+                }}
                 className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/90 hover:border-blue-300 hover:bg-blue-50/50 transition group text-center"
               >
                 <Printer className="w-5 h-5 text-blue-600 mb-1.5 group-hover:scale-110 transition-transform" />
@@ -584,9 +701,11 @@ export default function LabPatientLookupPage() {
                 </span>
               </button>
 
-              {/* 5. Print Label */}
               <button
-                onClick={() => showToast(`Printing specimen barcode label for ${patient.patientId}...`)}
+                onClick={() => {
+                  window.print();
+                  showToast(`Printed specimen barcode for ${patient.patientId}`);
+                }}
                 className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/90 hover:border-blue-300 hover:bg-blue-50/50 transition group text-center"
               >
                 <Barcode className="w-5 h-5 text-blue-600 mb-1.5 group-hover:scale-110 transition-transform" />
@@ -595,14 +714,26 @@ export default function LabPatientLookupPage() {
                 </span>
               </button>
 
-              {/* 6. Check History */}
+              <Link
+                href="/lab/samples"
+                className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/90 hover:border-blue-300 hover:bg-blue-50/50 transition group text-center"
+              >
+                <TestTube2 className="w-5 h-5 text-blue-600 mb-1.5 group-hover:scale-110 transition-transform" />
+                <span className="text-[10px] font-bold text-slate-700 leading-tight">
+                  Intake Sample
+                </span>
+              </Link>
+
               <button
-                onClick={() => showToast(`Checking historical laboratory records for ${patient.name}...`)}
+                onClick={() => {
+                  void loadPatientOrders(patient.id);
+                  showToast(`Refreshed live records for ${patient.name}`);
+                }}
                 className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/90 hover:border-blue-300 hover:bg-blue-50/50 transition group text-center"
               >
                 <History className="w-5 h-5 text-blue-600 mb-1.5 group-hover:scale-110 transition-transform" />
                 <span className="text-[10px] font-bold text-slate-700 leading-tight">
-                  Check History
+                  Refresh Sync
                 </span>
               </button>
             </div>
@@ -615,12 +746,12 @@ export default function LabPatientLookupPage() {
                 <FileText className="w-4 h-4 text-blue-600" />
                 <span>Recent Patient Tests</span>
               </div>
-              <button
-                onClick={() => showToast('Viewing all recent tests...')}
+              <Link
+                href="/lab/tests"
                 className="text-[11px] font-semibold text-blue-600 hover:underline"
               >
                 View All
-              </button>
+              </Link>
             </div>
 
             <div className="pt-3.5 space-y-3">
@@ -694,23 +825,23 @@ export default function LabPatientLookupPage() {
       {/* View Test Result Modal */}
       {viewingTestResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <FlaskConical className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-slate-800 text-sm">{viewingTestResult.testName}</h3>
+                <FlaskConical className="w-5 h-5" />
+                <h3 className="font-extrabold text-sm">{viewingTestResult.testName}</h3>
               </div>
               <button
                 onClick={() => setViewingTestResult(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition"
+                className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-5 space-y-3.5 text-xs">
-              <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200/60">
-                <div className="font-bold text-blue-900">{patient.name} ({patient.patientId})</div>
+            <div className="p-6 space-y-4 text-xs">
+              <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200/60">
+                <div className="font-extrabold text-blue-900">{patient.name} ({patient.patientId})</div>
                 <div className="text-[11px] text-blue-700 mt-0.5">
                   Ordered: {viewingTestResult.orderedDate} • Sample: {viewingTestResult.sampleType}
                 </div>
@@ -718,13 +849,13 @@ export default function LabPatientLookupPage() {
 
               <div>
                 <span className="text-slate-400 font-medium">Result Summary</span>
-                <div className="p-3 mt-1 rounded-xl bg-slate-50 border border-slate-200/80 font-semibold text-slate-800">
+                <div className="p-3.5 mt-1 rounded-2xl bg-slate-50 border border-slate-200/80 font-bold text-slate-800 text-sm">
                   {viewingTestResult.resultSummary || 'Normal findings recorded.'}
                 </div>
               </div>
             </div>
 
-            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5">
               <button
                 onClick={() => setViewingTestResult(null)}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition"
@@ -733,10 +864,10 @@ export default function LabPatientLookupPage() {
               </button>
               <button
                 onClick={() => {
-                  setViewingTestResult(null);
-                  showToast(`Printed result report for ${viewingTestResult.testName}`);
+                  window.print();
+                  showToast(`Printing result report for ${viewingTestResult.testName}`);
                 }}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition flex items-center gap-1.5"
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition flex items-center gap-1.5"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Print Report</span>
@@ -749,11 +880,11 @@ export default function LabPatientLookupPage() {
       {/* New Patient Search Modal */}
       {isSearchModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
               <div className="flex items-center gap-2">
                 <Search className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-slate-800 text-sm">Select Patient</h3>
+                <h3 className="font-extrabold text-slate-800 text-sm">Patient Directory Search</h3>
               </div>
               <button
                 onClick={() => setIsSearchModalOpen(false)}
@@ -763,34 +894,81 @@ export default function LabPatientLookupPage() {
               </button>
             </div>
 
-            <div className="p-4 space-y-2 max-h-80 overflow-y-auto">
-              {ALL_MOCK_PATIENTS.map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => {
-                    setPatient(p);
-                    setSearchQuery(p.name);
-                    setIsSearchModalOpen(false);
-                    showToast(`Selected ${p.name}`);
+            <div className="p-4 border-b border-slate-100">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Type patient name, phone, or PID..."
+                  value={modalSearchInput}
+                  onChange={(e) => {
+                    setModalSearchInput(e.target.value);
+                    void loadPatients(e.target.value);
                   }}
-                  className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/60 transition cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={p.avatar}
-                      alt={p.name}
-                      className="w-10 h-10 rounded-full object-cover"
-                    />
-                    <div>
-                      <div className="font-bold text-slate-800 text-xs">{p.name}</div>
-                      <div className="text-[11px] text-slate-400">
-                        {p.patientId} • {p.gender} • {p.age} yrs
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 space-y-2 overflow-y-auto flex-1">
+              {isSearchingPatients ? (
+                <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                  <span>Searching patient registry...</span>
+                </div>
+              ) : livePatients.length > 0 ? (
+                livePatients.map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => handleSelectPatient(p)}
+                    className="flex items-center justify-between p-3 rounded-2xl border border-slate-200/80 hover:border-blue-400 hover:bg-blue-50/60 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
+                        {p.firstName[0]}
+                        {p.lastName[0]}
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-800 text-xs">
+                          {p.firstName} {p.lastName}
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          {p.pid} • {p.gender} • {p.phoneNumber || 'No phone'}
+                        </div>
                       </div>
                     </div>
+                    <span className="text-xs font-bold text-blue-600 hover:underline">Select</span>
                   </div>
-                  <span className="text-xs font-semibold text-blue-600 hover:underline">Select</span>
-                </div>
-              ))}
+                ))
+              ) : (
+                ALL_MOCK_PATIENTS.map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => {
+                      setPatient(p);
+                      setSearchQuery(p.name);
+                      setIsSearchModalOpen(false);
+                      showToast(`Selected ${p.name}`);
+                    }}
+                    className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/60 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={p.avatar}
+                        alt={p.name}
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                      <div>
+                        <div className="font-bold text-slate-800 text-xs">{p.name}</div>
+                        <div className="text-[11px] text-slate-400">
+                          {p.patientId} • {p.gender} • {p.age} yrs
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 hover:underline">Select</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -806,4 +984,3 @@ export default function LabPatientLookupPage() {
     </div>
   );
 }
-

@@ -29,6 +29,9 @@ import {
   Building2,
 } from 'lucide-react';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
+import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
+import LabReportModal from '../../../components/doctor/LabReportModal';
+import { INITIAL_PATIENTS, PatientItem } from '../../../components/doctor/doctorMockData';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 import { useAuth } from '../../../lib/auth/auth-context';
 import { fetchLabOrders } from '../../../lib/api/clinical';
@@ -146,6 +149,40 @@ export default function DoctorLabResultsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [orders, setOrders] = useState<LabOrderDTO[]>([]);
   const [patients, setPatients] = useState<PatientDTO[]>([]);
+  const [selectedLabForReport, setSelectedLabForReport] = useState<LabOrderDTO | null>(null);
+  const [selectedPatientForDrawer, setSelectedPatientForDrawer] = useState<PatientItem | null>(null);
+
+  const openDrawerForPatient = (pid: string, patientName: string) => {
+    const match = patients.find((p) => p.pid === pid || p.id === pid || p.fullName === patientName);
+    if (match) {
+      const age = match.dateOfBirth
+        ? Math.max(0, new Date().getFullYear() - new Date(match.dateOfBirth).getFullYear())
+        : 30;
+      setSelectedPatientForDrawer({
+        id: match.id,
+        name: match.fullName || `${match.firstName} ${match.lastName}`.trim(),
+        pid: match.pid || pid,
+        age,
+        gender: match.gender === 'FEMALE' ? 'Female' : 'Male',
+        phone: match.phoneNumber || '—',
+        email: match.email || '—',
+        address: match.address || 'Addis Ababa, Ethiopia',
+        department: 'Diagnostic Laboratory',
+        lastVisit: 'Recent',
+        lastVisitReason: 'Laboratory Diagnostics',
+        status: 'Active',
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(patientName)}`,
+        totalVisits: 1,
+        conditions: [],
+      });
+    } else {
+      setSelectedPatientForDrawer({
+        ...INITIAL_PATIENTS[0]!,
+        name: patientName,
+        pid,
+      });
+    }
+  };
 
   const loadData = useCallback(async () => {
     if (!accessToken) return;
@@ -613,10 +650,13 @@ export default function DoctorLabResultsPage() {
                       />
                     </td>
                     <td className="py-3 px-3">
-                      <div className="flex items-center gap-2.5">
-                        <img src={r.avatar} alt={r.patient} className="w-8 h-8 rounded-full object-cover ring-1 ring-white shadow-2xs shrink-0" />
+                      <div
+                        onClick={() => openDrawerForPatient(r.pid, r.patient)}
+                        className="flex items-center gap-2.5 cursor-pointer group"
+                      >
+                        <img src={r.avatar} alt={r.patient} className="w-8 h-8 rounded-full object-cover ring-1 ring-white shadow-2xs shrink-0 group-hover:ring-blue-300 transition-all" />
                         <div>
-                          <div className="font-bold text-slate-800 leading-tight">{r.patient}</div>
+                          <div className="font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition-colors">{r.patient}</div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[10px] text-slate-400">{r.pid}</span>
                             {r.branchName && (
@@ -645,16 +685,51 @@ export default function DoctorLabResultsPage() {
                     <td className="py-3 px-3">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
-                          title="View"
-                          className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors cursor-pointer"
+                          title="View Official Report"
+                          onClick={() => {
+                            const matched = orders.find((o) => o.id === r.id);
+                            if (matched) {
+                              setSelectedLabForReport(matched);
+                            } else {
+                              setSelectedLabForReport({
+                                id: r.id,
+                                tenantId: 'demo',
+                                branchId: 'demo',
+                                branchName: r.branchName || 'Central Lab',
+                                patientId: r.pid,
+                                patientName: r.patient,
+                                patientPid: r.pid,
+                                orderingDoctorId: 'doc-1',
+                                orderingDoctorName: 'Dr. Attending Physician',
+                                orderNumber: `ORD-${r.id.toUpperCase()}`,
+                                priority: 'ROUTINE',
+                                status: r.status === 'Completed' ? 'COMPLETED' : 'PENDING',
+                                orderedAt: new Date().toISOString(),
+                                samples: [],
+                                results: [
+                                  {
+                                    id: `res-${r.id}`,
+                                    testName: r.test,
+                                    testCategory: r.department,
+                                    value: r.result.split('\n')[0] || 'Normal',
+                                    referenceRange: r.reference.split('\n')[0] || 'Normal',
+                                    isAbnormal: r.status === 'Abnormal',
+                                    performedAt: new Date().toISOString(),
+                                  },
+                                ],
+                              });
+                            }
+                          }}
+                          className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-600 flex items-center justify-center transition-colors cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          title="Download"
-                          className="w-7 h-7 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+                          title="View Patient EMR Chart"
+                          onClick={() => openDrawerForPatient(r.pid, r.patient)}
+                          className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors cursor-pointer"
                         >
-                          <Download className="w-3.5 h-3.5" />
+                          <User className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
@@ -700,6 +775,22 @@ export default function DoctorLabResultsPage() {
         isOpen={modalOpen}
         onClose={() => { void loadData(); setModalOpen(false); }}
         {...(highlightedPatient?.id ? { patientId: highlightedPatient.id } : {})}
+      />
+
+      {/* Official Diagnostic Report Modal */}
+      <LabReportModal
+        isOpen={Boolean(selectedLabForReport)}
+        onClose={() => setSelectedLabForReport(null)}
+        order={selectedLabForReport}
+      />
+
+      {/* Patient EMR Drawer */}
+      <DoctorPatientDrawer
+        isOpen={Boolean(selectedPatientForDrawer)}
+        onClose={() => setSelectedPatientForDrawer(null)}
+        patient={selectedPatientForDrawer}
+        onOpenPrescriptionModal={() => {}}
+        onOpenLabModal={() => setModalOpen(true)}
       />
     </>
   );
