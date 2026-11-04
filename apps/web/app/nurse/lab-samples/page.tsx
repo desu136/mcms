@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   FlaskConical,
   CheckCircle2,
@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Barcode,
   Plus,
+  RefreshCw,
 } from 'lucide-react';
 import {
   NURSE_LAB_SAMPLES,
@@ -26,8 +27,59 @@ import {
 } from '@/components/nurse/nurseMockData';
 import NurseLabSampleDetailsModal from '@/components/nurse/NurseLabSampleDetailsModal';
 import CollectLabModal from '@/components/nurse/CollectLabModal';
+import { useAuth } from '../../../lib/auth/auth-context';
+import { fetchLabOrders } from '../../../lib/api/clinical';
+import type { LabOrderDTO } from '@mcms/contracts';
+
+// Map LabOrderDTO → NurseLabSample for display
+function mapLabOrderToSample(dto: LabOrderDTO, idx: number): NurseLabSample {
+  const mock = NURSE_LAB_SAMPLES[idx % NURSE_LAB_SAMPLES.length] as NurseLabSample;
+  // Derive status from first sample or order-level status
+  const rawStatus = dto.samples[0]?.status ?? dto.status;
+  const statusMap: Record<string, NurseLabSample['status']> = {
+    PENDING: 'Pending',
+    COLLECTED: 'Collected',
+    IN_LAB: 'In Lab',
+    PROCESSING: 'In Lab',
+    COMPLETED: 'Completed',
+    VERIFIED: 'Completed',
+  };
+  const sampleType = dto.samples[0]?.sampleType;
+  const allowedTypes: NurseLabSample['sampleType'][] = ['Blood', 'Urine', 'Stool', 'Swab', 'Sputum'];
+  const normalizedType: NurseLabSample['sampleType'] = allowedTypes.find(
+    (t) => t.toLowerCase() === (sampleType ?? '').toLowerCase(),
+  ) ?? mock?.sampleType ?? 'Blood';
+
+  return {
+    id: dto.id,
+    sampleId: dto.samples[0]?.sampleId ?? dto.orderNumber,
+    patientId: dto.patientId,
+    patientName: dto.patientName,
+    patientPid: dto.patientPid,
+    patientAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(dto.patientName)}`,
+    room: mock?.room ?? 'Room A',
+    phone: mock?.phone ?? '—',
+    email: mock?.email ?? '—',
+    address: mock?.address ?? 'Addis Ababa, Ethiopia',
+    department: mock?.department ?? 'General',
+    testName: dto.results[0]?.testName ?? (dto.samples[0] ? `${normalizedType} Panel` : 'Lab Test'),
+    sampleType: normalizedType,
+    priority: dto.priority === 'HIGH' ? 'High' : dto.priority === 'URGENT' ? 'Urgent' : 'Normal',
+    collectionTime: dto.samples[0]?.collectedAt
+      ? new Date(dto.samples[0].collectedAt).toLocaleString()
+      : new Date(dto.orderedAt).toLocaleString(),
+    status: statusMap[rawStatus.toUpperCase()] ?? 'Pending',
+    doctor: dto.orderingDoctorName ?? 'Dr. —',
+    ...(dto.clinicalNotes ? { instructions: dto.clinicalNotes } : {}),
+    ...(dto.samples[0]?.collectedAt ? { collectedAt: new Date(dto.samples[0].collectedAt).toLocaleString() } : {}),
+    ...(dto.samples[0]?.receivedAt ? { deliveredAt: new Date(dto.samples[0].receivedAt).toLocaleString() } : {}),
+  };
+}
 
 export default function NurseLabSamplesPage() {
+  const { accessToken } = useAuth();
+  const [liveSamples, setLiveSamples] = useState<NurseLabSample[]>(NURSE_LAB_SAMPLES);
+  const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'pending' | 'collected' | 'in_lab' | 'completed' | 'all'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
@@ -41,9 +93,28 @@ export default function NurseLabSamplesPage() {
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [collectModalOpen, setCollectModalOpen] = useState(false);
 
+  const loadLabSamples = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const orders = await fetchLabOrders(accessToken);
+      if (orders && orders.length > 0) {
+        const mapped = orders.map((dto, idx) => mapLabOrderToSample(dto, idx));
+        setLiveSamples(mapped);
+        setSelectedSample(mapped[0]!);
+      }
+    } catch (err) {
+      console.error('Failed to load lab orders for nurse portal:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => { void loadLabSamples(); }, [loadLabSamples]);
+
   // Filtered samples
   const filteredSamples = useMemo(() => {
-    return NURSE_LAB_SAMPLES.filter((sample) => {
+    return liveSamples.filter((sample) => {
       // Tab filter
       if (activeTab === 'pending' && sample.status !== 'Pending') return false;
       if (activeTab === 'collected' && sample.status !== 'Collected') return false;
@@ -67,7 +138,7 @@ export default function NurseLabSamplesPage() {
 
       return true;
     });
-  }, [activeTab, selectedDept, selectedSampleType, selectedPriority, searchQuery]);
+  }, [liveSamples, activeTab, selectedDept, selectedSampleType, selectedPriority, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSamples.length / rowsPerPage));
   const paginatedSamples = useMemo(() => {
@@ -84,6 +155,13 @@ export default function NurseLabSamplesPage() {
     if (sample) setSelectedSample(sample);
     setCollectModalOpen(true);
   };
+
+  // Dynamic counts
+  const totalCount = liveSamples.length;
+  const pendingCount = liveSamples.filter((s) => s.status === 'Pending').length;
+  const collectedCount = liveSamples.filter((s) => s.status === 'Collected').length;
+  const inLabCount = liveSamples.filter((s) => s.status === 'In Lab').length;
+  const completedCount = liveSamples.filter((s) => s.status === 'Completed').length;
 
   const STATUS_STYLES: Record<string, string> = {
     Pending: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -112,19 +190,31 @@ export default function NurseLabSamplesPage() {
               </div>
             </div>
 
-            {/* Date Selector */}
-            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs text-xs font-semibold text-slate-700 shrink-0">
-              <Calendar size={13} className="text-slate-400" />
-              <span>Oct 19, 2026</span>
-              <span className="text-slate-400 font-normal">Monday</span>
-              <div className="flex items-center gap-0.5 ml-0.5 border-l border-slate-200 pl-1">
-                <button className="p-0.5 hover:bg-slate-100 rounded text-slate-500">
-                  <ChevronLeft size={12} />
-                </button>
-                <button className="p-0.5 hover:bg-slate-100 rounded text-slate-500">
-                  <ChevronRight size={12} />
-                </button>
+            {/* Date Selector & Refresh */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs text-xs font-semibold text-slate-700 shrink-0">
+                <Calendar size={13} className="text-slate-400" />
+                <span>Oct 19, 2026</span>
+                <span className="text-slate-400 font-normal">Monday</span>
+                <div className="flex items-center gap-0.5 ml-0.5 border-l border-slate-200 pl-1">
+                  <button className="p-0.5 hover:bg-slate-100 rounded text-slate-500">
+                    <ChevronLeft size={12} />
+                  </button>
+                  <button className="p-0.5 hover:bg-slate-100 rounded text-slate-500">
+                    <ChevronRight size={12} />
+                  </button>
+                </div>
               </div>
+
+              <button
+                onClick={() => void loadLabSamples()}
+                disabled={isLoading}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors shrink-0 disabled:opacity-50"
+                title="Refresh Samples"
+              >
+                <RefreshCw size={13} className={`text-cyan-600 ${isLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
             </div>
           </div>
 
@@ -137,7 +227,7 @@ export default function NurseLabSamplesPage() {
               </div>
               <div className="min-w-0">
                 <span className="text-[10px] font-medium text-slate-400 block truncate">Total Samples</span>
-                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">48</span>
+                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">{isLoading ? '—' : totalCount}</span>
                 <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5">
                   ↑ 12% <span className="text-slate-400 font-normal hidden sm:inline">vs. yest.</span>
                 </span>
@@ -151,7 +241,7 @@ export default function NurseLabSamplesPage() {
               </div>
               <div className="min-w-0">
                 <span className="text-[10px] font-medium text-slate-400 block truncate">Collected</span>
-                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">32</span>
+                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">{isLoading ? '—' : collectedCount}</span>
                 <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5">
                   ↑ 18% <span className="text-slate-400 font-normal hidden sm:inline">vs. yest.</span>
                 </span>
@@ -165,7 +255,7 @@ export default function NurseLabSamplesPage() {
               </div>
               <div className="min-w-0">
                 <span className="text-[10px] font-medium text-slate-400 block truncate">Pending Collection</span>
-                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">8</span>
+                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">{isLoading ? '—' : pendingCount}</span>
                 <span className="text-[10px] font-semibold text-rose-500 flex items-center gap-0.5">
                   ↓ 33% <span className="text-slate-400 font-normal hidden sm:inline">vs. yest.</span>
                 </span>
@@ -179,7 +269,7 @@ export default function NurseLabSamplesPage() {
               </div>
               <div className="min-w-0">
                 <span className="text-[10px] font-medium text-slate-400 block truncate">In Lab</span>
-                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">5</span>
+                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">{isLoading ? '—' : inLabCount}</span>
                 <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5">
                   ↑ 25% <span className="text-slate-400 font-normal hidden sm:inline">vs. yest.</span>
                 </span>
@@ -193,7 +283,7 @@ export default function NurseLabSamplesPage() {
               </div>
               <div className="min-w-0">
                 <span className="text-[10px] font-medium text-slate-400 block truncate">Completed</span>
-                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">3</span>
+                <span className="text-base sm:text-lg font-bold text-slate-900 block leading-tight">{isLoading ? '—' : completedCount}</span>
                 <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5">
                   ↑ 50% <span className="text-slate-400 font-normal hidden sm:inline">vs. yest.</span>
                 </span>
@@ -211,7 +301,7 @@ export default function NurseLabSamplesPage() {
                   : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
               }`}
             >
-              Pending Collection (8)
+              Pending Collection ({pendingCount})
             </button>
             <button
               onClick={() => setActiveTab('collected')}
@@ -221,7 +311,7 @@ export default function NurseLabSamplesPage() {
                   : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
               }`}
             >
-              Collected (32)
+              Collected ({collectedCount})
             </button>
             <button
               onClick={() => setActiveTab('in_lab')}
@@ -231,7 +321,7 @@ export default function NurseLabSamplesPage() {
                   : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
               }`}
             >
-              In Lab (5)
+              In Lab ({inLabCount})
             </button>
             <button
               onClick={() => setActiveTab('completed')}
@@ -241,7 +331,7 @@ export default function NurseLabSamplesPage() {
                   : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
               }`}
             >
-              Completed (3)
+              Completed ({completedCount})
             </button>
             <button
               onClick={() => setActiveTab('all')}
@@ -251,7 +341,7 @@ export default function NurseLabSamplesPage() {
                   : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
               }`}
             >
-              All Samples (48)
+              All Samples ({totalCount})
             </button>
           </div>
 
@@ -671,8 +761,13 @@ export default function NurseLabSamplesPage() {
       {/* Collect Lab Sample Modal */}
       <CollectLabModal
         isOpen={collectModalOpen}
-        onClose={() => setCollectModalOpen(false)}
+        onClose={() => {
+          setCollectModalOpen(false);
+          void loadLabSamples();
+        }}
         selectedPatientId={selectedSample.patientId}
+        labOrderId={selectedSample.id}
+        sampleId={selectedSample.sampleId}
       />
     </div>
   );

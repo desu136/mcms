@@ -58,13 +58,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/login');
+      window.location.href = '/login';
     }
-  }, [isLoading, user, router]);
+  }, [isLoading, user]);
 
   const handleLogout = async () => {
     await logout();
-    router.push('/login');
+    window.location.href = '/login';
   };
 
   const initials = user?.displayName

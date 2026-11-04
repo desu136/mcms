@@ -5,6 +5,8 @@ import type {
   UpdatePrescriptionRequest,
   LabOrderDTO,
   CreateLabOrderRequest,
+  CollectSampleRequest,
+  RecordLabResultRequest,
   VitalReadingDTO,
   CreateVitalReadingRequest,
   NursingTaskDTO,
@@ -50,6 +52,45 @@ export async function fetchLabOrders(
 
 export async function createLabOrder(data: CreateLabOrderRequest, token: string | null): Promise<LabOrderDTO> {
   return apiRequest<LabOrderDTO>('lab-orders', { token, method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function fetchLabOrderById(id: string, token: string | null): Promise<LabOrderDTO> {
+  return apiRequest<LabOrderDTO>(`lab-orders/${encodeURIComponent(id)}`, { token, method: 'GET' });
+}
+
+export async function collectLabSample(
+  labOrderId: string,
+  sampleId: string,
+  data: CollectSampleRequest,
+  token: string | null,
+): Promise<LabOrderDTO> {
+  return apiRequest<LabOrderDTO>(
+    `lab-orders/${encodeURIComponent(labOrderId)}/samples/${encodeURIComponent(sampleId)}/collect`,
+    { token, method: 'POST', body: JSON.stringify(data) },
+  );
+}
+
+export async function recordLabResult(
+  labOrderId: string,
+  data: RecordLabResultRequest,
+  token: string | null,
+): Promise<LabOrderDTO> {
+  return apiRequest<LabOrderDTO>(`lab-orders/${encodeURIComponent(labOrderId)}/results`, {
+    token,
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function verifyLabResult(
+  labOrderId: string,
+  resultId: string,
+  token: string | null,
+): Promise<LabOrderDTO> {
+  return apiRequest<LabOrderDTO>(
+    `lab-orders/${encodeURIComponent(labOrderId)}/results/${encodeURIComponent(resultId)}/verify`,
+    { token, method: 'PATCH' },
+  );
 }
 
 // Vitals

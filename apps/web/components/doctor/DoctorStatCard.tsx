@@ -8,7 +8,7 @@ export type CardColor = 'blue' | 'emerald' | 'purple' | 'orange' | 'cyan' | 'amb
 export interface DoctorStatCardProps {
   title: string;
   value: string | number;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   change?: {
     value: string;
     trend?: 'up' | 'down' | 'neutral';
@@ -68,40 +68,44 @@ export default function DoctorStatCard({
 
   return (
     <div
-      className={`bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200/80 shadow-2xs hover:shadow-md transition-all flex items-center gap-3.5 min-w-0 ${className}`}
+      className={`bg-white rounded-2xl p-2.5 sm:p-3 xl:p-3.5 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between min-w-0 ${className}`}
     >
-      <div
-        className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl ${c.bg} ${c.text} flex items-center justify-center shrink-0 border ${c.border}`}
-      >
-        <Icon className="w-4 h-4 sm:w-4.5 sm:h-4.5 stroke-[2.2]" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[11px] font-semibold text-slate-500 truncate" title={title}>
-          {title}
-        </div>
-        <div className="text-xl sm:text-2xl font-extrabold text-slate-800 tracking-tight leading-tight">
-          {value}
-        </div>
-        {change && (
+      <div className="flex items-start gap-2 xl:gap-2.5">
+        {Icon && (
           <div
-            className={`flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold mt-0.5 truncate ${
-              change.trend === 'down' ? 'text-rose-500' : 'text-emerald-600'
-            }`}
+            className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl ${c.bg} ${c.text} flex items-center justify-center shrink-0 border ${c.border}`}
           >
-            {change.trend === 'down' ? (
-              <TrendingDown className="w-3 h-3 shrink-0" />
-            ) : (
-              <TrendingUp className="w-3 h-3 shrink-0" />
-            )}
-            <span className="truncate">{change.value}</span>
-            {change.label && (
-              <span className="text-slate-400 font-normal truncate hidden sm:inline">
-                {change.label}
-              </span>
-            )}
+            <Icon className="w-4 h-4 stroke-[2.2]" />
           </div>
         )}
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider truncate" title={title}>
+            {title}
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight mt-1">
+            {value}
+          </div>
+        </div>
       </div>
+      {change && (
+        <div
+          className={`flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold mt-2 truncate ${
+            change.trend === 'down' ? 'text-rose-500' : 'text-emerald-600'
+          }`}
+        >
+          {change.trend === 'down' ? (
+            <TrendingDown className="w-3 h-3 shrink-0" />
+          ) : (
+            <TrendingUp className="w-3 h-3 shrink-0" />
+          )}
+          <span className="truncate">{change.value}</span>
+          {change.label && (
+            <span className="text-slate-400 font-normal truncate hidden sm:inline">
+              {change.label}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
