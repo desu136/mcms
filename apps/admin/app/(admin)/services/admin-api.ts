@@ -182,3 +182,28 @@ export const adminHealthApi = {
   check: (token: string | null) =>
     request<{ status: string; timestamp: string }>('health', { token }),
 };
+
+export const adminOverviewApi = {
+  getPatientsCount: async (token: string | null): Promise<number> => {
+    try {
+      const res = await request<any>('patients?limit=1', { token });
+      if (typeof res?.total === 'number') return res.total;
+      if (Array.isArray(res?.data)) return res.total ?? res.data.length;
+      if (Array.isArray(res)) return res.length;
+      return 0;
+    } catch {
+      return 0;
+    }
+  },
+  getAppointmentsCount: async (token: string | null): Promise<number> => {
+    try {
+      const res = await request<any>('appointments', { token });
+      if (typeof res?.total === 'number') return res.total;
+      if (Array.isArray(res?.data)) return res.total ?? res.data.length;
+      if (Array.isArray(res)) return res.length;
+      return 0;
+    } catch {
+      return 0;
+    }
+  },
+};

@@ -138,12 +138,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Clinic info */}
         <div className="px-5 py-4 border-t border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#2979FF]/20 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-[#2979FF]/20 flex items-center justify-center shrink-0">
               <Building2 size={18} className="text-[#2979FF]" />
             </div>
-            <div>
-              <div className="text-white text-xs font-semibold">City Health Clinic</div>
-              <div className="text-slate-400 text-[10px]">Clinical Operations Portal</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-white text-xs font-semibold truncate">
+                {(user as any)?.tenant?.name || (user as any)?.tenantName || 'My Clinic'}
+              </div>
+              <div className="text-slate-400 text-[10px] truncate">
+                {(user as any)?.branches?.find((b: any) => b.isPrimary)?.name || (user as any)?.branches?.[0]?.name || 'Main Branch'}
+              </div>
             </div>
           </div>
         </div>
@@ -176,9 +180,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {/* Right side */}
           <div className="flex items-center gap-3 ml-4">
             {/* Notifications */}
-            <button className="relative w-9 h-9 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center hover:bg-gray-100 transition">
+            <button className="relative w-9 h-9 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center hover:bg-gray-100 transition" title="Notifications">
               <Bell size={17} className="text-gray-500" />
-              <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold min-w-[18px] min-h-[18px] px-1">3</span>
             </button>
 
             {/* Profile */}
