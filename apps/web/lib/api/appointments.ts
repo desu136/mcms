@@ -10,8 +10,16 @@ import type {
 
 // ─── Queue Endpoints ─────────────────────────────────────────────────────────
 
-export async function fetchQueue(token: string | null): Promise<QueueEntryDTO[]> {
-  return apiRequest<QueueEntryDTO[]>('queue', { token, method: 'GET' });
+export async function fetchQueue(
+  token: string | null,
+  params?: { status?: string | undefined; doctorId?: string | undefined; departmentId?: string | undefined },
+): Promise<QueueEntryDTO[]> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (params?.doctorId) query.set('doctorId', params.doctorId);
+  if (params?.departmentId) query.set('departmentId', params.departmentId);
+  const qs = query.toString();
+  return apiRequest<QueueEntryDTO[]>(qs ? `queue?${qs}` : 'queue', { token, method: 'GET' });
 }
 
 export async function addToQueue(

@@ -34,8 +34,13 @@ export class AppointmentsController {
   @Get('queue')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(PermissionSlug.QUEUES_READ)
-  async getQueue(@TenantCtx() ctx: TenantContext): Promise<QueueEntryDTO[]> {
-    return this.appointmentsService.getQueue(ctx);
+  async getQueue(
+    @TenantCtx() ctx: TenantContext,
+    @Query('status') status?: string,
+    @Query('doctorId') doctorId?: string,
+    @Query('departmentId') departmentId?: string,
+  ): Promise<QueueEntryDTO[]> {
+    return this.appointmentsService.getQueue(ctx, status, doctorId, departmentId);
   }
 
   @Post('queue')

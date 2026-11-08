@@ -42,10 +42,10 @@ import DoctorLabOrderModal from '../../components/doctor/DoctorLabOrderModal';
 import DoctorPageShell from '../../components/doctor/DoctorPageShell';
 import DoctorStatCard from '../../components/doctor/DoctorStatCard';
 import { useAuth } from '../../lib/auth/auth-context';
-import { fetchAppointments } from '../../lib/api/appointments';
+import { fetchAppointments, fetchQueue } from '../../lib/api/appointments';
 import { fetchPatients } from '../../lib/api/patients';
 import { fetchPrescriptions, fetchLabOrders } from '../../lib/api/clinical';
-import type { AppointmentDTO, PatientDTO } from '@mcms/contracts';
+import type { AppointmentDTO, PatientDTO, QueueEntryDTO } from '@mcms/contracts';
 
 export default function DoctorDashboardPage() {
   const { accessToken, user } = useAuth();
@@ -59,6 +59,7 @@ export default function DoctorDashboardPage() {
 
   // Real data state
   const [todayAppointments, setTodayAppointments] = useState<AppointmentDTO[]>([]);
+  const [queueEntries, setQueueEntries] = useState<QueueEntryDTO[]>([]);
   const [recentPatients, setRecentPatients] = useState<PatientDTO[]>([]);
   const [pendingPrescriptions, setPendingPrescriptions] = useState(0);
   const [pendingLabOrders, setPendingLabOrders] = useState(0);
@@ -73,13 +74,15 @@ export default function DoctorDashboardPage() {
     if (!accessToken) return;
     setIsLoading(true);
     try {
-      const [appts, patientsResp, rxList, labList] = await Promise.allSettled([
+      const [appts, queueRes, patientsResp, rxList, labList] = await Promise.allSettled([
         fetchAppointments(accessToken, { date: today }),
-        fetchPatients(accessToken, { limit: 5 }),
+        fetchQueue(accessToken),
+        fetchPatients(accessToken, { limit: 10 }),
         fetchPrescriptions(accessToken, { status: 'ACTIVE' }),
         fetchLabOrders(accessToken, { status: 'PENDING' }),
       ]);
       if (appts.status === 'fulfilled') setTodayAppointments(appts.value);
+      if (queueRes.status === 'fulfilled') setQueueEntries(queueRes.value);
       if (patientsResp.status === 'fulfilled') setRecentPatients(patientsResp.value.data);
       if (rxList.status === 'fulfilled') setPendingPrescriptions(rxList.value.length);
       if (labList.status === 'fulfilled') setPendingLabOrders(labList.value.length);
@@ -109,29 +112,24 @@ export default function DoctorDashboardPage() {
       email: p.email || '—',
       address: p.address || 'Addis Ababa, Ethiopia',
       lastVisit: 'Recent',
-      lastVisitReason: 'Routine Checkup',
+      lastVisitReason: 'Clinical Checkup',
       status: 'Active',
-      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.fullName)}`,
       totalVisits: 1,
-      conditions: [
-        {
-          title: 'Routine Health Maintenance',
-          diagnosedDate: '2026',
-          status: 'Active',
-          type: 'general',
-        },
-      ],
+      conditions: [],
     };
   };
 
   const activeInProgressApt = todayAppointments.find(
-    (a) => a.status === 'IN_PROGRESS' || a.status === 'CHECKED_IN'
+    (a) => a.status === 'IN_PROGRESS' || a.status === 'IN_CONSULTATION',
   );
-  const activePatientFromApt = activeInProgressApt
-    ? recentPatients.find((p) => p.id === activeInProgressApt.patientId)
-    : null;
-  const activePatient = activePatientFromApt || (recentPatients.length > 0 ? recentPatients[0] : null);
+  const activeQueueConsult = queueEntries.find((q) => q.status === 'IN_CONSULTATION');
+
+  const activePatientId = activeInProgressApt?.patientId || activeQueueConsult?.patientId;
+  const activePatientFromList = activePatientId ? recentPatients.find((p) => p.id === activePatientId) : null;
+  const activePatient = activePatientFromList || (recentPatients.length > 0 ? recentPatients[0] : null);
   const currentPatient = activePatient ? toPatientItem(activePatient) : null;
+  const isActivelyConsulting = Boolean(activeInProgressApt || activeQueueConsult);
 
   const handleOpenRealPatient = (p: PatientDTO) => {
     setSelectedRealPatient(p);
@@ -214,29 +212,25 @@ export default function DoctorDashboardPage() {
   );
 
   const kpisContent = (
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+    <div className="grid grid-cols-4 gap-2 sm:gap-2.5 xl:gap-3">
       <DoctorStatCard
         title="Today's Appointments"
         value={isLoading ? '—' : todayAppointments.length}
-        icon={Users}
         color="blue"
       />
       <DoctorStatCard
-        title="Patients Seen Today"
-        value={isLoading ? '—' : todayAppointments.filter(a => a.status === 'COMPLETED').length}
-        icon={CheckCircle2}
+        title="Waiting in Queue"
+        value={isLoading ? '—' : queueEntries.filter((q) => q.status === 'WAITING' || q.status === 'CALLED').length}
         color="emerald"
       />
       <DoctorStatCard
         title="Pending Prescriptions"
         value={isLoading ? '—' : pendingPrescriptions}
-        icon={Pill}
         color="purple"
       />
       <DoctorStatCard
         title="Lab Orders Pending"
         value={isLoading ? '—' : pendingLabOrders}
-        icon={FlaskConical}
         color="orange"
       />
     </div>
@@ -285,7 +279,9 @@ export default function DoctorDashboardPage() {
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-blue-600" />
-            <h3 className="text-xs font-bold text-slate-800">Current Patient</h3>
+            <h3 className="text-xs font-bold text-slate-800">
+              {isActivelyConsulting ? 'Active Consultation' : 'Next Patient'}
+            </h3>
           </div>
           {currentPatient && (
             <button onClick={() => handleOpenPatient(currentPatient)} className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer">View Record</button>
@@ -299,7 +295,13 @@ export default function DoctorDashboardPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-black text-slate-900 truncate">{currentPatient.name}</span>
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-600 border border-blue-200 shrink-0">In Consultation</span>
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold shrink-0 ${
+                    isActivelyConsulting
+                      ? 'bg-blue-50 text-blue-600 border border-blue-200 animate-pulse'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  }`}>
+                    {isActivelyConsulting ? 'In Consultation' : 'Scheduled'}
+                  </span>
                 </div>
                 <p className="text-[11px] text-slate-400 font-semibold">{currentPatient.pid}</p>
               </div>
@@ -310,7 +312,7 @@ export default function DoctorDashboardPage() {
                 { label: 'Age / Gender', value: `${currentPatient.age} years / ${currentPatient.gender}` },
                 { label: 'Phone',        value: currentPatient.phone },
                 { label: 'Department',   value: currentPatient.department },
-                { label: 'Visit Type',   value: 'Follow-up Visit' },
+                { label: 'Visit Type',   value: currentPatient.lastVisitReason || 'General Checkup' },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-400 font-medium">{label}</span>
@@ -319,11 +321,32 @@ export default function DoctorDashboardPage() {
               ))}
             </div>
 
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  setSelectedRealPatient(activePatient ?? null);
+                  setPrescriptionModalOpen(true);
+                }}
+                className="py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition-colors cursor-pointer text-center"
+              >
+                + Prescription
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedRealPatient(activePatient ?? null);
+                  setLabModalOpen(true);
+                }}
+                className="py-2 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold text-xs transition-colors cursor-pointer text-center"
+              >
+                + Order Lab
+              </button>
+            </div>
+
             <button
               onClick={() => handleOpenPatient(currentPatient)}
-              className="mt-3 w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all cursor-pointer"
+              className="mt-2 w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all cursor-pointer"
             >
-              View Full Profile
+              Open Full Health Record
             </button>
           </>
         ) : (
