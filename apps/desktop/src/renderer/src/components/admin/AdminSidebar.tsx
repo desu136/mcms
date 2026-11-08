@@ -1,12 +1,16 @@
 import React from 'react';
 import {
   LayoutDashboard,
+  Hospital,
+  Building2,
+  Building,
+  UserCog,
+  Stethoscope,
   Users,
   CalendarDays,
-  Stethoscope,
-  Building2,
   Wrench,
-  Receipt,
+  FolderOpen,
+  CreditCard,
   BarChart3,
   Settings,
   LogOut,
@@ -17,11 +21,15 @@ import {
 
 export type AdminTab =
   | 'dashboard'
-  | 'doctors'
+  | 'clinic-management'
+  | 'branches'
   | 'departments'
+  | 'staff'
+  | 'doctors'
   | 'patients'
   | 'appointments'
   | 'services'
+  | 'medical-records'
   | 'billing'
   | 'reports'
   | 'settings';
@@ -45,12 +53,16 @@ export function AdminSidebar({
 }: AdminSidebarProps) {
   const navItems: Array<{ tab: AdminTab; label: string; icon: React.ElementType; badge?: number }> = [
     { tab: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { tab: 'clinic-management', label: 'Clinic Management', icon: Hospital },
+    { tab: 'branches', label: 'Branches', icon: Building2 },
+    { tab: 'departments', label: 'Departments', icon: Building },
+    { tab: 'staff', label: 'Staff & Roles', icon: UserCog },
     { tab: 'doctors', label: 'Doctors', icon: Stethoscope },
-    { tab: 'departments', label: 'Departments', icon: Building2 },
     { tab: 'patients', label: 'Patients', icon: Users },
     { tab: 'appointments', label: 'Appointments', icon: CalendarDays },
     { tab: 'services', label: 'Services', icon: Wrench },
-    { tab: 'billing', label: 'Billing & Cashier', icon: Receipt },
+    { tab: 'medical-records', label: 'Medical Records', icon: FolderOpen },
+    { tab: 'billing', label: 'Billing & Cashier', icon: CreditCard },
     { tab: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
     { tab: 'settings', label: 'Clinic Settings', icon: Settings },
   ];
@@ -77,7 +89,7 @@ export function AdminSidebar({
 
         <button
           onClick={onToggleCollapse}
-          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}

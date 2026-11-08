@@ -72,16 +72,13 @@ const revenueData = [
   { date: 'Oct 19', payments: 5200, insurance: 3000 },
 ];
 
-const recentReports = [
-  { name: 'Patient Visit Report', type: 'Patient', dateRange: 'Oct 12, 2026 – Oct 18, 2026', generatedBy: 'Desu Kasaye', status: 'Completed' },
-  { name: 'Appointment Statistics', type: 'Appointment', dateRange: 'Oct 12, 2026 – Oct 18, 2026', generatedBy: 'Aster Mulu', status: 'Completed' },
-  { name: 'Department Performance', type: 'Department', dateRange: 'Oct 01, 2026 – Oct 18, 2026', generatedBy: 'Lidya Kebede', status: 'Completed' },
-  { name: 'Laboratory Report', type: 'Laboratory', dateRange: 'Oct 10, 2026 – Oct 19, 2026', generatedBy: 'Getachew Tadesse', status: 'Completed' },
-  { name: 'Billing & Revenue Report', type: 'Financial', dateRange: 'Oct 01, 2026 – Oct 19, 2026', generatedBy: 'Samuel Girma', status: 'Completed' },
-  { name: 'Staff Activity Report', type: 'Staff', dateRange: 'Oct 12, 2026 – Oct 18, 2026', generatedBy: 'Betlehem Abebe', status: 'Completed' },
-  { name: 'Patient Demographics', type: 'Patient', dateRange: 'Oct 01, 2026 – Oct 19, 2026', generatedBy: 'Admin', status: 'Completed' },
-  { name: 'Queue Performance', type: 'Operational', dateRange: 'Oct 12, 2026 – Oct 18, 2026', generatedBy: 'Getachew Tadesse', status: 'Completed' },
-];
+const recentReports: Array<{
+  name: string;
+  type: string;
+  dateRange: string;
+  generatedBy: string;
+  status: string;
+}> = [];
 
 const reportCategories = [
   { icon: Users, label: 'Patient Reports', desc: 'Visits, demographics, patient history', color: 'text-blue-500', bg: 'bg-blue-50' },
@@ -92,12 +89,14 @@ const reportCategories = [
   { icon: Users, label: 'Staff Reports', desc: 'Activity, performance, attendance', color: 'text-pink-500', bg: 'bg-pink-50' },
 ];
 
-const recentActivity = [
-  { icon: FileText, bg: 'bg-blue-50', color: 'text-blue-500', label: 'Patient visit report generated', sub: 'By Desu Kasaye', time: '2 hours ago' },
-  { icon: Download, bg: 'bg-green-50', color: 'text-green-500', label: 'Revenue report exported (PDF)', sub: 'By Aster Mulu', time: '4 hours ago' },
-  { icon: BarChart2, bg: 'bg-purple-50', color: 'text-purple-500', label: 'Department report generated', sub: 'By Lidya Kebede', time: '6 hours ago' },
-  { icon: Calendar, bg: 'bg-orange-50', color: 'text-orange-500', label: 'Appointment statistics viewed', sub: 'By Getachew Tadesse', time: '8 hours ago' },
-];
+const recentActivity: Array<{
+  icon: any;
+  bg: string;
+  color: string;
+  label: string;
+  sub: string;
+  time: string;
+}> = [];
 
 const quickActions = [
   { icon: Plus, label: 'Generate Report', color: 'text-blue-500', bg: 'bg-blue-50' },
@@ -237,7 +236,14 @@ export default function ReportsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {recentReports.map((r) => (
+                      {recentReports.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-xs text-gray-400">
+                            No generated reports yet. Click &apos;Generate Report&apos; to create one.
+                          </td>
+                        </tr>
+                      ) : (
+                        recentReports.map((r) => (
                         <tr key={r.name} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
                           <td className="px-5 py-2.5">
                             <div className="flex items-center gap-2">
@@ -262,7 +268,7 @@ export default function ReportsPage() {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                      )))}
                     </tbody>
                   </table>
                 </div>
@@ -318,7 +324,12 @@ export default function ReportsPage() {
                 action={<button className="text-xs text-[#2979FF] font-medium hover:underline">View All</button>}
               >
                 <div className="space-y-3">
-                  {recentActivity.map(({ icon: Icon, bg, color, label, sub, time }) => (
+                  {recentActivity.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-gray-400">
+                      No recent report activity.
+                    </div>
+                  ) : (
+                    recentActivity.map(({ icon: Icon, bg, color, label, sub, time }) => (
                     <div key={label} className="flex items-start gap-2.5">
                       <div className={`w-7 h-7 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
                         <Icon size={12} className={color} />
@@ -329,7 +340,7 @@ export default function ReportsPage() {
                       </div>
                       <span className="text-[10px] text-gray-400 whitespace-nowrap">{time}</span>
                     </div>
-                  ))}
+                  )))}
                 </div>
               </AdminCard>
             </div>

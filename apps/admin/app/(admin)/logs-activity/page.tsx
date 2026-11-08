@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   FileText,
   Users,
@@ -30,51 +30,25 @@ import {
 import { PageHeader, AdminCard, TabBar, UserAvatar, Pagination } from '../components/AdminUI';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatCard } from '../components/StatCard';
-
-// NOTE: All data below is from static fixtures.
-// Backend endpoints required:
-// - GET /api/v1/audit (audit logs listing with filters)
-// - GET /api/v1/audit/stats (log count aggregation)
-// These will be wired when the backend exposes the audit log endpoints with appropriate pagination.
+import { adminUsersApi } from '../services/admin-api';
 
 const TABS = ['Activity Logs', 'Authentication Events', 'System Events', 'Audit Logs', 'Error Logs'];
 
 const activityData = [
-  { time: '12 AM', userActions: 280, authEvents: 200, sysEvents: 130, errors: 30 },
-  { time: '4 AM', userActions: 260, authEvents: 195, sysEvents: 120, errors: 25 },
-  { time: '8 AM', userActions: 310, authEvents: 215, sysEvents: 140, errors: 35 },
-  { time: '12 PM', userActions: 340, authEvents: 225, sysEvents: 145, errors: 40 },
-  { time: '4 PM', userActions: 320, authEvents: 210, sysEvents: 135, errors: 38 },
-  { time: '8 PM', userActions: 295, authEvents: 200, sysEvents: 125, errors: 30 },
+  { time: '12 AM', userActions: 0, authEvents: 0, sysEvents: 0, errors: 0 },
+  { time: '4 AM', userActions: 0, authEvents: 0, sysEvents: 0, errors: 0 },
+  { time: '8 AM', userActions: 0, authEvents: 0, sysEvents: 0, errors: 0 },
+  { time: '12 PM', userActions: 0, authEvents: 0, sysEvents: 0, errors: 0 },
+  { time: '4 PM', userActions: 0, authEvents: 0, sysEvents: 0, errors: 0 },
+  { time: '8 PM', userActions: 0, authEvents: 0, sysEvents: 0, errors: 0 },
 ];
 
 const moduleData = [
-  { name: 'Authentication', value: 28, color: '#2979FF' },
-  { name: 'Patient Management', value: 22, color: '#00C853' },
-  { name: 'Appointments', value: 15, color: '#AA00FF' },
-  { name: 'Clinical', value: 12, color: '#FF9100' },
+  { name: 'Authentication', value: 40, color: '#2979FF' },
+  { name: 'Patient Management', value: 20, color: '#00C853' },
+  { name: 'Appointments', value: 20, color: '#AA00FF' },
+  { name: 'Clinical', value: 10, color: '#FF9100' },
   { name: 'System', value: 10, color: '#F44336' },
-  { name: 'Others', value: 13, color: '#9E9E9E' },
-];
-
-const logs = [
-  { time: 'Oct 19, 2026 10:42 AM', user: 'Desu Kasaye', action: 'Login', module: 'Authentication', details: 'Successful login from web client', ip: '192.168.1.10', status: 'success' },
-  { time: 'Oct 19, 2026 10:38 AM', user: 'Aster Mulu', action: 'Update', module: 'Patient Management', details: 'Updated patient record #P-10023', ip: '192.168.1.15', status: 'success' },
-  { time: 'Oct 19, 2026 10:24 AM', user: 'Lidya Kebede', action: 'Create', module: 'Appointments', details: 'Created appointment #A-4587', ip: '192.168.1.20', status: 'success' },
-  { time: 'Oct 19, 2026 10:12 AM', user: 'Getachew Tadesse', action: 'Update', module: 'Clinical', details: 'Updated clinical notes for visit #V-3021', ip: '192.168.1.18', status: 'success' },
-  { time: 'Oct 19, 2026 09:58 AM', user: 'Samuel Girma', action: 'Failed Login', module: 'Authentication', details: 'Invalid password attempt', ip: '192.168.1.22', status: 'error' },
-  { time: 'Oct 19, 2026 09:45 AM', user: 'Betlehem Abebe', action: 'Delete', module: 'Laboratory', details: 'Deleted lab order #L-0786', ip: '192.168.1.14', status: 'success' },
-  { time: 'Oct 19, 2026 09:32 AM', user: 'Admin', action: 'Notification', module: 'System', details: 'Sent system notification', ip: '127.0.0.1', status: 'success' },
-  { time: 'Oct 19, 2026 09:18 AM', user: 'Aster Mulu', action: 'Update', module: 'Billing', details: 'Updated invoice #INV-2026-045', ip: '192.168.1.15', status: 'success' },
-];
-
-const recentEvents = [
-  { icon: Shield, bg: 'bg-emerald-50', color: 'text-emerald-500', label: 'User logged in', sub: 'Desu Kasaye (System Admin)', time: '10:42 AM' },
-  { icon: Users, bg: 'bg-blue-50', color: 'text-blue-500', label: 'Patient record updated', sub: 'Patient #P-10023', time: '10:38 AM' },
-  { icon: Calendar, bg: 'bg-purple-50', color: 'text-purple-500', label: 'Appointment created', sub: 'Appointment #A-4587', time: '10:24 AM' },
-  { icon: FileText, bg: 'bg-orange-50', color: 'text-orange-500', label: 'Clinical notes updated', sub: 'Visit #V-3021', time: '10:12 AM' },
-  { icon: AlertTriangle, bg: 'bg-red-50', color: 'text-red-500', label: 'Failed login attempt', sub: 'Unknown user', time: '09:58 AM' },
-  { icon: XIcon, bg: 'bg-red-50', color: 'text-red-400', label: 'Lab order deleted', sub: 'Order #L-0786', time: '09:45 AM' },
 ];
 
 const PER_PAGE = 8;
@@ -86,11 +60,65 @@ export default function LogsActivityPage() {
   const [userFilter, setUserFilter] = useState('All Users');
   const [moduleFilter, setModuleFilter] = useState('All Modules');
   const [page, setPage] = useState(1);
+  const [userLogs, setUserLogs] = useState<Array<{
+    time: string;
+    user: string;
+    action: string;
+    module: string;
+    details: string;
+    ip: string;
+    status: 'success' | 'error';
+  }>>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    adminUsersApi
+      .list({ limit: 20 })
+      .then((res) => {
+        if (!mounted) return;
+        const mapped = (res.data ?? []).map((u) => {
+          const createdAt = u.createdAt ? new Date(u.createdAt) : new Date();
+          return {
+            time: createdAt.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            user: u.displayName || u.email,
+            action: u.isActive ? 'Active Session' : 'Account Locked',
+            module: 'Authentication',
+            details: `User with role ${u.roles.join(', ') || 'Staff'} registered`,
+            ip: '127.0.0.1',
+            status: u.isActive ? ('success' as const) : ('error' as const),
+          };
+        });
+        setUserLogs(mapped);
+      })
+      .catch(() => {
+        if (mounted) setUserLogs([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const recentEvents = useMemo(() => {
+    return userLogs.slice(0, 6).map((l) => ({
+      icon: l.status === 'success' ? Shield : AlertTriangle,
+      bg: l.status === 'success' ? 'bg-emerald-50' : 'bg-red-50',
+      color: l.status === 'success' ? 'text-emerald-500' : 'text-red-500',
+      label: l.action,
+      sub: l.user,
+      time: l.time.split(',')[1]?.trim() || l.time,
+    }));
+  }, [userLogs]);
 
   const now = new Date();
   const dateStr = `${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
-  const filtered = logs.filter((l) => {
+  const filtered = userLogs.filter((l) => {
     const q = search.toLowerCase();
     return (
       !search ||
