@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchLabOrders } from '../../api/clinical';
 import {
   FlaskConical,
   TestTube2,
@@ -348,11 +350,92 @@ export function DashboardPage({
   onOpenCollectSample,
   onOpenEnterResult,
 }: DashboardPageProps) {
+  const { accessToken } = useAuth();
   const [calendarDate, setCalendarDate] = useState('Oct 19, 2026');
   const [dayOfWeek, setDayOfWeek] = useState('Tuesday');
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannedCode, setScannedCode] = useState('');
   const [enterResultModalOpen, setEnterResultModalOpen] = useState(false);
+
+  // Live KPI state
+  const [kpiTotal, setKpiTotal] = useState<number | null>(null);
+  const [kpiPending, setKpiPending] = useState<number | null>(null);
+  const [kpiProcessing, setKpiProcessing] = useState<number | null>(null);
+  const [kpiCompleted, setKpiCompleted] = useState<number | null>(null);
+  const [kpiAbnormal, setKpiAbnormal] = useState<number | null>(null);
+
+  const loadKpis = useCallback(async () => {
+    try {
+      const orders = await fetchLabOrders(accessToken);
+      setKpiTotal(orders.length);
+      setKpiPending(orders.filter((o) => o.status === 'PENDING').length);
+      setKpiProcessing(
+        orders.filter((o) => o.status === 'IN_PROGRESS' || o.status === 'PROCESSING').length,
+      );
+      setKpiCompleted(orders.filter((o) => o.status === 'COMPLETED').length);
+      setKpiAbnormal(orders.filter((o) => o.results.some((r) => r.isAbnormal)).length);
+    } catch {
+      // keep nulls — UI shows '—'
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadKpis();
+  }, [loadKpis]);
+
+  // Derived stat cards using live data (null = loading → shows '—')
+  const liveStatCards = [
+    {
+      title: 'Total Samples',
+      value: kpiTotal ?? '—',
+      change: '',
+      trend: 'up' as const,
+      label: 'all orders',
+      icon: STAT_CARDS[0]!.icon,
+      iconBg: STAT_CARDS[0]!.iconBg,
+      iconColor: STAT_CARDS[0]!.iconColor,
+    },
+    {
+      title: 'Pending Tests',
+      value: kpiPending ?? '—',
+      change: '',
+      trend: 'up' as const,
+      label: 'awaiting processing',
+      icon: STAT_CARDS[1]!.icon,
+      iconBg: STAT_CARDS[1]!.iconBg,
+      iconColor: STAT_CARDS[1]!.iconColor,
+    },
+    {
+      title: 'In Processing',
+      value: kpiProcessing ?? '—',
+      change: '',
+      trend: 'up' as const,
+      label: 'in progress',
+      icon: STAT_CARDS[2]!.icon,
+      iconBg: STAT_CARDS[2]!.iconBg,
+      iconColor: STAT_CARDS[2]!.iconColor,
+    },
+    {
+      title: 'Completed Tests',
+      value: kpiCompleted ?? '—',
+      change: '',
+      trend: 'up' as const,
+      label: 'done today',
+      icon: STAT_CARDS[3]!.icon,
+      iconBg: STAT_CARDS[3]!.iconBg,
+      iconColor: STAT_CARDS[3]!.iconColor,
+    },
+    {
+      title: 'Abnormal Results',
+      value: kpiAbnormal ?? '—',
+      change: '',
+      trend: 'down' as const,
+      label: 'flagged',
+      icon: STAT_CARDS[4]!.icon,
+      iconBg: STAT_CARDS[4]!.iconBg,
+      iconColor: STAT_CARDS[4]!.iconColor,
+    },
+  ];
 
   const handlePrevDay = () => {
     setCalendarDate('Oct 18, 2026');
@@ -418,7 +501,7 @@ export function DashboardPage({
 
           {/* 5 KPI Stat Cards - Compact & displayed at one row without icons */}
           <div className="grid grid-cols-5 gap-2 sm:gap-2.5 xl:gap-3">
-            {STAT_CARDS.map((card, idx) => (
+            {liveStatCards.map((card, idx) => (
               <div
                 key={idx}
                 className="bg-white rounded-2xl p-2.5 sm:p-3 xl:p-3.5 border border-slate-200/80 shadow-2xs hover:shadow-xs hover:border-slate-300/90 transition-all duration-150 flex flex-col justify-between group min-w-0"

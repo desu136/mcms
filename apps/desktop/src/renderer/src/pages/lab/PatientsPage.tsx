@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   User,
   Users,
@@ -26,18 +26,92 @@ import {
   ClipboardList,
   Camera,
 } from 'lucide-react';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchPatients } from '../../api/patients';
+import { fetchLabOrders } from '../../api/clinical';
+import type { PatientDTO } from '@mcms/contracts';
+import type { LabOrderDTO } from '@mcms/contracts/clinical';
 import {
   PRIMARY_PATIENT,
-  ALL_MOCK_PATIENTS,
   PatientRecord,
   PatientOrderedTest,
 } from '../../components/lab/patientLookupMockData';
 
+function mapPatientDTO(p: PatientDTO, orders: LabOrderDTO[]): PatientRecord {
+  const patientOrders = orders.filter((o) => o.patientId === p.id || o.patientPid === p.pid);
+  const orderedTests: PatientOrderedTest[] = patientOrders.map((o, idx) => ({
+    num: idx + 1,
+    testName: o.samples[0]?.sampleType ?? 'Lab Test',
+    sampleType: 'Blood',
+    orderedDate: new Date(o.orderedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+    status: (o.status === 'COMPLETED' ? 'Completed' : o.status === 'IN_PROGRESS' || o.status === 'PROCESSING' ? 'Processing' : 'Pending') as PatientOrderedTest['status'],
+    hasResult: o.results.length > 0,
+    ...(o.results[0] ? { resultSummary: `${o.results[0].testName}: ${o.results[0].value} ${o.results[0].unit ?? ''}` } : {}),
+  }));
+
+  const birthDate = p.dateOfBirth ? new Date(p.dateOfBirth) : null;
+  const age = birthDate && !isNaN(birthDate.getTime()) ? Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 3600 * 1000)) : 30;
+
+  const totalTests = orderedTests.length;
+  const completed = orderedTests.filter((t) => t.status === 'Completed').length;
+  const pending = orderedTests.filter((t) => t.status === 'Pending').length;
+  const abnormal = patientOrders.filter((o) => o.results.some((r) => r.isAbnormal)).length;
+
+  return {
+    id: p.id,
+    patientId: p.pid,
+    name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+    status: (p.status === 'ACTIVE' ? 'Active' : 'Outpatient') as PatientRecord['status'],
+    gender: (p.gender?.toUpperCase() === 'MALE' ? 'Male' : 'Female') as PatientRecord['gender'],
+    dob: p.dateOfBirth ? new Date(p.dateOfBirth).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '—',
+    age,
+    phone: p.phoneNumber || '—',
+    email: p.email || '—',
+    address: p.address || '—',
+    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName || p.firstName)}&background=3b82f6&color=fff&size=64`,
+    bloodGroup: 'O+',
+    emergencyContact: 'Family Member',
+    allergies: 'None recorded',
+    currentVisit: {
+      visitId: `VST-${p.id.slice(-4).toUpperCase()}`,
+      department: 'Outpatient Clinic',
+      admitted: 'Today',
+      room: 'OPD-102',
+      attendingDoctor: 'Attending Doctor',
+    },
+    stats: {
+      totalTests,
+      completed,
+      completedPct: totalTests > 0 ? `${Math.round((completed / totalTests) * 100)}%` : '0%',
+      pending,
+      pendingChange: `${pending} active`,
+      abnormal,
+      abnormalChange: `${abnormal} flagged`,
+    },
+    orderedTests,
+    recentTests: orderedTests.slice(0, 5).map((t) => ({
+      name: t.testName,
+      status: t.status,
+      time: t.orderedDate,
+    })),
+    history: patientOrders.flatMap((o) =>
+      o.results.map((r) => ({
+        date: new Date(r.performedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+        testName: r.testName,
+        resultStatus: r.isAbnormal ? 'Abnormal' : 'Normal',
+        ...(r.isAbnormal ? { isAbnormal: true } : {}),
+      }))
+    ),
+  };
+}
+
 type ActiveTab = 'ordered' | 'results' | 'history' | 'specimen';
 
 export function PatientsPage() {
+  const { accessToken } = useAuth();
+  const [patientList, setPatientList] = useState<PatientRecord[]>([]);
   const [patient, setPatient] = useState<PatientRecord>(PRIMARY_PATIENT);
-  const [searchQuery, setSearchQuery] = useState('Aster Mulu');
+  const [searchQuery, setSearchQuery] = useState('');
   const [searchBy, setSearchBy] = useState('Name');
   const [department, setDepartment] = useState('All Departments');
   const [status, setStatus] = useState('All Statuses');
@@ -47,6 +121,27 @@ export function PatientsPage() {
   const [viewingTestResult, setViewingTestResult] = useState<PatientOrderedTest | null>(null);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
+  const loadPatients = useCallback(async () => {
+    try {
+      const [pts, orders] = await Promise.all([
+        fetchPatients(accessToken, { limit: 50 }),
+        fetchLabOrders(accessToken),
+      ]);
+      const mapped = pts.data.map((p) => mapPatientDTO(p, orders));
+      setPatientList(mapped);
+      if (mapped.length > 0) {
+        setPatient(mapped[0]!);
+        setSearchQuery(mapped[0]!.name);
+      }
+    } catch {
+      // keep fallback
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadPatients();
+  }, [loadPatients]);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
@@ -54,7 +149,8 @@ export function PatientsPage() {
 
   const handleSearch = () => {
     const q = searchQuery.trim().toLowerCase();
-    const found = ALL_MOCK_PATIENTS.find(
+    const source = patientList.length > 0 ? patientList : [PRIMARY_PATIENT];
+    const found = source.find(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.patientId.toLowerCase().includes(q) ||
@@ -64,8 +160,7 @@ export function PatientsPage() {
       setPatient(found);
       showToast(`Loaded records for ${found.name}.`);
     } else {
-      showToast('No patient found with that query. Showing Aster Mulu.');
-      setPatient(PRIMARY_PATIENT);
+      showToast('No patient found matching your query.');
     }
   };
 
@@ -756,7 +851,7 @@ export function PatientsPage() {
             </div>
 
             <div className="p-4 space-y-2 max-h-80 overflow-y-auto">
-              {ALL_MOCK_PATIENTS.map((p) => (
+              {(patientList.length > 0 ? patientList : [PRIMARY_PATIENT]).map((p) => (
                 <div
                   key={p.id}
                   onClick={() => {

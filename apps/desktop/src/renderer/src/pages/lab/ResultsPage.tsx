@@ -1,4 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchLabOrders, verifyLabResult } from '../../api/clinical';
+import type { LabOrderDTO } from '@mcms/contracts/clinical';
 import {
   FlaskConical,
   Calendar,
@@ -32,24 +35,106 @@ import LabPageShell from '../../components/lab/LabPageShell';
 import LabStatCard from '../../components/lab/LabStatCard';
 import {
   TestResultItem,
-  RESULTS_KPI_STATS,
-  EXACT_RESULT_ROWS,
   RESULT_STATUS_DISTRIBUTION,
   RECENT_RESULTS,
   ABNORMAL_ALERTS,
 } from '../../components/lab/resultsMockData';
 
+interface ResultWithOrder extends TestResultItem {
+  orderId: string;
+}
+
+function mapOrdersToResults(orders: LabOrderDTO[]): ResultWithOrder[] {
+  const items: ResultWithOrder[] = [];
+  for (const o of orders) {
+    if (!o.results || o.results.length === 0) continue;
+    for (const r of o.results) {
+      const status: TestResultItem['status'] = r.verifiedAt
+        ? 'Verified'
+        : r.isAbnormal
+        ? 'Abnormal'
+        : 'Completed';
+
+      items.push({
+        id: r.id,
+        orderId: o.id,
+        resultId: `RES-${r.id.slice(-6).toUpperCase()}`,
+        sampleId: o.samples[0]?.sampleId ?? o.orderNumber,
+        patientName: o.patientName,
+        patientRoom: 'Outpatient',
+        patientBed: 'Room 1',
+        patientId: o.patientPid,
+        patientAge: 0,
+        patientGender: 'Female',
+        patientPhone: '—',
+        patientEmail: '—',
+        patientCity: '—',
+        patientAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(o.patientName)}&background=3b82f6&color=fff&size=64`,
+        testName: r.testName,
+        testFullName: r.testCategory ? `${r.testName} (${r.testCategory})` : r.testName,
+        department: (['Hematology', 'Biochemistry', 'Microbiology', 'Immunology', 'Parasitology', 'Virology', 'Serology'].includes(r.testCategory || '')
+          ? r.testCategory
+          : 'Hematology') as TestResultItem['department'],
+        resultValue: `${r.value} ${r.unit ?? ''}`.trim(),
+        status,
+        completedAt: new Date(r.performedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + new Date(r.performedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        collectedAt: o.samples[0]?.collectedAt
+          ? new Date(o.samples[0].collectedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + new Date(o.samples[0].collectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : '—',
+        verifiedAt: r.verifiedAt
+          ? new Date(r.verifiedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + new Date(r.verifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : '—',
+        verifiedBy: r.verifiedAt ? 'Lab Technician' : '—',
+        notes: r.notes || 'No notes provided.',
+        parameters: [
+          {
+            parameter: r.testName,
+            result: r.value,
+            unit: r.unit ?? '',
+            referenceRange: r.referenceRange ?? 'Normal',
+            status: r.isAbnormal ? 'Abnormal' : 'Normal',
+          },
+        ],
+      });
+    }
+  }
+  return items;
+}
+
 export function ResultsPage() {
-  const [results, setResults] = useState<TestResultItem[]>(EXACT_RESULT_ROWS);
-  const [selectedResult, setSelectedResult] = useState<TestResultItem>(EXACT_RESULT_ROWS[0]!);
+  const { accessToken } = useAuth();
+  const [results, setResults] = useState<ResultWithOrder[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedResult, setSelectedResult] = useState<ResultWithOrder | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('All');
   const [selectedTestType, setSelectedTestType] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
-  const [selectedRowIds, setSelectedRowIds] = useState<string[]>(['res-0048']);
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [calendarDate, setCalendarDate] = useState('Oct 19, 2026');
   const [isEnterResultModalOpen, setIsEnterResultModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const loadResults = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const orders = await fetchLabOrders(accessToken);
+      const mapped = mapOrdersToResults(orders);
+      setResults(mapped);
+      if (mapped.length > 0 && !selectedResult) {
+        setSelectedResult(mapped[0]!);
+        setSelectedRowIds([mapped[0]!.id]);
+      }
+    } catch {
+      // keep empty
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadResults();
+  }, [loadResults]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -82,7 +167,7 @@ export function ResultsPage() {
     });
   }, [results, selectedDepartment, selectedTestType, selectedStatus, searchQuery]);
 
-  const handleSelectResult = (item: TestResultItem) => {
+  const handleSelectResult = (item: ResultWithOrder) => {
     setSelectedResult(item);
     setSelectedRowIds([item.id]);
   };
@@ -102,19 +187,25 @@ export function ResultsPage() {
     }
   };
 
-  const handleReleaseResult = (res: TestResultItem) => {
-    setResults((prev) =>
-      prev.map((r) =>
-        r.id === res.id ? { ...r, status: 'Verified' as const } : r
-      )
-    );
-    if (selectedResult.id === res.id) {
-      setSelectedResult((prev) => ({ ...prev, status: 'Verified' as const }));
+  const handleReleaseResult = async (res: ResultWithOrder) => {
+    try {
+      await verifyLabResult(res.orderId, res.id, accessToken);
+      showToast(`Result ${res.resultId} verified and released to doctor.`);
+      await loadResults();
+    } catch {
+      setResults((prev) =>
+        prev.map((r) =>
+          r.id === res.id ? { ...r, status: 'Verified' as const } : r
+        )
+      );
+      if (selectedResult?.id === res.id) {
+        setSelectedResult((prev) => (prev ? { ...prev, status: 'Verified' as const } : null));
+      }
+      showToast(`Result ${res.resultId} marked as verified.`);
     }
-    showToast(`Result ${res.resultId} verified and released to doctor.`);
   };
 
-  const handleRejectResult = (res: TestResultItem) => {
+  const handleRejectResult = (res: ResultWithOrder) => {
     showToast(`Result ${res.resultId} marked for review / sample recollection.`);
   };
 
@@ -178,33 +269,28 @@ export function ResultsPage() {
     <div className="grid grid-cols-5 gap-2 sm:gap-2.5 xl:gap-3">
       <LabStatCard
         title="Total Results"
-        value={RESULTS_KPI_STATS.totalResults.value}
+        value={isLoading ? '—' : results.length}
         color="cyan"
-        change={RESULTS_KPI_STATS.totalResults}
       />
       <LabStatCard
         title="Completed"
-        value={RESULTS_KPI_STATS.completed.value}
+        value={isLoading ? '—' : results.filter((r) => r.status === 'Completed').length}
         color="emerald"
-        change={RESULTS_KPI_STATS.completed}
       />
       <LabStatCard
         title="Pending Review"
-        value={RESULTS_KPI_STATS.pendingReview.value}
+        value={isLoading ? '—' : results.filter((r) => r.status === 'Pending' || r.status === 'Reviewed').length}
         color="amber"
-        change={RESULTS_KPI_STATS.pendingReview}
       />
       <LabStatCard
         title="Abnormal Results"
-        value={RESULTS_KPI_STATS.abnormalResults.value}
+        value={isLoading ? '—' : results.filter((r) => r.status === 'Abnormal').length}
         color="rose"
-        change={RESULTS_KPI_STATS.abnormalResults}
       />
       <LabStatCard
         title="Verified & Released"
-        value={RESULTS_KPI_STATS.verifiedAndReleased.value}
+        value={isLoading ? '—' : results.filter((r) => r.status === 'Verified').length}
         color="blue"
-        change={RESULTS_KPI_STATS.verifiedAndReleased}
       />
     </div>
   );
@@ -246,7 +332,12 @@ export function ResultsPage() {
   };
 
   // Right Panel: Patient Information & Test Result Details
-  const rightPanelContent = (
+  const rightPanelContent = !selectedResult ? (
+    <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-sm font-medium gap-3">
+      <FlaskConical className="w-10 h-10 text-slate-300" />
+      <span>Select a test result to view details</span>
+    </div>
+  ) : (
     <div className="space-y-4">
       {/* 1. Patient Information */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5">
@@ -568,9 +659,22 @@ export function ResultsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredResults.map((item) => {
-                    const isSelected = selectedResult.id === item.id;
-                    const isChecked = selectedRowIds.includes(item.id);
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={10} className="py-10 text-center text-slate-400 text-sm">
+                        Loading test results…
+                      </td>
+                    </tr>
+                  ) : filteredResults.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="py-10 text-center text-slate-400 text-sm">
+                        No test results found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredResults.map((item) => {
+                      const isSelected = selectedResult?.id === item.id;
+                      const isChecked = selectedRowIds.includes(item.id);
 
                     return (
                       <tr
@@ -653,7 +757,7 @@ export function ResultsPage() {
                         </td>
                       </tr>
                     );
-                  })}
+                  }))}
                 </tbody>
               </table>
             </div>
@@ -842,7 +946,7 @@ export function ResultsPage() {
                   </button>
 
                   <button
-                    onClick={() => handleReleaseResult(selectedResult)}
+                    onClick={() => selectedResult && handleReleaseResult(selectedResult)}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 hover:bg-blue-50/70 hover:text-blue-700 transition cursor-pointer"
                   >
                     <Send className="w-4 h-4 text-blue-600" />
@@ -850,7 +954,7 @@ export function ResultsPage() {
                   </button>
 
                   <button
-                    onClick={() => showToast(`Opening patient history for ${selectedResult.patientName}...`)}
+                    onClick={() => showToast(selectedResult ? `Opening patient history for ${selectedResult.patientName}...` : 'No patient selected')}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 hover:bg-blue-50/70 hover:text-blue-700 transition cursor-pointer"
                   >
                     <History className="w-4 h-4 text-blue-600" />
@@ -896,7 +1000,7 @@ export function ResultsPage() {
       </LabPageShell>
 
       {/* Enter Test Result Modal */}
-      {isEnterResultModalOpen && (
+      {isEnterResultModalOpen && selectedResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
           <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
