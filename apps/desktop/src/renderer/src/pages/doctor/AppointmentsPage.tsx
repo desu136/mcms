@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import {
   INITIAL_PATIENTS,
-  UPCOMING_APPOINTMENTS_PAGE,
   AppointmentItem,
   PatientItem,
 } from '../../components/doctor/doctorMockData';
@@ -76,18 +75,22 @@ export function AppointmentsPage() {
     setError(null);
     try {
       const data = await fetchAppointments(accessToken);
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         const mapped = data.map(mapDtoToAppointmentItem);
         setAppointmentsList(mapped);
-        if (!selectedAppointment) setSelectedAppointment(mapped[0]!);
+        if (mapped.length > 0) {
+          setSelectedAppointment((prev) => (prev ? mapped.find((m) => m.id === prev.id) || mapped[0]! : mapped[0]!));
+        } else {
+          setSelectedAppointment(null);
+        }
       } else {
-        setAppointmentsList(UPCOMING_APPOINTMENTS_PAGE);
-        if (!selectedAppointment) setSelectedAppointment(UPCOMING_APPOINTMENTS_PAGE[0]!);
+        setAppointmentsList([]);
+        setSelectedAppointment(null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch appointments');
-      setAppointmentsList(UPCOMING_APPOINTMENTS_PAGE);
-      if (!selectedAppointment) setSelectedAppointment(UPCOMING_APPOINTMENTS_PAGE[0]!);
+      setAppointmentsList([]);
+      setSelectedAppointment(null);
     } finally {
       setLoading(false);
     }
@@ -305,7 +308,17 @@ export function AppointmentsPage() {
         </div>
       </div>
     </>
-  ) : null;
+  ) : (
+    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-6 text-center">
+      <div className="w-10 h-10 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2">
+        <CalendarDays className="w-5 h-5" />
+      </div>
+      <h4 className="text-xs font-bold text-slate-700">No Appointment Selected</h4>
+      <p className="text-[11px] text-slate-400 mt-1">
+        Select an appointment from the list to view visit summary and clinical actions.
+      </p>
+    </div>
+  );
 
   return (
     <>

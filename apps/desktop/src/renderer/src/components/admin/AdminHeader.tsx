@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Search,
   Bell,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useSync } from '../../context/SyncContext';
+import { getAllowedWorkstations } from '../../App';
 
 export interface AdminHeaderProps {
   onOpenSearch?: () => void;
@@ -29,6 +30,7 @@ export function AdminHeader({
   onSwitchWorkstation,
 }: AdminHeaderProps) {
   const { user } = useAuth();
+  const allowed = useMemo(() => getAllowedWorkstations(user), [user]);
   const { isOnline, isSyncing, syncStatus, triggerSync } = useSync();
   const pendingSyncOps = syncStatus.pendingOperations;
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -108,49 +110,57 @@ export function AdminHeader({
           </button>
         </div>
 
-        {/* Workstation Switcher */}
-        {onSwitchWorkstation && (
+        {/* Workstation Switcher - Strictly restricted to authorized roles */}
+        {onSwitchWorkstation && allowed.length > 1 && (
           <div className="hidden lg:flex items-center gap-0.5 p-0.5 bg-slate-100 rounded-xl border border-slate-200 text-[11px] font-bold">
-            <button
-              onClick={() => onSwitchWorkstation('admin')}
-              className={`px-2 py-1 rounded-lg transition-all ${
-                currentWorkstation === 'admin'
-                  ? 'bg-blue-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Clinic Admin
-            </button>
-            <button
-              onClick={() => onSwitchWorkstation('doctor')}
-              className={`px-2 py-1 rounded-lg transition-all ${
-                currentWorkstation === 'doctor'
-                  ? 'bg-blue-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Doctor
-            </button>
-            <button
-              onClick={() => onSwitchWorkstation('nurse')}
-              className={`px-2 py-1 rounded-lg transition-all ${
-                currentWorkstation === 'nurse'
-                  ? 'bg-blue-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Nurse
-            </button>
-            <button
-              onClick={() => onSwitchWorkstation('receptionist')}
-              className={`px-2 py-1 rounded-lg transition-all ${
-                currentWorkstation === 'receptionist'
-                  ? 'bg-blue-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Reception
-            </button>
+            {allowed.includes('admin') && (
+              <button
+                onClick={() => onSwitchWorkstation('admin')}
+                className={`px-2 py-1 rounded-lg transition-all ${
+                  currentWorkstation === 'admin'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 cursor-pointer'
+                }`}
+              >
+                Clinic Admin
+              </button>
+            )}
+            {allowed.includes('doctor') && (
+              <button
+                onClick={() => onSwitchWorkstation('doctor')}
+                className={`px-2 py-1 rounded-lg transition-all ${
+                  currentWorkstation === 'doctor'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 cursor-pointer'
+                }`}
+              >
+                Doctor
+              </button>
+            )}
+            {allowed.includes('nurse') && (
+              <button
+                onClick={() => onSwitchWorkstation('nurse')}
+                className={`px-2 py-1 rounded-lg transition-all ${
+                  currentWorkstation === 'nurse'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 cursor-pointer'
+                }`}
+              >
+                Nurse
+              </button>
+            )}
+            {allowed.includes('receptionist') && (
+              <button
+                onClick={() => onSwitchWorkstation('receptionist')}
+                className={`px-2 py-1 rounded-lg transition-all ${
+                  currentWorkstation === 'receptionist'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 cursor-pointer'
+                }`}
+              >
+                Reception
+              </button>
+            )}
           </div>
         )}
 
