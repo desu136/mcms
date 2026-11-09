@@ -7,6 +7,7 @@ import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/doctor/presentation/screens/doctor_dashboard_screen.dart';
 import 'features/receptionist/presentation/screens/receptionist_dashboard_screen.dart';
 import 'features/nurse/presentation/screens/nurse_dashboard_screen.dart';
+import 'features/lab/presentation/screens/lab_dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,6 +69,11 @@ class _AuthRouter extends ConsumerWidget {
       // Route receptionist roles to the receptionist dashboard
       if (role == 'RECEPTIONIST' || role == 'FRONT_DESK') {
         return ReceptionistDashboardScreen(dbService: dbService);
+      }
+
+      // Route lab technician roles to the lab dashboard
+      if (role == 'LAB_TECHNICIAN' || role == 'LAB') {
+        return LabDashboardScreen(dbService: dbService);
       }
 
       // Default: Doctor dashboard

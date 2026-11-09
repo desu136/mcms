@@ -249,6 +249,32 @@ class AuthService {
       );
     }
 
+    if (cleanEmail == 'lab@mcms.local' && password == 'Lab@123456') {
+      const offlineUser = AuthUser(
+        id: 'user-lab-001',
+        email: 'lab@mcms.local',
+        displayName: 'Dawit Tadesse (Lab Tech)',
+        firstName: 'Dawit',
+        lastName: 'Tadesse',
+        role: 'LAB_TECHNICIAN',
+        roles: ['LAB_TECHNICIAN'],
+      );
+
+      _currentUser = offlineUser;
+      _accessToken = 'offline_token_lab';
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kUser, jsonEncode(offlineUser.toJson()));
+      await prefs.setString(_kAccess, _accessToken!);
+      await prefs.setString(_kRefresh, 'offline_refresh_lab');
+
+      return AuthResult(
+        user: offlineUser,
+        accessToken: _accessToken!,
+        refreshToken: 'offline_refresh_lab',
+      );
+    }
+
     throw Exception(
       'Unable to connect to server. Check Wi-Fi connection or verify credentials.',
     );
