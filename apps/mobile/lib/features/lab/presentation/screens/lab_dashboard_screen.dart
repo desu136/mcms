@@ -11,6 +11,9 @@ import 'lab_tests_screen.dart';
 import 'lab_samples_screen.dart';
 import 'lab_results_screen.dart';
 import 'lab_more_screen.dart';
+import 'lab_profile_screen.dart';
+import 'lab_messages_screen.dart';
+import 'lab_qc_screen.dart';
 
 class LabDashboardScreen extends ConsumerStatefulWidget {
   final MobileDatabaseService dbService;
@@ -39,7 +42,13 @@ class _LabDashboardScreenState extends ConsumerState<LabDashboardScreen> {
               userName: tech.name,
               department: tech.department,
               notificationCount: tech.unreadNotifications,
-              onAvatarTap: () => _showProfileSheet(context, tech),
+              onAvatarTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const LabProfileScreen(),
+                  ),
+                );
+              },
               onNotificationsTap: () => _showNotificationsSheet(context),
             )
           : null,
@@ -256,6 +265,30 @@ class _LabDashboardScreenState extends ConsumerState<LabDashboardScreen> {
                 'Automatic SMS dispatch sent to Dr. Tesfaye • 28m ago', AppTheme.warning),
             _buildNotifItem('Analyzer Mindray BC-5000 self-test passed',
                 'Quality Control valid • 1h ago', AppTheme.success),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const LabMessagesScreen(),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF06B6D4),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.chat_rounded, size: 16),
+                label: const Text('Open Clinical Intercom & Messages'),
+              ),
+            ),
+            const SizedBox(height: 10),
           ],
         ),
       ),
