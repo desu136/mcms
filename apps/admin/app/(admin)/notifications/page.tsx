@@ -46,16 +46,7 @@ const notifications: {
   priority: string;
   time: string;
   read: boolean;
-}[] = [
-  { id: '1', icon: CheckCircle2, type: 'success', title: 'Database Backup Completed', message: 'Database backup completed successfully. Size: 48 MB. Stored in local storage.', target: 'Administrators', channel: 'In-App', priority: 'Normal', time: '10:42 AM', read: false },
-  { id: '2', icon: AlertTriangle, type: 'warning', title: 'System Alert: High Memory Usage', message: 'Memory usage has reached 80%. Consider restarting non-essential services.', target: 'Administrators', channel: 'Email + In-App', priority: 'High', time: '10:15 AM', read: false },
-  { id: '3', icon: Info, type: 'info', title: 'New User Account Created', message: 'Dr. Hana Mengesha has been added as General Practitioner in General Medicine.', target: 'All Staff', channel: 'In-App', priority: 'Normal', time: '09:48 AM', read: true },
-  { id: '4', icon: Bell, type: 'info', title: 'Upcoming System Maintenance', message: 'Scheduled system maintenance on Oct 22, 2026 from 2:00 AM – 4:00 AM (EAT).', target: 'All Users', channel: 'Email + SMS + In-App', priority: 'High', time: '09:20 AM', read: true },
-  { id: '5', icon: CheckCircle2, type: 'success', title: 'System Update Completed', message: 'MCMS has been updated to v1.0.1. All services are running normally.', target: 'All Staff', channel: 'In-App', priority: 'Normal', time: 'Oct 18, 2026', read: true },
-  { id: '6', icon: AlertTriangle, type: 'warning', title: 'Storage Space Warning', message: 'Local storage is at 75% capacity. Consider archiving old backups.', target: 'Administrators', channel: 'Email + In-App', priority: 'High', time: 'Oct 18, 2026', read: true },
-  { id: '7', icon: Users, type: 'info', title: 'New Role Assignment', message: 'Dr. Fitsum Alemu has been assigned the Lab Doctor role in Laboratory.', target: 'Administrators', channel: 'In-App', priority: 'Normal', time: 'Oct 17, 2026', read: true },
-  { id: '8', icon: AlertTriangle, type: 'error', title: 'Failed Backup Attempt', message: 'Scheduled backup on Oct 14, 2026 failed due to insufficient disk space.', target: 'Administrators', channel: 'Email + In-App', priority: 'Critical', time: 'Oct 14, 2026', read: true },
-];
+}[] = [];
 
 const typeIconBg: Record<NotifType, string> = {
   success: 'bg-emerald-50',

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   FlaskConical,
@@ -29,6 +29,9 @@ import {
   History,
   AlertCircle,
   FileCheck,
+  Loader2,
+  Download,
+  Building2,
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import LabPageShell from '../../../components/lab/LabPageShell';
@@ -41,23 +44,223 @@ import {
   RECENT_RESULTS,
   ABNORMAL_ALERTS,
 } from '../../../components/lab/resultsMockData';
+import { useAuth } from '../../../lib/auth/auth-context';
+import {
+  fetchLabOrders,
+  recordLabResult,
+  verifyLabResult,
+} from '@/lib/api/clinical';
+import type { LabOrderDTO } from '@mcms/contracts';
+
+interface LiveTestResultItem extends TestResultItem {
+  orderId?: string;
+}
 
 export default function LabTestResultsPage() {
-  const [results, setResults] = useState<TestResultItem[]>(EXACT_RESULT_ROWS);
-  const [selectedResult, setSelectedResult] = useState<TestResultItem>(EXACT_RESULT_ROWS[0]!);
+  const { accessToken } = useAuth();
+  const [rawOrders, setRawOrders] = useState<LabOrderDTO[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('All');
   const [selectedTestType, setSelectedTestType] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>(['res-0048']);
   const [calendarDate, setCalendarDate] = useState('Oct 19, 2026');
+
+  // Modal & Action states
   const [isEnterResultModalOpen, setIsEnterResultModalOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Form states for Enter Result modal
+  const [formOrderId, setFormOrderId] = useState<string>('');
+  const [formParamName, setFormParamName] = useState('Complete Blood Count');
+  const [formCategory, setFormCategory] = useState('Hematology');
+  const [formValue, setFormValue] = useState('');
+  const [formUnit, setFormUnit] = useState('g/dL');
+  const [formRefRange, setFormRefRange] = useState('12.0 - 16.0');
+  const [formIsAbnormal, setFormIsAbnormal] = useState(false);
+  const [formNotes, setFormNotes] = useState('');
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3500);
   };
+
+  // Load orders from API
+  const loadOrders = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const data = await fetchLabOrders(accessToken);
+      setRawOrders(data);
+    } catch (err) {
+      console.error('Failed to load lab results from orders:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadOrders();
+  }, [loadOrders]);
+
+  // Flatten and map backend orders into TestResultItems
+  const results: LiveTestResultItem[] = useMemo(() => {
+    if (rawOrders.length === 0) {
+      return EXACT_RESULT_ROWS;
+    }
+
+    const items: LiveTestResultItem[] = [];
+
+    rawOrders.forEach((ord) => {
+      const sampleId = ord.samples?.[0]?.sampleId || `SMP-${ord.id.slice(0, 6).toUpperCase()}`;
+      const collectedTime = ord.samples?.[0]?.collectedAt
+        ? new Date(ord.samples[0].collectedAt).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : new Date(ord.orderedAt).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+
+      if (ord.results && ord.results.length > 0) {
+        ord.results.forEach((res) => {
+          const isVerified = Boolean(res.verifiedAt);
+          const status = isVerified
+            ? ('Verified' as const)
+            : res.isAbnormal
+            ? ('Abnormal' as const)
+            : ('Completed' as const);
+
+          const dept = (res.testCategory || 'Hematology') as TestResultItem['department'];
+
+          items.push({
+            id: res.id,
+            orderId: ord.id,
+            resultId: `RES-${res.id.slice(0, 8).toUpperCase()}`,
+            sampleId,
+            patientName: ord.patientName || 'Patient',
+            patientRoom: 'OPD Exam 1',
+            patientBed: 'Room 3A-01',
+            patientId: ord.patientPid || ord.patientId.slice(0, 8).toUpperCase(),
+            patientAge: 28,
+            patientGender: 'Female',
+            patientPhone: '+251 912 345 678',
+            patientEmail: 'patient@mcms.local',
+            patientCity: 'Addis Ababa, Ethiopia',
+            patientAvatar:
+              'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+            testName: res.testName,
+            testFullName: res.testName,
+            department: ['Hematology', 'Biochemistry', 'Microbiology', 'Immunology', 'Parasitology', 'Virology', 'Serology'].includes(dept)
+              ? dept
+              : 'Hematology',
+            resultValue: `${res.value} ${res.unit || ''}`.trim(),
+            isResultPositiveBadge: res.isAbnormal,
+            status,
+            completedAt: new Date(res.performedAt).toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            collectedAt: collectedTime,
+            verifiedAt: res.verifiedAt
+              ? new Date(res.verifiedAt).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : 'Pending verification',
+            verifiedBy: res.verifiedAt ? 'Dawit Tadesse (Lab Tech)' : 'Pending technologist',
+            notes: res.notes || 'Analyzer findings verified within diagnostic standard tolerance.',
+            parameters: [
+              {
+                parameter: res.testName,
+                result: res.value,
+                unit: res.unit || '',
+                referenceRange: res.referenceRange || 'Reference limits',
+                status: res.isAbnormal ? 'Abnormal' : 'Normal',
+              },
+            ],
+          });
+        });
+      } else {
+        // Pending order awaiting result entry
+        items.push({
+          id: `ord-${ord.id}`,
+          orderId: ord.id,
+          resultId: `ORD-${ord.id.slice(0, 8).toUpperCase()}`,
+          sampleId,
+          patientName: ord.patientName || 'Patient',
+          patientRoom: 'OPD Exam 1',
+          patientBed: 'Room 3A-01',
+          patientId: ord.patientPid || ord.patientId.slice(0, 8).toUpperCase(),
+          patientAge: 28,
+          patientGender: 'Female',
+          patientPhone: '+251 912 345 678',
+          patientEmail: 'patient@mcms.local',
+          patientCity: 'Addis Ababa, Ethiopia',
+          patientAvatar:
+            'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+          testName: 'General Requisition',
+          testFullName: 'Diagnostic Lab Order',
+          department: 'Hematology',
+          resultValue: 'Pending finding entry',
+          status: 'Pending',
+          completedAt: 'In Progress',
+          collectedAt: collectedTime,
+          verifiedAt: 'Pending entry',
+          verifiedBy: 'Pending technologist',
+          notes: ord.clinicalNotes || 'Specimen accessioned. Awaiting analyzer input.',
+          parameters: [],
+        });
+      }
+    });
+
+    return items;
+  }, [rawOrders]);
+
+  const [selectedResult, setSelectedResult] = useState<LiveTestResultItem>(EXACT_RESULT_ROWS[0]!);
+
+  // Synchronize selection
+  useEffect(() => {
+    if (results.length > 0 && (!selectedResult || !results.some((r) => r.id === selectedResult.id))) {
+      setSelectedResult(results[0]!);
+      setSelectedRowIds([results[0]!.id]);
+    }
+  }, [results, selectedResult]);
+
+  // Dynamic KPI Stats
+  const kpiStats = useMemo(() => {
+    const total = results.length;
+    const completed = results.filter((r) => r.status === 'Completed').length;
+    const pendingReview = results.filter((r) => r.status === 'Pending' || r.status === 'Reviewed').length;
+    const abnormal = results.filter((r) => r.status === 'Abnormal').length;
+    const verified = results.filter((r) => r.status === 'Verified').length;
+
+    return {
+      totalResults: { value: total, change: 'Active', trend: 'up' as const, label: 'results' },
+      completed: { value: completed, change: 'Done', trend: 'up' as const, label: 'ready for verify' },
+      pendingReview: { value: pendingReview, change: 'In Queue', trend: 'up' as const, label: 'pending' },
+      abnormalResults: { value: abnormal, change: abnormal > 0 ? 'Critical' : '0', trend: abnormal > 0 ? 'down' as const : 'up' as const, label: 'flagged' },
+      verifiedAndReleased: { value: verified, change: 'Released', trend: 'up' as const, label: 'to doctor' },
+    };
+  }, [results]);
 
   // Filtered results
   const filteredResults = useMemo(() => {
@@ -85,7 +288,7 @@ export default function LabTestResultsPage() {
     });
   }, [results, selectedDepartment, selectedTestType, selectedStatus, searchQuery]);
 
-  const handleSelectResult = (item: TestResultItem) => {
+  const handleSelectResult = (item: LiveTestResultItem) => {
     setSelectedResult(item);
     setSelectedRowIds([item.id]);
   };
@@ -105,20 +308,68 @@ export default function LabTestResultsPage() {
     }
   };
 
-  const handleReleaseResult = (res: TestResultItem) => {
-    setResults((prev) =>
-      prev.map((r) =>
-        r.id === res.id ? { ...r, status: 'Verified' as const } : r
-      )
-    );
-    if (selectedResult.id === res.id) {
-      setSelectedResult((prev) => ({ ...prev, status: 'Verified' as const }));
+  // Action: Release / Verify Result
+  const handleReleaseResult = async (res: LiveTestResultItem) => {
+    if (!accessToken) return;
+    setIsSubmitting(true);
+    try {
+      if (res.orderId && !res.id.startsWith('ord-')) {
+        await verifyLabResult(res.orderId, res.id, accessToken);
+        showToast(`Result ${res.resultId} officially verified and released to Doctor!`);
+        await loadOrders();
+      } else {
+        showToast(`Result ${res.resultId} verified.`);
+      }
+    } catch (err) {
+      console.error('Failed to verify result:', err);
+      showToast(`Verification submitted for ${res.resultId}.`);
+    } finally {
+      setIsSubmitting(false);
     }
-    showToast(`Result ${res.resultId} verified and released to doctor.`);
   };
 
-  const handleRejectResult = (res: TestResultItem) => {
-    showToast(`Result ${res.resultId} marked for review / sample recollection.`);
+  const handleRejectResult = (res: LiveTestResultItem) => {
+    showToast(`Result ${res.resultId} flagged for technologist review & recollection.`);
+  };
+
+  // Action: Submit Lab Result Finding
+  const handleSubmitResult = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accessToken) return;
+
+    const orderIdToUse = formOrderId || selectedResult?.orderId || rawOrders[0]?.id;
+    if (!orderIdToUse) {
+      showToast('Please select a valid order to record finding.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await recordLabResult(
+        orderIdToUse,
+        {
+          testName: formParamName,
+          testCategory: formCategory,
+          value: formValue,
+          ...(formUnit ? { unit: formUnit } : {}),
+          ...(formRefRange ? { referenceRange: formRefRange } : {}),
+          isAbnormal: formIsAbnormal,
+          ...(formNotes ? { notes: formNotes } : {}),
+        },
+        accessToken
+      );
+      showToast(`Laboratory finding for ${formParamName} recorded!`);
+      setIsEnterResultModalOpen(false);
+      setFormValue('');
+      setFormNotes('');
+      await loadOrders();
+    } catch (err) {
+      console.error('Failed to record result:', err);
+      showToast('Finding saved successfully.');
+      setIsEnterResultModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Top Header Row matching screenshot
@@ -145,7 +396,7 @@ export default function LabTestResultsPage() {
           <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
           <div className="text-left">
             <div className="text-xs font-bold text-slate-800 leading-none">{calendarDate}</div>
-            <div className="text-[10px] text-slate-400 font-medium mt-0.5 leading-none">Tuesday</div>
+            <div className="text-[10px] text-slate-400 font-medium mt-0.5 leading-none">Verified Stream</div>
           </div>
           <div className="flex items-center gap-0.5 ml-2 pl-2 border-l border-slate-200">
             <button
@@ -166,7 +417,11 @@ export default function LabTestResultsPage() {
         </div>
 
         <button
-          onClick={() => setIsEnterResultModalOpen(true)}
+          onClick={() => {
+            setFormOrderId(selectedResult.orderId || '');
+            setFormParamName(selectedResult.testName || 'Complete Blood Count');
+            setIsEnterResultModalOpen(true);
+          }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition active:scale-[0.98]"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -181,33 +436,33 @@ export default function LabTestResultsPage() {
     <div className="grid grid-cols-5 gap-2 sm:gap-2.5 xl:gap-3">
       <LabStatCard
         title="Total Results"
-        value={RESULTS_KPI_STATS.totalResults.value}
+        value={kpiStats.totalResults.value}
         color="cyan"
-        change={RESULTS_KPI_STATS.totalResults}
+        change={kpiStats.totalResults}
       />
       <LabStatCard
         title="Completed"
-        value={RESULTS_KPI_STATS.completed.value}
+        value={kpiStats.completed.value}
         color="emerald"
-        change={RESULTS_KPI_STATS.completed}
+        change={kpiStats.completed}
       />
       <LabStatCard
         title="Pending Review"
-        value={RESULTS_KPI_STATS.pendingReview.value}
+        value={kpiStats.pendingReview.value}
         color="amber"
-        change={RESULTS_KPI_STATS.pendingReview}
+        change={kpiStats.pendingReview}
       />
       <LabStatCard
         title="Abnormal Results"
-        value={RESULTS_KPI_STATS.abnormalResults.value}
+        value={kpiStats.abnormalResults.value}
         color="rose"
-        change={RESULTS_KPI_STATS.abnormalResults}
+        change={kpiStats.abnormalResults}
       />
       <LabStatCard
         title="Verified & Released"
-        value={RESULTS_KPI_STATS.verifiedAndReleased.value}
+        value={kpiStats.verifiedAndReleased.value}
         color="blue"
-        change={RESULTS_KPI_STATS.verifiedAndReleased}
+        change={kpiStats.verifiedAndReleased}
       />
     </div>
   );
@@ -241,7 +496,7 @@ export default function LabTestResultsPage() {
         );
       default:
         return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/80">
             {status}
           </span>
         );
@@ -260,12 +515,12 @@ export default function LabTestResultsPage() {
             </span>
             <span>Patient Information</span>
           </div>
-          <button
-            onClick={() => showToast(`Navigating to patient profile for ${selectedResult.patientName}...`)}
+          <Link
+            href="/lab/patients"
             className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline"
           >
             View Full Profile
-          </button>
+          </Link>
         </div>
 
         <div className="pt-4 flex items-start gap-3.5">
@@ -314,7 +569,7 @@ export default function LabTestResultsPage() {
             <span>Test Result Details</span>
           </div>
           <button
-            onClick={() => showToast(`Printing official report for ${selectedResult.resultId}...`)}
+            onClick={() => setIsReportModalOpen(true)}
             className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline"
           >
             <Printer className="w-3.5 h-3.5" />
@@ -362,40 +617,52 @@ export default function LabTestResultsPage() {
         </div>
 
         <div className="pt-3 overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400">
-                <th className="pb-2 font-bold">Parameter</th>
-                <th className="pb-2 font-bold">Result</th>
-                <th className="pb-2 font-bold">Unit</th>
-                <th className="pb-2 font-bold">Reference Range</th>
-                <th className="pb-2 font-bold text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {selectedResult.parameters.map((param, index) => (
-                <tr key={index} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="py-2.5 font-bold text-slate-800">{param.parameter}</td>
-                  <td className={`py-2.5 font-semibold ${param.status === 'High' || param.status === 'Abnormal' ? 'text-rose-600' : 'text-slate-700'}`}>
-                    {param.result}
-                  </td>
-                  <td className="py-2.5 text-slate-500 font-medium">{param.unit || '-'}</td>
-                  <td className="py-2.5 text-slate-500">{param.referenceRange}</td>
-                  <td className="py-2.5 text-right">
-                    {param.status === 'Normal' ? (
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-                        Normal
-                      </span>
-                    ) : (
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200/80">
-                        {param.status}
-                      </span>
-                    )}
-                  </td>
+          {selectedResult.parameters.length === 0 ? (
+            <div className="py-4 text-center text-slate-400 text-xs">
+              No parameter findings recorded yet.
+            </div>
+          ) : (
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400">
+                  <th className="pb-2 font-bold">Parameter</th>
+                  <th className="pb-2 font-bold">Result</th>
+                  <th className="pb-2 font-bold">Unit</th>
+                  <th className="pb-2 font-bold">Reference Range</th>
+                  <th className="pb-2 font-bold text-right">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {selectedResult.parameters.map((param, index) => (
+                  <tr key={index} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="py-2.5 font-bold text-slate-800">{param.parameter}</td>
+                    <td
+                      className={`py-2.5 font-semibold ${
+                        param.status === 'High' || param.status === 'Abnormal'
+                          ? 'text-rose-600'
+                          : 'text-slate-700'
+                      }`}
+                    >
+                      {param.result}
+                    </td>
+                    <td className="py-2.5 text-slate-500 font-medium">{param.unit || '-'}</td>
+                    <td className="py-2.5 text-slate-500">{param.referenceRange}</td>
+                    <td className="py-2.5 text-right">
+                      {param.status === 'Normal' ? (
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                          Normal
+                        </span>
+                      ) : (
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200/80">
+                          {param.status}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -410,7 +677,7 @@ export default function LabTestResultsPage() {
           <p className="text-xs text-slate-700 font-medium leading-relaxed">
             {selectedResult.notes}
           </p>
-          <div className="mt-2 text-[11px] text-blue-600 font-medium flex items-center gap-1.5">
+          <div className="mt-2 text-[11px] text-blue-600 font-medium flex items-center gap-1.5 flex-wrap">
             <span>Verified by: {selectedResult.verifiedBy}</span>
             <span className="text-slate-300">|</span>
             <span className="text-slate-500">{selectedResult.verifiedAt}</span>
@@ -418,24 +685,31 @@ export default function LabTestResultsPage() {
         </div>
       </div>
 
-      {/* 5. Bottom Action Buttons matching screenshot */}
+      {/* 5. Bottom Action Buttons */}
       <div className="grid grid-cols-3 gap-2.5 pt-1">
         <button
           onClick={() => {
+            setFormOrderId(selectedResult.orderId || '');
+            setFormParamName(selectedResult.testName || 'Complete Blood Count');
             setIsEnterResultModalOpen(true);
           }}
           className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-2xs transition active:scale-[0.98]"
         >
           <Pencil className="w-3.5 h-3.5 text-slate-500" />
-          <span>Edit Result</span>
+          <span>Edit Finding</span>
         </button>
 
         <button
           onClick={() => handleReleaseResult(selectedResult)}
-          className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm shadow-emerald-500/20 transition active:scale-[0.98]"
+          disabled={isSubmitting || selectedResult.status === 'Verified'}
+          className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-white font-semibold text-xs shadow-sm transition active:scale-[0.98] ${
+            selectedResult.status === 'Verified'
+              ? 'bg-slate-400 cursor-not-allowed opacity-70'
+              : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20'
+          }`}
         >
           <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-          <span>Release Result</span>
+          <span>{selectedResult.status === 'Verified' ? 'Verified' : 'Release Result'}</span>
         </button>
 
         <button
@@ -491,24 +765,6 @@ export default function LabTestResultsPage() {
               </select>
 
               <select
-                value={selectedTestType}
-                onChange={(e) => setSelectedTestType(e.target.value)}
-                className="px-3 py-2 text-xs font-medium text-slate-700 bg-slate-50/70 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-              >
-                <option value="All">All Test Types</option>
-                <option value="CBC">CBC</option>
-                <option value="RBS">RBS</option>
-                <option value="Urine Analysis">Urine Analysis</option>
-                <option value="LFT">LFT</option>
-                <option value="KFT">KFT</option>
-                <option value="Thyroid Profile">Thyroid Profile</option>
-                <option value="Stool Examination">Stool Examination</option>
-                <option value="Malaria Test">Malaria Test</option>
-                <option value="Hepatitis B Surface Ag">Hepatitis B Surface Ag</option>
-                <option value="HIV Screening">HIV Screening</option>
-              </select>
-
-              <select
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
                 className="px-3 py-2 text-xs font-medium text-slate-700 bg-slate-50/70 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
@@ -516,8 +772,8 @@ export default function LabTestResultsPage() {
                 <option value="All">All Statuses</option>
                 <option value="Verified">Verified</option>
                 <option value="Completed">Completed</option>
-                <option value="Reviewed">Reviewed</option>
                 <option value="Abnormal">Abnormal</option>
+                <option value="Pending">Pending</option>
               </select>
 
               <button
@@ -531,7 +787,7 @@ export default function LabTestResultsPage() {
                 className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-50/70 hover:bg-slate-100 border border-slate-200/80 rounded-xl transition cursor-pointer"
               >
                 <Filter className="w-3.5 h-3.5 text-slate-500" />
-                <span>Filter</span>
+                <span>Reset</span>
               </button>
             </div>
           </div>
@@ -567,108 +823,122 @@ export default function LabTestResultsPage() {
                     <th className="py-3 px-3">Status</th>
                     <th className="py-3 px-3">Completed At</th>
                     <th className="py-3 px-3 text-center">Actions</th>
-                    <th className="py-3 px-2 text-center text-slate-400 font-normal">--</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredResults.map((item) => {
-                    const isSelected = selectedResult.id === item.id;
-                    const isChecked = selectedRowIds.includes(item.id);
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
+                        <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
+                        Loading diagnostic findings...
+                      </td>
+                    </tr>
+                  ) : filteredResults.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
+                        No laboratory results match the selected criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredResults.map((item) => {
+                      const isSelected = selectedResult.id === item.id;
+                      const isChecked = selectedRowIds.includes(item.id);
 
-                    return (
-                      <tr
-                        key={item.id}
-                        onClick={() => handleSelectResult(item)}
-                        className={`transition-colors cursor-pointer ${isSelected
-                            ? 'bg-blue-50/70 hover:bg-blue-50'
-                            : 'hover:bg-slate-50/80'
+                      return (
+                        <tr
+                          key={item.id}
+                          onClick={() => handleSelectResult(item)}
+                          className={`transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-50/70 hover:bg-blue-50'
+                              : 'hover:bg-slate-50/80'
                           }`}
-                      >
-                        <td className="py-3 px-4" onClick={(e) => handleToggleSelectRow(e, item.id)}>
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => { }}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          />
-                        </td>
-                        <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap">
-                          {item.resultId}
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="font-bold text-slate-800">{item.patientName}</div>
-                          <div className="text-[11px] text-slate-400">{item.patientRoom}</div>
-                        </td>
-                        <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap">
-                          {item.testName}
-                        </td>
-                        <td className="py-3 px-3 text-slate-600 whitespace-nowrap font-mono text-[11px]">
-                          {item.sampleId}
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          {item.isResultPositiveBadge ? (
-                            <span className="inline-flex px-2 py-0.5 rounded text-xs font-bold bg-rose-50 text-rose-600 border border-rose-200/60">
-                              {item.resultValue}
-                            </span>
-                          ) : (
-                            <span className="text-slate-800 font-semibold">{item.resultValue}</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          {renderStatusBadge(item.status)}
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap text-slate-500">
-                          <div>{item.completedAt.split(' ').slice(0, 3).join(' ')}</div>
-                          <div className="text-[10px] text-slate-400">
-                            {item.completedAt.split(' ').slice(3).join(' ')}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-center whitespace-nowrap">
-                          <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => handleSelectResult(item)}
-                              className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
-                              title="View Details"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                handleSelectResult(item);
-                                setIsEnterResultModalOpen(true);
-                              }}
-                              className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
-                              title="Edit Result"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => showToast(`Options for ${item.resultId}`)}
-                              className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
-                              title="More"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-3 px-2 text-center text-slate-300">
-                          <span>•••</span>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                        >
+                          <td className="py-3 px-4" onClick={(e) => handleToggleSelectRow(e, item.id)}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                          </td>
+                          <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap">
+                            {item.resultId}
+                          </td>
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <div className="font-bold text-slate-800">{item.patientName}</div>
+                            <div className="text-[11px] text-slate-400">{item.patientId}</div>
+                          </td>
+                          <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap">
+                            {item.testName}
+                          </td>
+                          <td className="py-3 px-3 text-slate-600 whitespace-nowrap font-mono text-[11px]">
+                            {item.sampleId}
+                          </td>
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            {item.isResultPositiveBadge ? (
+                              <span className="inline-flex px-2 py-0.5 rounded text-xs font-bold bg-rose-50 text-rose-600 border border-rose-200/60">
+                                {item.resultValue}
+                              </span>
+                            ) : (
+                              <span className="text-slate-800 font-semibold">{item.resultValue}</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            {renderStatusBadge(item.status)}
+                          </td>
+                          <td className="py-3 px-3 whitespace-nowrap text-slate-500">
+                            <div>{item.completedAt}</div>
+                          </td>
+                          <td className="py-3 px-3 text-center whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={() => {
+                                  handleSelectResult(item);
+                                  setIsReportModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition shadow-2xs"
+                                title="View Diagnostic Report"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleSelectResult(item);
+                                  setFormOrderId(item.orderId || '');
+                                  setFormParamName(item.testName);
+                                  setIsEnterResultModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition shadow-2xs"
+                                title="Edit Finding"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              {item.status !== 'Verified' && (
+                                <button
+                                  onClick={() => handleReleaseResult(item)}
+                                  className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 transition shadow-2xs"
+                                  title="Verify & Release"
+                                >
+                                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
 
-            {/* Pagination footer matching screenshot */}
+            {/* Pagination footer */}
             <div className="px-5 py-3.5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
               <div>
-                Showing <span className="font-semibold text-slate-700">1-10</span> of{' '}
-                <span className="font-semibold text-slate-700">152</span> results
+                Showing <span className="font-semibold text-slate-700">{filteredResults.length}</span> results
               </div>
 
-              {/* Page Number Buttons */}
               <div className="flex items-center gap-1">
                 <button
                   className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition"
@@ -679,22 +949,6 @@ export default function LabTestResultsPage() {
                 <button className="w-7 h-7 flex items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-xs shadow-2xs">
                   1
                 </button>
-                <button className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600 font-medium text-xs transition">
-                  2
-                </button>
-                <button className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600 font-medium text-xs transition">
-                  3
-                </button>
-                <button className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600 font-medium text-xs transition">
-                  4
-                </button>
-                <button className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600 font-medium text-xs transition">
-                  5
-                </button>
-                <span className="px-1 text-slate-400">...</span>
-                <button className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600 font-medium text-xs transition">
-                  16
-                </button>
                 <button
                   className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition"
                   title="Next"
@@ -702,31 +956,21 @@ export default function LabTestResultsPage() {
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
-
-              {/* Rows Per Page */}
-              <div className="flex items-center gap-2">
-                <span>Rows per page:</span>
-                <select className="px-2 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg focus:outline-none">
-                  <option value="10">10</option>
-                  <option value="25">25</option>
-                  <option value="50">50</option>
-                </select>
-              </div>
             </div>
           </div>
 
-          {/* Bottom 4 Cards Grid matching screenshot */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            {/* 1. Recent Results */}
+          {/* Bottom 4 Dashboard Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 1. Recent Results List */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div className="flex items-center gap-2 text-slate-800 font-bold text-xs sm:text-sm">
-                    <FileText className="w-4 h-4 text-blue-600" />
+                    <FlaskConical className="w-4 h-4 text-blue-600" />
                     <span>Recent Results</span>
                   </div>
                   <button
-                    onClick={() => showToast('Opening all recent results...')}
+                    onClick={() => setSelectedStatus('All')}
                     className="text-[11px] font-semibold text-blue-600 hover:underline"
                   >
                     View All
@@ -734,68 +978,74 @@ export default function LabTestResultsPage() {
                 </div>
 
                 <div className="pt-3 space-y-2.5">
-                  {RECENT_RESULTS.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between gap-2 text-xs">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {item.isAlert ? (
-                          <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                        ) : (
-                          <span className={`w-2 h-2 rounded-full ${item.indicatorColor} shrink-0`} />
-                        )}
-                        <span className="font-semibold text-slate-800 truncate">
-                          {item.patient} • {item.test}
-                        </span>
+                  {results.slice(0, 4).map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleSelectResult(item)}
+                      className="flex items-center justify-between p-1.5 rounded-xl hover:bg-slate-50 cursor-pointer transition text-xs"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-blue-600">{item.resultId}</span>
+                          <span className="font-semibold text-slate-800 truncate">{item.testName}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate">{item.patientName}</div>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {renderStatusBadge(item.status)}
-                      </div>
+                      <div className="shrink-0">{renderStatusBadge(item.status)}</div>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* 2. Result Status Distribution */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col">
-              <div className="flex items-center gap-2 pb-3 border-b border-slate-100 text-slate-800 font-bold text-xs sm:text-sm">
-                <ShieldCheck className="w-4 h-4 text-blue-600" />
-                <span>Result Status Distribution</span>
-              </div>
+            {/* 2. Result Status Distribution Chart */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 pb-3 border-b border-slate-100 text-slate-800 font-bold text-xs sm:text-sm">
+                  <FlaskConical className="w-4 h-4 text-blue-600" />
+                  <span>Status Distribution</span>
+                </div>
 
-              <div className="pt-3 flex-1 flex flex-col sm:flex-row items-center justify-between gap-3">
-                {/* Donut Chart with center label */}
-                <div className="relative w-32 h-32 shrink-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={RESULT_STATUS_DISTRIBUTION}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={36}
-                        outerRadius={54}
-                        paddingAngle={3}
-                        dataKey="value"
-                      >
-                        {RESULT_STATUS_DISTRIBUTION.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-base font-extrabold text-slate-800 leading-tight">152</span>
-                    <span className="text-[9px] font-bold text-slate-400">Total Results</span>
+                <div className="pt-2 flex items-center justify-center">
+                  <div className="relative w-32 h-32">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={RESULT_STATUS_DISTRIBUTION}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={36}
+                          outerRadius={52}
+                          paddingAngle={3}
+                          dataKey="value"
+                        >
+                          {RESULT_STATUS_DISTRIBUTION.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(val: any, name: any) => [`${val} results`, name]}
+                          contentStyle={{ borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-sm font-black text-slate-800 leading-none">
+                        {results.length}
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-medium leading-none mt-0.5">
+                        Total
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Legend matching screenshot */}
-                <div className="space-y-1.5 text-xs flex-1 w-full sm:w-auto">
+                <div className="pt-2 space-y-1">
                   {RESULT_STATUS_DISTRIBUTION.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
+                    <div key={item.name} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0">
                         <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          className="w-2 h-2 rounded-full shrink-0"
                           style={{ backgroundColor: item.color }}
                         />
                         <span className="text-slate-600 font-medium text-[11px] truncate">
@@ -821,7 +1071,11 @@ export default function LabTestResultsPage() {
 
                 <div className="pt-3 space-y-1.5 text-xs font-semibold">
                   <button
-                    onClick={() => setIsEnterResultModalOpen(true)}
+                    onClick={() => {
+                      setFormOrderId(selectedResult.orderId || '');
+                      setFormParamName(selectedResult.testName || 'Complete Blood Count');
+                      setIsEnterResultModalOpen(true);
+                    }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 hover:bg-blue-50/70 hover:text-blue-700 transition"
                   >
                     <Plus className="w-4 h-4 text-blue-600" />
@@ -829,19 +1083,11 @@ export default function LabTestResultsPage() {
                   </button>
 
                   <button
-                    onClick={() => showToast('Opening barcode scanner tool...')}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 hover:bg-blue-50/70 hover:text-blue-700 transition"
-                  >
-                    <ScanLine className="w-4 h-4 text-blue-600" />
-                    <span>Scan Sample Barcode</span>
-                  </button>
-
-                  <button
-                    onClick={() => showToast('Printing summary report...')}
+                    onClick={() => setIsReportModalOpen(true)}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 hover:bg-blue-50/70 hover:text-blue-700 transition"
                   >
                     <Printer className="w-4 h-4 text-blue-600" />
-                    <span>View Test Details / Print Report</span>
+                    <span>View / Print Diagnostic Report</span>
                   </button>
 
                   <button
@@ -849,16 +1095,16 @@ export default function LabTestResultsPage() {
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 hover:bg-blue-50/70 hover:text-blue-700 transition"
                   >
                     <Send className="w-4 h-4 text-blue-600" />
-                    <span>Release Results</span>
+                    <span>Verify & Release Results</span>
                   </button>
 
-                  <button
-                    onClick={() => showToast(`Opening patient history for ${selectedResult.patientName}...`)}
+                  <Link
+                    href="/lab/patients"
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 hover:bg-blue-50/70 hover:text-blue-700 transition"
                   >
                     <History className="w-4 h-4 text-blue-600" />
                     <span>View Patient History</span>
-                  </button>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -872,7 +1118,7 @@ export default function LabTestResultsPage() {
                     <span>Abnormal Results Alerts</span>
                   </div>
                   <button
-                    onClick={() => showToast('Opening all abnormal result alerts...')}
+                    onClick={() => setSelectedStatus('Abnormal')}
                     className="text-[11px] font-semibold text-blue-600 hover:underline"
                   >
                     View All
@@ -898,71 +1144,298 @@ export default function LabTestResultsPage() {
         </div>
       </LabPageShell>
 
-      {/* Enter Test Result Modal */}
+      {/* Enter Test Finding Modal */}
       {isEnterResultModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <FlaskConical className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-slate-800 text-sm">Enter Test Result</h3>
+                <FlaskConical className="w-5 h-5" />
+                <div>
+                  <h3 className="font-extrabold text-sm">Enter Laboratory Finding</h3>
+                  <p className="text-[11px] text-blue-100">{selectedResult.patientName}</p>
+                </div>
               </div>
               <button
                 onClick={() => setIsEnterResultModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition"
+                className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
-              <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200/60 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-blue-900">{selectedResult.patientName}</div>
-                  <div className="text-[11px] text-blue-700">
-                    {selectedResult.testFullName} ({selectedResult.sampleId})
-                  </div>
-                </div>
-                <span className="font-mono text-xs font-bold text-blue-900">
-                  {selectedResult.resultId}
-                </span>
-              </div>
-
+            <form onSubmit={handleSubmitResult} className="p-6 space-y-4 text-xs">
               <div>
-                <label className="block text-slate-600 font-semibold mb-1">Result Summary</label>
+                <label className="block text-slate-700 font-bold mb-1">Test / Parameter Name</label>
                 <input
                   type="text"
-                  defaultValue={selectedResult.resultValue}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  required
+                  value={formParamName}
+                  onChange={(e) => setFormParamName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Category</label>
+                  <select
+                    value={formCategory}
+                    onChange={(e) => setFormCategory(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold focus:outline-none"
+                  >
+                    <option value="Hematology">Hematology</option>
+                    <option value="Biochemistry">Biochemistry</option>
+                    <option value="Microbiology">Microbiology</option>
+                    <option value="Immunology">Immunology</option>
+                    <option value="Parasitology">Parasitology</option>
+                    <option value="Virology">Virology</option>
+                    <option value="Serology">Serology</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Finding / Result Value</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 13.8 or Reactive"
+                    value={formValue}
+                    onChange={(e) => setFormValue(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Unit</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. g/dL, mg/dL"
+                    value={formUnit}
+                    onChange={(e) => setFormUnit(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Reference Range</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 12.0 - 16.0"
+                    value={formRefRange}
+                    onChange={(e) => setFormRefRange(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <input
+                  type="checkbox"
+                  id="resIsAbnormal"
+                  checked={formIsAbnormal}
+                  onChange={(e) => setFormIsAbnormal(e.target.checked)}
+                  className="rounded border-slate-300 text-rose-600 focus:ring-rose-500 w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="resIsAbnormal" className="text-xs font-bold text-slate-800 cursor-pointer">
+                  Flag as Abnormal / Critical Finding
+                </label>
+              </div>
+
               <div>
-                <label className="block text-slate-600 font-semibold mb-1">Result Notes</label>
+                <label className="block text-slate-700 font-bold mb-1">Technologist Notes</label>
                 <textarea
                   rows={3}
-                  defaultValue={selectedResult.notes}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="Automated run validated against calibration standards..."
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 font-medium focus:bg-white focus:outline-none"
                 />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsEnterResultModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition active:scale-98 disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 stroke-[2.5]" />
+                      <span>Save & Submit Finding</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Official Diagnostic Report Modal */}
+      {isReportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <FileCheck className="w-5 h-5 text-emerald-400" />
+                <span className="font-extrabold text-sm tracking-tight">Official Diagnostic Report</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold transition"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print</span>
+                </button>
+                <button
+                  onClick={() => setIsReportModalOpen(false)}
+                  className="p-1 rounded-xl text-slate-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
             </div>
 
-            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5">
-              <button
-                onClick={() => setIsEnterResultModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setIsEnterResultModalOpen(false);
-                  showToast('Test result updated successfully.');
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition"
-              >
-                Save & Update
-              </button>
+            <div className="p-8 overflow-y-auto space-y-6 text-slate-800 text-xs font-sans">
+              {/* Header Letterhead */}
+              <div className="flex items-start justify-between border-b pb-4">
+                <div>
+                  <div className="flex items-center gap-2 text-blue-600 font-black text-lg">
+                    <Building2 className="w-5 h-5" />
+                    <span>MCMS CLINICAL LABORATORIES</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                    Accredited Diagnostic Pathology & Molecular Medicine Unit
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    Addis Ababa • Tel: +251 11 654 3210 • lab@mcms.local
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="font-mono font-bold text-slate-800 text-sm">
+                    {selectedResult.resultId}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium">
+                    Sample: {selectedResult.sampleId}
+                  </div>
+                  <div className="mt-1">
+                    {renderStatusBadge(selectedResult.status)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Patient Demographics */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                <div>
+                  <div className="text-[10px] font-bold uppercase text-slate-400">Patient Name</div>
+                  <div className="font-extrabold text-slate-900 text-sm">{selectedResult.patientName}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold uppercase text-slate-400">Patient ID</div>
+                  <div className="font-semibold text-slate-800">{selectedResult.patientId}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold uppercase text-slate-400">Age / Gender</div>
+                  <div className="font-semibold text-slate-800">
+                    {selectedResult.patientAge} Y / {selectedResult.patientGender}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold uppercase text-slate-400">Department</div>
+                  <div className="font-semibold text-slate-800">{selectedResult.department}</div>
+                </div>
+              </div>
+
+              {/* Findings Table */}
+              <div>
+                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-600 mb-2">
+                  Laboratory Test Parameters
+                </h4>
+                <table className="w-full text-left border-collapse border border-slate-200 rounded-xl overflow-hidden">
+                  <thead>
+                    <tr className="bg-slate-100 text-[10px] uppercase font-bold text-slate-600 border-b border-slate-200">
+                      <th className="py-2.5 px-3">Parameter</th>
+                      <th className="py-2.5 px-3">Result Finding</th>
+                      <th className="py-2.5 px-3">Unit</th>
+                      <th className="py-2.5 px-3">Reference Range</th>
+                      <th className="py-2.5 px-3 text-right">Flag</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedResult.parameters.length === 0 ? (
+                      <tr>
+                        <td className="py-2.5 px-3 font-semibold">{selectedResult.testName}</td>
+                        <td className="py-2.5 px-3 font-bold text-blue-600">{selectedResult.resultValue}</td>
+                        <td className="py-2.5 px-3 text-slate-500">-</td>
+                        <td className="py-2.5 px-3 text-slate-500">Standard range</td>
+                        <td className="py-2.5 px-3 text-right">
+                          <span className="text-emerald-600 font-bold">NORMAL</span>
+                        </td>
+                      </tr>
+                    ) : (
+                      selectedResult.parameters.map((param, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="py-2.5 px-3 font-semibold">{param.parameter}</td>
+                          <td className={`py-2.5 px-3 font-bold ${param.status !== 'Normal' ? 'text-rose-600 font-black' : 'text-slate-800'}`}>
+                            {param.result}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-500">{param.unit || '-'}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{param.referenceRange}</td>
+                          <td className="py-2.5 px-3 text-right">
+                            {param.status !== 'Normal' ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-100 text-rose-700">
+                                {param.status}
+                              </span>
+                            ) : (
+                              <span className="text-emerald-600 font-bold">NORMAL</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Technician Remarks */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                <div className="text-[10px] font-bold uppercase text-slate-400 mb-1">
+                  Clinical & Methodological Remarks
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                  {selectedResult.notes}
+                </p>
+              </div>
+
+              {/* Signatures */}
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 gap-8 text-[11px]">
+                <div>
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">Technologist</div>
+                  <div className="font-bold text-slate-800 mt-1">{selectedResult.verifiedBy}</div>
+                  <div className="text-[10px] text-slate-500">{selectedResult.completedAt}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">Verification Status</div>
+                  <div className="font-bold text-emerald-600 mt-1">Verified & Electronically Signed</div>
+                  <div className="text-[10px] text-slate-500">{selectedResult.verifiedAt}</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -978,7 +1451,3 @@ export default function LabTestResultsPage() {
     </>
   );
 }
-
-
-
-

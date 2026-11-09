@@ -81,13 +81,6 @@ interface CreateStaffPayload {
 // Clinical staff roles managed by the Clinic Admin
 const CLINICAL_ROLES = ['DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECH', 'LAB_TECHNICIAN', 'PHARMACIST'];
 
-const DEPARTMENTS = [
-  'General Medicine', 'Pediatrics', 'Gynecology & Obstetrics',
-  'Surgery', 'Orthopedics', 'Cardiology', 'Neurology',
-  'Radiology', 'Laboratory', 'Pharmacy', 'Emergency',
-  'ICU', 'Dermatology', 'ENT', 'Psychiatry', 'Front Desk', 'Nursing',
-];
-
 const ROLE_ICONS: Record<string, React.ElementType> = {
   DOCTOR: Stethoscope,
   NURSE: Syringe,
@@ -212,12 +205,13 @@ interface StaffDialogProps {
   open: boolean;
   staffRoles: StaffRole[];
   branches: BranchItem[];
+  departments: string[];
   member?: StaffMember | null;
   onClose: () => void;
   onSubmit: (data: StaffFormData) => Promise<void>;
 }
 
-function StaffDialog({ open, staffRoles, branches, member, onClose, onSubmit }: StaffDialogProps) {
+function StaffDialog({ open, staffRoles, branches, departments, member, onClose, onSubmit }: StaffDialogProps) {
   const [form, setForm] = useState<StaffFormData>({
     displayName: member?.displayName ?? '',
     email: member?.email ?? '',
@@ -388,14 +382,24 @@ function StaffDialog({ open, staffRoles, branches, member, onClose, onSubmit }: 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
-              <select
-                value={form.department}
-                onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-              >
-                <option value="">Select dept.</option>
-                {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+              {departments.length > 0 ? (
+                <select
+                  value={form.department}
+                  onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                >
+                  <option value="">Select dept.</option>
+                  {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={form.department}
+                  onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                  placeholder="Department name"
+                />
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Job Title</label>
@@ -634,6 +638,7 @@ export default function StaffManagementPage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [staffRoles, setStaffRoles] = useState<StaffRole[]>([]);
   const [branches, setBranches] = useState<BranchItem[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
@@ -657,10 +662,11 @@ export default function StaffManagementPage() {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [allUsers, roles, branchList] = await Promise.all([
+      const [allUsers, roles, branchList, deptList] = await Promise.all([
         apiRequest<StaffMember[]>('users', accessToken),
         apiRequest<StaffRole[]>('roles', accessToken).catch(() => [] as StaffRole[]),
         apiRequest<BranchItem[]>('branches', accessToken).catch(() => [] as BranchItem[]),
+        apiRequest<Array<{ id: string; name: string }>>('clinic-admin/departments', accessToken).catch(() => []),
       ]);
       // Clinic admin only sees clinical staff (not SUPER_ADMIN / CLINIC_ADMIN)
       const clinicalStaff = allUsers.filter((u) =>
@@ -669,6 +675,7 @@ export default function StaffManagementPage() {
       setStaff(clinicalStaff);
       setStaffRoles(roles.filter((r) => CLINICAL_ROLES.includes(r.name)));
       setBranches(branchList);
+      setDepartments(deptList.map((d) => d.name));
     } catch {
       showToast('Failed to load staff data.', 'error');
     } finally {
@@ -1090,6 +1097,7 @@ export default function StaffManagementPage() {
         open={dialogOpen}
         staffRoles={staffRoles}
         branches={branches}
+        departments={departments}
         member={editingMember}
         onClose={() => setDialogOpen(false)}
         onSubmit={editingMember ? handleUpdate : handleCreate}

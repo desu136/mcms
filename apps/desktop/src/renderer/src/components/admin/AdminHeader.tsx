@@ -44,10 +44,16 @@ export function AdminHeader({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const tenantName = (user as any)?.tenant?.name ?? 'Main Hospital Network';
-  const branchName = (user as any)?.branches?.find((b: any) => b.isPrimary)?.name ?? (user as any)?.branches?.[0]?.name ?? 'Main Branch';
-  const displayName = user ? `${user.firstName} ${user.lastName}`.trim() : 'Clinic Administrator';
-  const initials = user ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || 'AD' : 'AD';
+  const tenantName = user?.tenant?.name ?? (user as any)?.tenantName ?? 'My Clinic';
+  const branchName = user?.branches?.find((b) => b.isPrimary)?.name ?? user?.branches?.[0]?.name ?? null;
+  const displayName = user?.displayName || (user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : '') || 'Clinic Administrator';
+  const initials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'AD';
 
   return (
     <header className="sticky top-0 z-20 h-14 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 flex items-center justify-between gap-3 shadow-2xs shrink-0 select-none">
@@ -56,8 +62,12 @@ export function AdminHeader({
         <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-100 border border-slate-200/80 text-xs text-slate-700">
           <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
           <span className="font-bold truncate max-w-[180px]">{tenantName}</span>
-          <span className="text-slate-300">|</span>
-          <span className="text-slate-500 font-medium truncate max-w-[140px]">{branchName}</span>
+          {branchName && (
+            <>
+              <span className="text-slate-300">|</span>
+              <span className="text-slate-500 font-medium truncate max-w-[140px]">{branchName}</span>
+            </>
+          )}
         </div>
       </div>
 

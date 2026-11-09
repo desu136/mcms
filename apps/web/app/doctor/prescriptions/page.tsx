@@ -26,6 +26,7 @@ import {
   XCircle,
   ChevronDown,
   Building2,
+  Ban,
 } from 'lucide-react';
 import type { PrescriptionDTO, PatientDTO } from '@mcms/contracts';
 import { INITIAL_PATIENTS, PatientItem } from '../../../components/doctor/doctorMockData';
@@ -33,8 +34,9 @@ import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescripti
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 import DoctorStatCard from '../../../components/doctor/DoctorStatCard';
+import PrescriptionSlipModal from '../../../components/doctor/PrescriptionSlipModal';
 import { useAuth } from '../../../lib/auth/auth-context';
-import { fetchPrescriptions } from '../../../lib/api/clinical';
+import { fetchPrescriptions, updatePrescription } from '../../../lib/api/clinical';
 import { fetchPatients } from '../../../lib/api/patients';
 
 export default function DoctorPrescriptionsPage() {
@@ -43,7 +45,7 @@ export default function DoctorPrescriptionsPage() {
   const [patients, setPatients] = useState<PatientDTO[]>([]);
   const [selectedRx, setSelectedRx] = useState<PrescriptionDTO | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [filterTab, setFilterTab] = useState<'All' | 'Active' | 'Dispensed' | 'Cancelled'>('All');
+  const [filterTab, setFilterTab] = useState<'All' | 'Active' | 'Dispensed' | 'Discontinued'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
   const [selectedStatus, setSelectedStatus] = useState('All Statuses');
@@ -54,7 +56,8 @@ export default function DoctorPrescriptionsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedPatientForDrawer, setSelectedPatientForDrawer] = useState<PatientItem | null>(null);
   const [selectedRightTab, setSelectedRightTab] = useState<'Overview' | 'Medical History' | 'Appointments'>('Overview');
-
+  const [selectedRxForSlip, setSelectedRxForSlip] = useState<PrescriptionDTO | null>(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState<string | null>(null);
 
   const now = new Date();
   const dateLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -110,12 +113,12 @@ export default function DoctorPrescriptionsPage() {
 
   const activeList = prescriptions.filter((p) => p.status === 'ACTIVE');
   const dispensedList = prescriptions.filter((p) => p.status === 'DISPENSED');
-  const cancelledList = prescriptions.filter((p) => p.status === 'CANCELLED');
+  const discontinuedList = prescriptions.filter((p) => p.status === 'DISCONTINUED' || p.status === 'CANCELLED');
 
   const filteredPrescriptions = prescriptions.filter((item) => {
     if (filterTab === 'Active' && item.status !== 'ACTIVE') return false;
     if (filterTab === 'Dispensed' && item.status !== 'DISPENSED') return false;
-    if (filterTab === 'Cancelled' && item.status !== 'CANCELLED') return false;
+    if (filterTab === 'Discontinued' && item.status !== 'DISCONTINUED' && item.status !== 'CANCELLED') return false;
 
     if (selectedStatus !== 'All Statuses' && item.status !== selectedStatus.toUpperCase()) return false;
 
@@ -147,7 +150,26 @@ export default function DoctorPrescriptionsPage() {
   };
 
   const handlePrint = (rxId: string) => {
-    window.print();
+    const target = prescriptions.find((p) => p.id === rxId);
+    if (target) {
+      setSelectedRxForSlip(target);
+    } else if (selectedRx) {
+      setSelectedRxForSlip(selectedRx);
+    }
+  };
+
+  const handleDiscontinuePrescription = async (rxId: string) => {
+    if (!window.confirm('Are you sure you want to discontinue this active prescription?')) return;
+    setIsUpdatingStatus(rxId);
+    try {
+      await updatePrescription(rxId, { status: 'DISCONTINUED' }, accessToken);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to discontinue prescription:', err);
+      alert('Failed to discontinue prescription.');
+    } finally {
+      setIsUpdatingStatus(null);
+    }
   };
 
   const openDrawerForPatient = (patientId: string) => {
@@ -579,15 +601,15 @@ export default function DoctorPrescriptionsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setFilterTab('Cancelled')}
+              onClick={() => setFilterTab('Discontinued')}
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                filterTab === 'Cancelled'
+                filterTab === 'Discontinued'
                   ? 'bg-blue-600 text-white shadow-2xs'
                   : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
               }`}
             >
               <XCircle className="w-3.5 h-3.5" />
-              Cancelled ({cancelledList.length})
+              Discontinued ({discontinuedList.length})
             </button>
           </div>
 
@@ -743,7 +765,7 @@ export default function DoctorPrescriptionsPage() {
                                 type="button"
                                 onClick={() => openDrawerForPatient(row.patientId)}
                                 className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/50 transition-colors cursor-pointer"
-                                title="View Patient Details"
+                                title="View Patient EMR Chart"
                               >
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
@@ -751,10 +773,21 @@ export default function DoctorPrescriptionsPage() {
                                 type="button"
                                 onClick={() => handlePrint(row.id)}
                                 className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/50 transition-colors cursor-pointer"
-                                title="Print Prescription"
+                                title="Print Prescription Slip"
                               >
                                 <Printer className="w-3.5 h-3.5" />
                               </button>
+                              {row.status === 'ACTIVE' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDiscontinuePrescription(row.id)}
+                                  disabled={isUpdatingStatus === row.id}
+                                  className="p-1.5 rounded-lg border border-rose-200 text-rose-500 hover:text-rose-700 hover:border-rose-300 hover:bg-rose-50/60 transition-colors cursor-pointer"
+                                  title="Discontinue Medication"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -790,6 +823,13 @@ export default function DoctorPrescriptionsPage() {
         patient={selectedPatientForDrawer}
         isOpen={Boolean(selectedPatientForDrawer)}
         onClose={() => setSelectedPatientForDrawer(null)}
+      />
+
+      {/* Official Prescription Slip Printable Modal */}
+      <PrescriptionSlipModal
+        isOpen={Boolean(selectedRxForSlip)}
+        onClose={() => setSelectedRxForSlip(null)}
+        prescription={selectedRxForSlip}
       />
     </>
   );

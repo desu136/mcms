@@ -58,6 +58,15 @@ export class ClinicAdminService {
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
+    const now = new Date();
+    const currentDayOfWeek = (now.getDay() + 6) % 7;
+    const startOfThisWeek = new Date(now);
+    startOfThisWeek.setDate(now.getDate() - currentDayOfWeek);
+    startOfThisWeek.setHours(0, 0, 0, 0);
+
+    const startOfLastWeek = new Date(startOfThisWeek);
+    startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+
     const [
       totalPatients,
       totalDoctors,
@@ -67,6 +76,8 @@ export class ClinicAdminService {
       occupiedBedsCount,
       availableBedsCount,
       recentAppointmentsList,
+      recentPatientsList,
+      pastAppointments,
     ] = await Promise.all([
       this.prisma.patient.count({ where: tenantFilter as any }),
       this.prisma.user.count({
@@ -85,9 +96,6 @@ export class ClinicAdminService {
           name: true,
           color: true,
           appointments: {
-            where: {
-              createdAt: { gte: todayStart, lte: todayEnd },
-            },
             select: { id: true },
           },
         },
@@ -129,7 +137,37 @@ export class ClinicAdminService {
           department: { select: { name: true } },
         },
         orderBy: { appointmentDate: 'desc' },
-        take: 5,
+        take: 6,
+      }),
+      this.prisma.patient.findMany({
+        where: tenantFilter as any,
+        select: {
+          id: true,
+          fullName: true,
+          pid: true,
+          phoneNumber: true,
+          gender: true,
+          status: true,
+          updatedAt: true,
+          appointments: {
+            take: 1,
+            orderBy: { appointmentDate: 'desc' },
+            select: {
+              department: { select: { name: true } },
+              appointmentDate: true,
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 6,
+      }),
+      this.prisma.appointment.findMany({
+        where: {
+          ...(tenantFilter as any),
+          ...(branchFilter as any),
+          appointmentDate: { gte: startOfLastWeek },
+        },
+        select: { appointmentDate: true },
       }),
     ]);
 
@@ -140,15 +178,55 @@ export class ClinicAdminService {
       color: d.color ?? '#2979FF',
     }));
 
-    const weeklyTrends = [
-      { day: 'Mon', thisWeek: 22, lastWeek: 18 },
-      { day: 'Tue', thisWeek: 30, lastWeek: 24 },
-      { day: 'Wed', thisWeek: 27, lastWeek: 32 },
-      { day: 'Thu', thisWeek: 38, lastWeek: 28 },
-      { day: 'Fri', thisWeek: 35, lastWeek: 30 },
-      { day: 'Sat', thisWeek: 40, lastWeek: 22 },
-      { day: 'Sun', thisWeek: 28, lastWeek: 25 },
-    ];
+    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const thisWeekCounts = [0, 0, 0, 0, 0, 0, 0];
+    const lastWeekCounts = [0, 0, 0, 0, 0, 0, 0];
+
+    for (const appt of pastAppointments) {
+      const apptTime = new Date(appt.appointmentDate).getTime();
+      const thisWeekTime = startOfThisWeek.getTime();
+      const nextWeekTime = thisWeekTime + 7 * 24 * 3600 * 1000;
+
+      if (apptTime >= thisWeekTime && apptTime < nextWeekTime) {
+        const d = (new Date(appt.appointmentDate).getDay() + 6) % 7;
+        const current = thisWeekCounts[d] ?? 0;
+        thisWeekCounts[d] = current + 1;
+      } else if (apptTime >= startOfLastWeek.getTime() && apptTime < thisWeekTime) {
+        const d = (new Date(appt.appointmentDate).getDay() + 6) % 7;
+        const current = lastWeekCounts[d] ?? 0;
+        lastWeekCounts[d] = current + 1;
+      }
+    }
+
+    const weeklyTrends = dayLabels.map((day, idx) => ({
+      day,
+      thisWeek: thisWeekCounts[idx] ?? 0,
+      lastWeek: lastWeekCounts[idx] ?? 0,
+    }));
+
+    const recentPatients = recentPatientsList.map((p) => {
+      const initials = (p.fullName || 'PT')
+        .split(' ')
+        .map((part) => part[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase();
+      const lastAppt = p.appointments[0];
+      const lastVisitStr = lastAppt?.appointmentDate
+        ? new Date(lastAppt.appointmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : new Date(p.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+      return {
+        id: p.id,
+        name: p.fullName,
+        pid: p.pid,
+        phone: p.phoneNumber || '-',
+        department: lastAppt?.department?.name || 'General Medicine',
+        lastVisit: lastVisitStr,
+        status: p.status === 'ACTIVE' ? 'Active' : 'Inactive',
+        avatar: initials,
+      };
+    });
 
     return {
       totalPatients,
@@ -169,6 +247,7 @@ export class ClinicAdminService {
       })),
       departmentBreakdown,
       weeklyTrends,
+      recentPatients,
     };
   }
 

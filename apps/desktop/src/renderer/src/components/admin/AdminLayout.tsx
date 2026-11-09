@@ -6,11 +6,15 @@ import { useSync } from '../../context/SyncContext';
 
 // Import Admin Pages
 import { DashboardPage } from '../../pages/admin/DashboardPage';
-import { DoctorsPage } from '../../pages/admin/DoctorsPage';
+import { ClinicManagementPage } from '../../pages/admin/ClinicManagementPage';
+import { BranchesPage } from '../../pages/admin/BranchesPage';
 import { DepartmentsPage } from '../../pages/admin/DepartmentsPage';
-import { AppointmentsPage } from '../../pages/admin/AppointmentsPage';
+import { StaffPage } from '../../pages/admin/StaffPage';
+import { DoctorsPage } from '../../pages/admin/DoctorsPage';
 import { PatientsPage } from '../../pages/admin/PatientsPage';
+import { AppointmentsPage } from '../../pages/admin/AppointmentsPage';
 import { ServicesPage } from '../../pages/admin/ServicesPage';
+import { MedicalRecordsPage } from '../../pages/admin/MedicalRecordsPage';
 import { BillingPage } from '../../pages/admin/BillingPage';
 import { ReportsPage } from '../../pages/admin/ReportsPage';
 import { SettingsPage } from '../../pages/admin/SettingsPage';
@@ -47,12 +51,22 @@ export function AdminLayout({ onSwitchWorkstation }: AdminLayoutProps) {
         />
 
         <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 bg-slate-50/50">
-          {currentTab === 'dashboard' && <DashboardPage />}
-          {currentTab === 'doctors' && <DoctorsPage />}
+          {currentTab === 'dashboard' && (
+            <DashboardPage onNavigate={(tab) => setCurrentTab(tab as AdminTab)} />
+          )}
+          {currentTab === 'clinic-management' && (
+            <ClinicManagementPage onNavigate={(tab) => setCurrentTab(tab as AdminTab)} />
+          )}
+          {currentTab === 'branches' && (
+            <BranchesPage onNavigate={(tab) => setCurrentTab(tab as AdminTab)} />
+          )}
           {currentTab === 'departments' && <DepartmentsPage />}
-          {currentTab === 'appointments' && <AppointmentsPage />}
+          {currentTab === 'staff' && <StaffPage />}
+          {currentTab === 'doctors' && <DoctorsPage />}
           {currentTab === 'patients' && <PatientsPage />}
+          {currentTab === 'appointments' && <AppointmentsPage />}
           {currentTab === 'services' && <ServicesPage />}
+          {currentTab === 'medical-records' && <MedicalRecordsPage />}
           {currentTab === 'billing' && <BillingPage />}
           {currentTab === 'reports' && <ReportsPage />}
           {currentTab === 'settings' && <SettingsPage />}

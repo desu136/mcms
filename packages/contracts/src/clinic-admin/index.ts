@@ -28,6 +28,16 @@ export interface ClinicDashboardStatsDTO {
     thisWeek: number;
     lastWeek: number;
   }>;
+  recentPatients?: Array<{
+    id: string;
+    name: string;
+    pid: string;
+    phone: string;
+    department: string;
+    lastVisit: string;
+    status: string;
+    avatar: string;
+  }>;
 }
 
 // ─── Doctor Management ────────────────────────────────────────────────────────
