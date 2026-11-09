@@ -29,10 +29,10 @@ class _LabSamplesScreenState extends ConsumerState<LabSamplesScreen> {
     final filteredSamples = samples.where((s) {
       if (_searchQuery.trim().isNotEmpty) {
         final q = _searchQuery.toLowerCase();
-        return s.patientName.toLowerCase().includes(q) ||
-            s.sampleId.toLowerCase().includes(q) ||
-            s.barcode.toLowerCase().includes(q) ||
-            s.testName.toLowerCase().includes(q);
+        return s.patientName.toLowerCase().contains(q) ||
+            s.sampleId.toLowerCase().contains(q) ||
+            s.barcode.toLowerCase().contains(q) ||
+            s.testName.toLowerCase().contains(q);
       }
       return true;
     }).toList();

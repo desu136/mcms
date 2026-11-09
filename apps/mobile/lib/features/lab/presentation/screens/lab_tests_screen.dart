@@ -50,10 +50,10 @@ class _LabTestsScreenState extends ConsumerState<LabTestsScreen> {
       }
       if (_searchQuery.trim().isNotEmpty) {
         final q = _searchQuery.toLowerCase();
-        final match = order.patientName.toLowerCase().includes(q) ||
-            order.testName.toLowerCase().includes(q) ||
-            order.patientPid.toLowerCase().includes(q) ||
-            order.orderNumber.toLowerCase().includes(q);
+        final match = order.patientName.toLowerCase().contains(q) ||
+            order.testName.toLowerCase().contains(q) ||
+            order.patientPid.toLowerCase().contains(q) ||
+            order.orderNumber.toLowerCase().contains(q);
         if (!match) return false;
       }
       return true;
