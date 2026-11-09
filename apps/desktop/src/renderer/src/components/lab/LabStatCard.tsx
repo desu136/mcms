@@ -74,7 +74,7 @@ export function LabStatCard({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] sm:text-[11px] xl:text-xs font-bold text-slate-500 uppercase tracking-wider truncate leading-tight" title={title}>
+          <div className="text-[10px] sm:text-[11px] xl:text-xs font-bold text-slate-500 uppercase tracking-wider truncate leading-tight">
             {title}
           </div>
           <div className="text-xl sm:text-2xl xl:text-3xl font-black text-slate-900 tracking-tight leading-tight mt-1">
@@ -84,7 +84,7 @@ export function LabStatCard({
       </div>
 
       {change && deltaText && (
-        <div className="mt-2.5 flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold flex-nowrap truncate">
+        <div className="mt-2 flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold flex-nowrap truncate">
           {change.trend === 'up' && (
             <span className="inline-flex items-center gap-0.5 text-emerald-600 font-bold shrink-0">
               <TrendingUp className="w-3 h-3 stroke-[2.5]" />
@@ -97,8 +97,10 @@ export function LabStatCard({
               {deltaText}
             </span>
           )}
-          {(!change.trend || change.trend === 'neutral') && (
-            <span className="text-slate-500 font-bold shrink-0">{deltaText}</span>
+          {change.trend === 'neutral' && (
+            <span className="inline-flex items-center gap-0.5 text-purple-600 font-bold shrink-0">
+              {deltaText}
+            </span>
           )}
           {change.label && (
             <span className="text-slate-400 font-medium text-[9px] sm:text-[10px] xl:text-[11px] truncate">

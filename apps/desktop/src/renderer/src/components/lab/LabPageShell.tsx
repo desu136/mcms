@@ -1,63 +1,53 @@
 import React from 'react';
 
 export interface LabPageShellProps {
-  /** Optional top banner/header section (title, date badge, primary action buttons) */
-  banner?: React.ReactNode;
+  /** Top header section (page icon, title, subtitle, date selector, main action button) */
   header?: React.ReactNode;
-  /** Optional compact KPI stat cards row */
+  banner?: React.ReactNode;
+  /** 5 KPI stat cards row */
   kpis?: React.ReactNode;
-  /** Main column content (table, schedule, form, etc.) */
+  /** Main column content */
   children: React.ReactNode;
-  /** Optional right-side panel (test queue, quick actions, equipment telemetry, etc.) */
+  /** Optional right-side panel */
   rightPanel?: React.ReactNode;
-  /** Custom width for right panel (defaults to lg:w-[320px] xl:w-[360px]) */
   rightPanelWidth?: string;
-  /** Optional custom class for the main scroll container */
   mainClassName?: string;
-  /** Optional custom class for the right panel container */
   rightPanelClassName?: string;
-  /** Optional container max-width (defaults to max-w-[1750px]) */
   maxWidth?: string;
 }
 
 export function LabPageShell({
-  banner,
   header,
+  banner,
   kpis,
   children,
   rightPanel,
-  rightPanelWidth = 'lg:w-[320px] xl:w-[360px]',
+  rightPanelWidth = 'lg:w-[360px] xl:w-[390px] 2xl:w-[420px]',
   mainClassName = '',
   rightPanelClassName = '',
-  maxWidth = 'max-w-[1750px]',
+  maxWidth = 'max-w-[1920px]',
 }: LabPageShellProps) {
-  const topHeader = banner ?? header;
+  const topHeader = header ?? banner;
 
   return (
     <div
-      className={`h-full w-full ${maxWidth} mx-auto p-3 lg:p-4 flex flex-col min-h-0 min-w-0 overflow-hidden bg-[#F4F7FC]`}
+      className={`min-h-full w-full ${maxWidth} mx-auto p-3 sm:p-5 lg:p-6 flex flex-col gap-5 bg-[#F4F7FB]`}
     >
-      <div className="flex-1 min-h-0 min-w-0 flex flex-col lg:flex-row gap-3.5 max-lg:overflow-y-auto lg:overflow-hidden">
-        {/* Main Content Column */}
-        <div
-          className={`flex-1 min-h-0 min-w-0 flex flex-col lg:overflow-hidden ${mainClassName}`}
-        >
-          {/* Top Header Section */}
-          {topHeader && <div className="shrink-0 mb-3">{topHeader}</div>}
+      {/* Top Header Row spanning full width */}
+      {topHeader && <div className="shrink-0">{topHeader}</div>}
 
-          {/* Compact KPI Row */}
-          {kpis && <div className="shrink-0 mb-3">{kpis}</div>}
-
-          {/* Scrollable Children */}
-          <div className="flex-1 min-h-0 min-w-0 lg:overflow-y-auto lg:pr-1.5 space-y-3.5">
-            {children}
-          </div>
+      {/* Main Two-Column Layout */}
+      <div className="flex-1 min-h-0 min-w-0 flex flex-col lg:flex-row gap-5 items-start">
+        {/* Left Column (KPIs, Tabs, Search, Table, Bottom Widgets) */}
+        <div className={`flex-1 min-w-0 w-full space-y-4 ${mainClassName}`}>
+          {kpis && <div>{kpis}</div>}
+          {children}
         </div>
 
-        {/* Right-Side Panel */}
+        {/* Right Column (Selected Test Details, Patient Info, Test Info, Stepper, Actions) */}
         {rightPanel && (
           <aside
-            className={`w-full ${rightPanelWidth} shrink-0 min-h-0 lg:overflow-y-auto lg:pr-1 space-y-3.5 ${rightPanelClassName}`}
+            className={`w-full ${rightPanelWidth} shrink-0 space-y-4 ${rightPanelClassName}`}
           >
             {rightPanel}
           </aside>

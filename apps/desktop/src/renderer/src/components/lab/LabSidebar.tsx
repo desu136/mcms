@@ -5,15 +5,12 @@ import {
   TestTube2,
   CalendarCheck2,
   Users,
-  Package,
+  CalendarDays,
   FileBarChart2,
   MessageSquare,
-  User,
   Settings,
   ChevronLeft,
   ChevronRight,
-  LogOut,
-  Database,
   HeartPulse,
 } from 'lucide-react';
 import { CURRENT_LAB_TECH } from './labMockData';
@@ -42,21 +39,20 @@ export interface LabSidebarProps {
 
 const navItems: Array<{ id: LabTab; label: string; icon: React.ElementType; badge?: number }> = [
   { id: 'dashboard', label: 'Dashboard', icon: Home },
-  { id: 'tests', label: 'Lab Tests', icon: FlaskConical, badge: 6 },
-  { id: 'samples', label: 'Sample Management', icon: TestTube2, badge: 4 },
-  { id: 'results', label: 'Results Verification', icon: CalendarCheck2, badge: 8 },
+  { id: 'tests', label: 'Lab Tests', icon: FlaskConical },
+  { id: 'samples', label: 'Sample Management', icon: TestTube2 },
+  { id: 'results', label: 'Results', icon: CalendarCheck2 },
   { id: 'patients', label: 'Patient Lookup', icon: Users },
-  { id: 'inventory', label: 'Inventory & Reagents', icon: Package },
-  { id: 'reports', label: 'Reports & Analytics', icon: FileBarChart2 },
+  { id: 'inventory', label: 'Inventory', icon: CalendarDays },
+  { id: 'reports', label: 'Reports', icon: FileBarChart2 },
   { id: 'messages', label: 'Messages', icon: MessageSquare, badge: 3 },
-  { id: 'profile', label: 'My Profile', icon: User },
-  { id: 'settings', label: 'Settings & QC', icon: Settings },
+  { id: 'profile', label: 'Profile & Settings', icon: Settings },
 ];
 
 export function LabSidebar({
   currentTab,
   onSelectTab,
-  onLogout,
+  onLogout: _onLogout,
   isCollapsed,
   onToggleCollapse,
   pendingSyncOps = 0,
@@ -64,32 +60,31 @@ export function LabSidebar({
 }: LabSidebarProps) {
   return (
     <aside
-      className={`h-screen h-[100dvh] flex flex-col transition-all duration-300 ease-in-out shrink-0
-        bg-[#0D1527] text-white border-r border-slate-800/80 shadow-2xl select-none z-30
+      className={`fixed top-0 left-0 h-screen h-[100dvh] z-40 flex flex-col transition-all duration-300 ease-in-out
+        bg-[#0B132B] text-white border-r border-slate-800 shadow-2xl select-none
         ${isCollapsed ? 'w-20' : 'w-64'}`}
     >
       {/* Brand Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/80 shrink-0">
+      <div className="flex items-center justify-between px-5 py-5 border-b border-slate-800/80 shrink-0">
         <div
           onClick={() => onSelectTab('dashboard')}
-          className="flex items-center gap-2.5 overflow-hidden cursor-pointer"
+          className="flex items-center gap-3 overflow-hidden cursor-pointer"
         >
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 shrink-0">
-            <HeartPulse className="w-5 h-5 text-white stroke-[2.5]" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 shrink-0">
+            <HeartPulse className="w-6 h-6 text-white stroke-[2.2]" />
           </div>
           {!isCollapsed && (
             <div className="truncate">
-              <div className="font-extrabold text-sm tracking-tight leading-tight text-white flex items-center gap-1.5">
+              <div className="font-extrabold text-base tracking-tight leading-tight text-white flex items-center gap-1.5">
                 MCMS
               </div>
-              <div className="text-[10px] font-medium text-cyan-400 tracking-wider truncate">
-                Laboratory Station
+              <div className="text-[10px] font-medium text-slate-400 tracking-wider truncate">
+                Modern Clinic Management System
               </div>
             </div>
           )}
         </div>
 
-        {/* Collapse Toggle Button */}
         <button
           onClick={onToggleCollapse}
           className="flex w-6 h-6 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white items-center justify-center transition-colors cursor-pointer"
@@ -100,107 +95,85 @@ export function LabSidebar({
       </div>
 
       {/* Navigation Items */}
-      <nav className="flex-1 min-h-0 px-2 py-3 space-y-1 overflow-y-auto scrollbar-none">
+      <nav className="flex-1 min-h-0 px-3 py-4 space-y-1.5 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
         {navItems.map((item) => {
-          const isActive = currentTab === item.id;
+          const isActive =
+            currentTab === item.id ||
+            (item.id === 'profile' && currentTab === 'settings');
           const Icon = item.icon;
 
           return (
             <button
               key={item.id}
               onClick={() => onSelectTab(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-150 cursor-pointer text-left
-                ${
-                  isActive
-                    ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg shadow-blue-500/20'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                }`}
+              className={`w-full flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all group cursor-pointer text-left ${
+                isActive
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25 font-bold'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
               title={isCollapsed ? item.label : undefined}
             >
               <Icon
-                className={`w-4 h-4 shrink-0 transition-colors ${
-                  isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'
+                className={`w-5 h-5 shrink-0 transition-colors ${
+                  isActive ? 'text-white stroke-[2.2]' : 'text-slate-400 group-hover:text-blue-400 stroke-[1.8]'
                 }`}
               />
               {!isCollapsed && (
-                <div className="flex-1 flex items-center justify-between min-w-0">
-                  <span className="truncate">{item.label}</span>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
-                        isActive
-                          ? 'bg-white text-blue-700 shadow-2xs'
-                          : item.id === 'results'
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                          : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </div>
+                <span className="flex-1 truncate tracking-tight">{item.label}</span>
+              )}
+              {!isCollapsed && item.badge && (
+                <span className="px-2 py-0.5 text-[11px] font-extrabold rounded-full bg-rose-500 text-white shrink-0">
+                  {item.badge}
+                </span>
               )}
             </button>
           );
         })}
       </nav>
 
-      {/* Offline Sync & System Status Footer */}
-      <div className="p-3 border-t border-slate-800/80 shrink-0 space-y-2">
+      {/* Bottom Profile Widget */}
+      <div className="p-3 border-t border-slate-800/80 shrink-0">
         <div
-          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold ${
-            isOnline
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-              : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+          onClick={() => onSelectTab('profile')}
+          className={`flex items-center gap-3 p-2.5 rounded-xl bg-slate-800/70 border border-slate-700/60 shadow-inner hover:border-slate-600 transition-colors cursor-pointer ${
+            isCollapsed ? 'justify-center' : ''
           }`}
+          title={isCollapsed ? CURRENT_LAB_TECH.name : undefined}
         >
-          <span
-            className={`w-2 h-2 rounded-full shrink-0 ${
-              isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
-            }`}
-          />
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-500 flex items-center justify-center text-white shrink-0 shadow-md shadow-blue-500/20 ring-1 ring-white/10">
+            <FlaskConical className="w-4.5 h-4.5" />
+          </div>
           {!isCollapsed && (
-            <div className="flex-1 flex items-center justify-between min-w-0">
-              <span className="truncate">{isOnline ? 'Online (LAN & Cloud)' : 'Offline (Local Only)'}</span>
-              {pendingSyncOps > 0 && (
-                <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">
-                  {pendingSyncOps} sync
-                </span>
-              )}
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-extrabold text-white truncate tracking-tight">
+                {CURRENT_LAB_TECH.name}
+              </div>
+              <div className="text-[10px] text-slate-400 truncate font-medium">
+                {CURRENT_LAB_TECH.role}
+              </div>
+              <div className="flex items-center justify-between gap-1.5 mt-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isOnline ? 'bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse' : 'bg-amber-400'
+                    }`}
+                  />
+                  <span
+                    className={`text-[10px] font-bold ${
+                      isOnline ? 'text-emerald-400' : 'text-amber-400'
+                    }`}
+                  >
+                    {isOnline ? 'Online' : 'Offline'}
+                  </span>
+                </div>
+                {pendingSyncOps > 0 && (
+                  <span className="text-[9px] bg-slate-900/80 text-cyan-300 px-1 rounded font-semibold">
+                    {pendingSyncOps} sync
+                  </span>
+                )}
+              </div>
             </div>
           )}
-        </div>
-
-        {/* Profile Card & Logout */}
-        <div className="flex items-center justify-between pt-1">
-          <div
-            onClick={() => onSelectTab('profile')}
-            className="flex items-center gap-2 overflow-hidden cursor-pointer hover:opacity-90 transition-opacity flex-1 min-w-0"
-          >
-            <img
-              src={CURRENT_LAB_TECH.avatar}
-              alt={CURRENT_LAB_TECH.name}
-              className="w-7 h-7 rounded-full object-cover ring-1 ring-cyan-500/30 shrink-0"
-            />
-            {!isCollapsed && (
-              <div className="truncate">
-                <div className="text-xs font-bold text-slate-200 truncate">
-                  {CURRENT_LAB_TECH.name}
-                </div>
-                <div className="text-[10px] text-slate-400 truncate">
-                  {CURRENT_LAB_TECH.role}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <button
-            onClick={onLogout}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
-            title="Sign Out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
       </div>
     </aside>

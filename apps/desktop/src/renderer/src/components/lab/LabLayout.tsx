@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { LabSidebar, LabTab } from './LabSidebar';
 import { LabHeader } from './LabHeader';
 import { LabSearchModal } from './LabSearchModal';
@@ -27,8 +27,8 @@ export function LabLayout({ onSwitchWorkstation }: LabLayoutProps) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
-    <div className="h-screen h-[100dvh] w-full flex overflow-hidden bg-[#F4F7FC] text-slate-800 font-sans antialiased selection:bg-cyan-600 selection:text-white select-none">
-      {/* ── Fixed Dark Sidebar ── */}
+    <div className="h-screen h-[100dvh] w-full flex overflow-hidden bg-[#F4F7FC] text-slate-800 font-sans antialiased selection:bg-blue-600 selection:text-white">
+      {/* ── Fixed Dark Navy Sidebar (matching Web) ── */}
       <LabSidebar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
@@ -39,9 +39,13 @@ export function LabLayout({ onSwitchWorkstation }: LabLayoutProps) {
         isOnline={isOnline}
       />
 
-      {/* ── Main Workstation Shell: Header + Viewport Content ── */}
-      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
-        {/* Top Header */}
+      {/* ── Right-hand shell: header + viewport content ── */}
+      <div
+        className={`flex flex-col flex-1 min-w-0 min-h-0 transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'ml-20' : 'ml-64'
+        }`}
+      >
+        {/* Top Header — sticky, fixed height */}
         <LabHeader
           onOpenSearch={() => setSearchOpen(true)}
           onNavigateTab={(tab) => setCurrentTab(tab as LabTab)}
@@ -55,8 +59,8 @@ export function LabLayout({ onSwitchWorkstation }: LabLayoutProps) {
           onSwitchWorkstation={onSwitchWorkstation}
         />
 
-        {/* Dynamic Page Viewport with Independent Scrolling */}
-        <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+        {/* Viewport content shell with smooth vertical scrolling */}
+        <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto">
           {currentTab === 'dashboard' && (
             <DashboardPage
               onNavigateTab={(t) => setCurrentTab(t as LabTab)}
@@ -77,7 +81,7 @@ export function LabLayout({ onSwitchWorkstation }: LabLayoutProps) {
         </main>
       </div>
 
-      {/* Global Quick Search Modal (Ctrl + K) */}
+      {/* Global Quick Search (Ctrl + K) */}
       <LabSearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
