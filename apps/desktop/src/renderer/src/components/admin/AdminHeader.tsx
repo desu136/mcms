@@ -18,8 +18,8 @@ export interface AdminHeaderProps {
   onOpenSearch?: () => void;
   onNavigateTab?: (tab: string) => void;
   onLogout?: () => void;
-  currentWorkstation?: 'admin' | 'doctor' | 'nurse' | 'receptionist';
-  onSwitchWorkstation?: ((w: 'admin' | 'doctor' | 'nurse' | 'receptionist') => void) | undefined;
+  currentWorkstation?: 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab';
+  onSwitchWorkstation?: ((w: 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab') => void) | undefined;
 }
 
 export function AdminHeader({
@@ -159,6 +159,18 @@ export function AdminHeader({
                 }`}
               >
                 Reception
+              </button>
+            )}
+            {allowed.includes('lab') && (
+              <button
+                onClick={() => onSwitchWorkstation('lab')}
+                className={`px-2 py-1 rounded-lg transition-all ${
+                  currentWorkstation === 'lab'
+                    ? 'bg-cyan-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 cursor-pointer'
+                }`}
+              >
+                Lab
               </button>
             )}
           </div>

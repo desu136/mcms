@@ -6,6 +6,7 @@ import '../../../../core/storage/sqlite_database.dart';
 import '../../../doctor/presentation/screens/doctor_dashboard_screen.dart';
 import '../../../receptionist/presentation/screens/receptionist_dashboard_screen.dart';
 import '../../../nurse/presentation/screens/nurse_dashboard_screen.dart';
+import '../../../lab/presentation/screens/lab_dashboard_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   final MobileDatabaseService? dbService;
@@ -97,6 +98,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       Navigator.of(context).pushAndRemoveUntil<void>(
         MaterialPageRoute<void>(
           builder: (_) => ReceptionistDashboardScreen(
+            dbService: widget.dbService ?? MobileDatabaseService(),
+          ),
+        ),
+        (route) => false,
+      );
+    } else if (role == 'LAB_TECHNICIAN' || role == 'LAB') {
+      Navigator.of(context).pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => LabDashboardScreen(
             dbService: widget.dbService ?? MobileDatabaseService(),
           ),
         ),
@@ -437,6 +447,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 color: Color(0xFF34D399),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Quick access to Lab Technician Dashboard
+                        SizedBox(
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            onPressed: _isLoading
+                                ? null
+                                : () => _handleQuickLogin(
+                                      'lab@mcms.local',
+                                      'Lab@123456',
+                                    ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF06B6D4), width: 1.5),
+                              backgroundColor: const Color(0xFF06B6D4).withValues(alpha: 0.1),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(Icons.science_outlined,
+                                color: Color(0xFF22D3EE), size: 19),
+                            label: const Text(
+                              'Lab Technician (Dawit Tadesse)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF22D3EE),
                               ),
                             ),
                           ),

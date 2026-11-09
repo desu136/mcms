@@ -6,10 +6,11 @@ import { DoctorLayout } from './components/doctor/DoctorLayout';
 import { ReceptionistLayout } from './components/receptionist/ReceptionistLayout';
 import { NurseLayout } from './components/nurse/NurseLayout';
 import { AdminLayout } from './components/admin/AdminLayout';
+import { LabLayout } from './components/lab/LabLayout';
 
 import type { AuthUser } from './auth/AuthContext';
 
-export type Workstation = 'admin' | 'doctor' | 'nurse' | 'receptionist';
+export type Workstation = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab';
 
 /** Derive the default workstation from a user object. Checks both the primary
  *  `role` field and the `roles[]` array so we handle both correctly. */
@@ -17,8 +18,11 @@ export function userToWorkstation(user: AuthUser | null | undefined): Workstatio
   if (!user) return 'receptionist';
   const primary = (user.role ?? '').toUpperCase();
   const all = (user.roles ?? []).map((r) => r.toUpperCase());
+  const email = (user.email ?? '').toLowerCase();
+
   const isAdmin = primary.includes('ADMIN') || all.some((r) => r.includes('ADMIN'));
   if (isAdmin) return 'admin';
+  if (primary.includes('LAB') || all.some((r) => r.includes('LAB')) || email.includes('lab')) return 'lab';
   if (primary === 'DOCTOR' || all.includes('DOCTOR')) return 'doctor';
   if (primary === 'NURSE' || all.includes('NURSE')) return 'nurse';
   return 'receptionist';
@@ -43,6 +47,9 @@ export function getAllowedWorkstations(user: AuthUser | null | undefined): Works
   }
   if (roleSet.has('RECEPTIONIST')) {
     allowed.push('receptionist');
+  }
+  if (Array.from(roleSet).some((r) => r.includes('LAB')) || (user.email ?? '').toLowerCase().includes('lab')) {
+    allowed.push('lab');
   }
   if (allowed.length === 0) {
     allowed.push(userToWorkstation(user));
@@ -135,6 +142,9 @@ function AppRouter() {
   if (activeWorkstation === 'nurse' && allowedWorkstations.includes('nurse')) {
     return <NurseLayout {...switchProps} />;
   }
+  if (activeWorkstation === 'lab' && allowedWorkstations.includes('lab')) {
+    return <LabLayout {...switchProps} />;
+  }
   if (activeWorkstation === 'receptionist' && allowedWorkstations.includes('receptionist')) {
     return <ReceptionistLayout {...switchProps} />;
   }
@@ -144,6 +154,7 @@ function AppRouter() {
   if (fallback === 'doctor') return <DoctorLayout {...switchProps} />;
   if (fallback === 'nurse') return <NurseLayout {...switchProps} />;
   if (fallback === 'admin') return <AdminLayout {...switchProps} />;
+  if (fallback === 'lab') return <LabLayout {...switchProps} />;
   return <ReceptionistLayout {...switchProps} />;
 }
 
