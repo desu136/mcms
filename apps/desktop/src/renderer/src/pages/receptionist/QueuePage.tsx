@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Clock,
   Search,
@@ -12,6 +12,8 @@ import {
   Stethoscope,
   Database,
   ArrowRight,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import ReceptionistBanner from '../../components/receptionist/ReceptionistBanner';
@@ -24,7 +26,10 @@ import {
   QUEUE_SUMMARY_DONUT,
 } from '../../components/receptionist/receptionistMockData';
 import { useSync } from '../../context/SyncContext';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchQueue, updateQueueEntry } from '../../api';
 import { ReceptionistTab } from '../../components/receptionist/ReceptionistSidebar';
+import type { QueueEntryDTO } from '@mcms/contracts';
 
 interface QueuePageProps {
   onNavigateTab: (tab: ReceptionistTab) => void;
@@ -32,45 +37,122 @@ interface QueuePageProps {
 
 export function QueuePage({ onNavigateTab }: QueuePageProps) {
   const { enqueueOperation } = useSync();
+  const { accessToken } = useAuth();
+
   const [filterTab, setFilterTab] = useState<'All' | 'Waiting' | 'In Consultation' | 'Completed'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [patients, setPatients] = useState<QueuePatient[]>(QUEUE_PATIENTS_LIST);
+  const [rawQueueEntries, setRawQueueEntries] = useState<QueueEntryDTO[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [checkInModalOpen, setCheckInModalOpen] = useState(false);
   const [calledQueueNo, setCalledQueueNo] = useState<string | null>(null);
 
-  const filtered = patients.filter((p) => {
-    const matchesFilter = filterTab === 'All' || p.status === filterTab;
-    const matchesSearch =
-      p.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.queueNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.pid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.doctor.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesFilter && matchesSearch;
-  });
+  const loadQueue = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await fetchQueue(accessToken);
+      if (data && data.length > 0) {
+        setRawQueueEntries(data);
+        const mapped: QueuePatient[] = data.map((dto) => {
+          let status: 'Waiting' | 'In Consultation' | 'Completed' = 'Waiting';
+          const s = (dto.status || '').toUpperCase();
+          if (s === 'IN_PROGRESS' || s === 'IN_CONSULTATION' || s === 'CALLED') {
+            status = 'In Consultation';
+          } else if (s === 'COMPLETED') {
+            status = 'Completed';
+          }
 
-  const handlePatientCheckedIn = (newEntry: any) => {
-    setPatients((prev: any) => [
-      {
-        queueNo: newEntry.queueNo,
-        patientName: newEntry.patientName,
-        pid: newEntry.pid,
-        avatar: '',
-        age: 30,
-        gender: 'F',
-        doctor: newEntry.doctor,
-        department: newEntry.department,
-        checkInTime: newEntry.checkInTime,
-        waitingTime: '0 min',
-        status: 'Waiting',
-        visitType: newEntry.priority || 'Walk-in',
-      },
-      ...prev,
-    ]);
+          let waitingTime = '5 min';
+          if (dto.checkInTime) {
+            const mins = Math.max(0, Math.floor((Date.now() - new Date(dto.checkInTime).getTime()) / 60000));
+            waitingTime = mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+          }
+
+          return {
+            queueNo: dto.ticketNumber,
+            patientName: dto.patientName,
+            pid: dto.patientPid,
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(dto.patientName)}`,
+            age: 30,
+            gender: 'F',
+            doctor: (dto as any).assignedDoctorName || (dto.assignedDoctorId ? 'Assigned Doctor' : 'Dr. Tadesse'),
+            department: (dto as any).departmentName || (dto.departmentId ? 'OPD Department' : 'General OPD'),
+            checkInTime: dto.checkInTime
+              ? new Date(dto.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : 'Today',
+            waitingTime,
+            status,
+            visitType: dto.priority || 'Standard',
+          };
+        });
+        setPatients(mapped);
+      }
+    } catch (err) {
+      console.warn('Failed to load live queue, falling back to mock:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadQueue();
+  }, [loadQueue]);
+
+  const filtered = useMemo(() => {
+    return patients.filter((p) => {
+      const matchesFilter = filterTab === 'All' || p.status === filterTab;
+      const matchesSearch =
+        p.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.queueNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.pid.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.doctor.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesFilter && matchesSearch;
+    });
+  }, [patients, filterTab, searchQuery]);
+
+  // Dynamic breakdown
+  const waitingCount = patients.filter((p) => p.status === 'Waiting').length;
+  const inConsultCount = patients.filter((p) => p.status === 'In Consultation').length;
+  const completedCount = patients.filter((p) => p.status === 'Completed').length;
+
+  const donutData = useMemo(() => [
+    { name: 'Waiting', value: waitingCount, color: '#f59e0b' },
+    { name: 'In Consultation', value: inConsultCount, color: '#2563eb' },
+    { name: 'Completed', value: completedCount, color: '#10b981' },
+  ], [waitingCount, inConsultCount, completedCount]);
+
+  const handlePatientCheckedIn = (_newEntry: any) => {
+    void loadQueue();
   };
 
-  const handleCallPatient = (queueNo: string) => {
+  const handleCallPatient = async (queueNo: string) => {
     setCalledQueueNo(queueNo);
+    const target = rawQueueEntries.find((r) => r.ticketNumber === queueNo);
+    if (target && target.id) {
+      try {
+        await updateQueueEntry(target.id, { status: 'IN_PROGRESS' }, accessToken);
+      } catch (err) {
+        console.warn('Failed to update live queue entry status:', err);
+      }
+    }
+    setPatients((prev) =>
+      prev.map((p) => (p.queueNo === queueNo ? { ...p, status: 'In Consultation' as const } : p)),
+    );
     setTimeout(() => setCalledQueueNo(null), 3000);
+  };
+
+  const handleCompletePatient = async (queueNo: string) => {
+    const target = rawQueueEntries.find((r) => r.ticketNumber === queueNo);
+    if (target && target.id) {
+      try {
+        await updateQueueEntry(target.id, { status: 'COMPLETED' }, accessToken);
+      } catch (err) {
+        console.warn('Failed to complete queue entry in API:', err);
+      }
+    }
+    setPatients((prev) =>
+      prev.map((p) => (p.queueNo === queueNo ? { ...p, status: 'Completed' as const } : p)),
+    );
   };
 
   return (
@@ -82,14 +164,26 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
             subtitle="Monitor waiting times, doctor assignments, and patient flow with offline SQLite queue tokens."
             icon={Clock}
             actionElement={
-              <button
-                type="button"
-                onClick={() => setCheckInModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
-              >
-                <UserCheck className="w-3.5 h-3.5" />
-                <span>Issue Check-In Token</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void loadQueue()}
+                  disabled={isLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  title="Refresh Queue"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isLoading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCheckInModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Issue Check-In Token</span>
+                </button>
+              </div>
             }
           />
         }
@@ -97,18 +191,23 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
           <div className="bg-white rounded-xl p-2.5 border border-slate-200/80 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             {/* Filter Tabs */}
             <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-              {(['All', 'Waiting', 'In Consultation', 'Completed'] as const).map((tab) => (
+              {[
+                { key: 'All', label: 'All', count: patients.length },
+                { key: 'Waiting', label: 'Waiting', count: waitingCount },
+                { key: 'In Consultation', label: 'In Consultation', count: inConsultCount },
+                { key: 'Completed', label: 'Completed', count: completedCount },
+              ].map((tab) => (
                 <button
-                  key={tab}
+                  key={tab.key}
                   type="button"
-                  onClick={() => setFilterTab(tab)}
+                  onClick={() => setFilterTab(tab.key as any)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    filterTab === tab
+                    filterTab === tab.key
                       ? 'bg-blue-600 text-white shadow-2xs'
                       : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
-                  {tab}
+                  {tab.label} ({tab.count})
                 </button>
               ))}
             </div>
@@ -138,14 +237,14 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={QUEUE_SUMMARY_DONUT}
+                      data={donutData}
                       innerRadius={45}
                       outerRadius={62}
                       paddingAngle={3}
                       dataKey="value"
                       isAnimationActive={false}
                     >
-                      {QUEUE_SUMMARY_DONUT.map((entry, index) => (
+                      {donutData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -160,7 +259,7 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
                 </div>
               </div>
               <div className="space-y-1.5 pt-1">
-                {QUEUE_SUMMARY_DONUT.map((item) => (
+                {donutData.map((item) => (
                   <div key={item.name} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
@@ -240,13 +339,31 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
                       </span>
                     </td>
                     <td className="py-2.5 text-right">
-                      <button
-                        onClick={() => handleCallPatient(item.queueNo)}
-                        type="button"
-                        className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 font-bold text-[11px] transition-colors cursor-pointer"
-                      >
-                        Call
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {item.status === 'Waiting' && (
+                          <button
+                            onClick={() => handleCallPatient(item.queueNo)}
+                            type="button"
+                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 font-bold text-[11px] transition-colors cursor-pointer"
+                          >
+                            Call
+                          </button>
+                        )}
+                        {item.status === 'In Consultation' && (
+                          <button
+                            onClick={() => handleCompletePatient(item.queueNo)}
+                            type="button"
+                            className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-bold text-[11px] transition-colors cursor-pointer"
+                          >
+                            Done
+                          </button>
+                        )}
+                        {item.status === 'Completed' && (
+                          <span className="text-[11px] font-bold text-emerald-600 px-2">
+                            Finished
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   CalendarDays,
   Users,
@@ -12,6 +12,8 @@ import {
   Heart,
   Stethoscope,
   Zap,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   LineChart,
@@ -34,13 +36,18 @@ import { DoctorPrescriptionModal } from '../../components/doctor/DoctorPrescript
 import { DoctorLabOrderModal } from '../../components/doctor/DoctorLabOrderModal';
 import { DoctorPageShell } from '../../components/doctor/DoctorPageShell';
 import { DoctorStatCard } from '../../components/doctor/DoctorStatCard';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchPatients } from '../../api/patients';
+import { fetchAppointments } from '../../api/appointments';
+import { fetchPrescriptions, fetchLabOrders } from '../../api/clinical';
+import type { PatientDTO, AppointmentDTO, PrescriptionDTO, LabOrderDTO } from '@mcms/contracts';
 
 export interface DashboardPageProps {
   onNavigateTab?: (tab: string) => void;
 }
 
 export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
-  const currentPatient = INITIAL_PATIENTS[0]!;
+  const { accessToken, user } = useAuth();
   const [selectedPatient, setSelectedPatient] = useState<PatientItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
@@ -48,10 +55,68 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
   const [chartTimeframe, setChartTimeframe] = useState('This Week');
   const [calendarSelectedDay, setCalendarSelectedDay] = useState(19);
 
+  // Live state
+  const [loading, setLoading] = useState(true);
+  const [livePatients, setLivePatients] = useState<PatientDTO[]>([]);
+  const [liveAppointments, setLiveAppointments] = useState<AppointmentDTO[]>([]);
+  const [livePrescriptions, setLivePrescriptions] = useState<PrescriptionDTO[]>([]);
+  const [liveLabOrders, setLiveLabOrders] = useState<LabOrderDTO[]>([]);
+
+  const loadDashboardData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [patientsRes, apptsRes, rxRes, labsRes] = await Promise.allSettled([
+        fetchPatients(accessToken, { limit: 10 }),
+        fetchAppointments(accessToken),
+        fetchPrescriptions(accessToken),
+        fetchLabOrders(accessToken),
+      ]);
+
+      if (patientsRes.status === 'fulfilled' && patientsRes.value?.data) {
+        setLivePatients(patientsRes.value.data);
+      }
+      if (apptsRes.status === 'fulfilled' && Array.isArray(apptsRes.value)) {
+        setLiveAppointments(apptsRes.value);
+      }
+      if (rxRes.status === 'fulfilled' && Array.isArray(rxRes.value)) {
+        setLivePrescriptions(rxRes.value);
+      }
+      if (labsRes.status === 'fulfilled' && Array.isArray(labsRes.value)) {
+        setLiveLabOrders(labsRes.value);
+      }
+    } catch {
+      // Keep fallbacks
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadDashboardData();
+  }, [loadDashboardData]);
+
   const handleOpenPatient = (p: PatientItem) => {
     setSelectedPatient(p);
     setDrawerOpen(true);
   };
+
+  // KPIs calculation
+  const totalAppointmentsCount = liveAppointments.length > 0 ? liveAppointments.length : 9;
+  const completedAppointmentsCount =
+    liveAppointments.length > 0
+      ? liveAppointments.filter((a) => a.status.toUpperCase() === 'COMPLETED').length
+      : 7;
+  const pendingRxCount =
+    livePrescriptions.length > 0
+      ? livePrescriptions.filter((p) => p.status.toUpperCase() === 'ACTIVE').length
+      : 4;
+  const pendingLabCount =
+    liveLabOrders.length > 0
+      ? liveLabOrders.filter((l) => l.status.toUpperCase() !== 'COMPLETED').length
+      : 6;
+
+  // Active current patient
+  const currentPatient = INITIAL_PATIENTS[0]!;
 
   const headerContent = (
     <div className="flex items-center justify-between gap-3">
@@ -61,20 +126,34 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         </div>
         <div>
           <h1 className="text-lg font-black text-slate-800 tracking-tight leading-tight">
-            Welcome Back, {CURRENT_DOCTOR.name}
+            Welcome Back, {user?.displayName || CURRENT_DOCTOR.name}
           </h1>
           <p className="text-[11px] text-slate-500 font-medium leading-tight">
-            Here&apos;s what&apos;s happening today.
+            Here&apos;s your live clinical workstation status.
           </p>
         </div>
       </div>
 
-      {/* Date Card */}
-      <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white border border-slate-200/80 shadow-2xs shrink-0">
-        <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-        <div className="text-right">
-          <div className="text-[11px] font-bold text-slate-800 tracking-tight">Oct 19, 2026</div>
-          <div className="text-[10px] text-slate-400 font-medium leading-none">Monday</div>
+      {/* Date & Refresh */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => void loadDashboardData()}
+          disabled={loading}
+          className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors disabled:opacity-50 cursor-pointer"
+          title="Refresh Dashboard"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+        <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white border border-slate-200/80 shadow-2xs shrink-0">
+          <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+          <div className="text-right">
+            <div className="text-[11px] font-bold text-slate-800 tracking-tight">
+              {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </div>
+            <div className="text-[10px] text-slate-400 font-medium leading-none">
+              {new Date().toLocaleDateString('en-US', { weekday: 'long' })}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -84,38 +163,38 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
     <div className="kpi-grid">
       <DoctorStatCard
         title="Today's Appointments"
-        value={9}
+        value={loading ? '—' : totalAppointmentsCount}
         icon={Users}
         color="blue"
-        change={{ value: '+2', trend: 'up', label: 'vs. yesterday' }}
+        change={{ value: '', trend: 'up', label: 'scheduled' }}
       />
       <DoctorStatCard
         title="Patients Seen Today"
-        value={7}
+        value={loading ? '—' : completedAppointmentsCount}
         icon={CheckCircle2}
         color="emerald"
-        change={{ value: '+3', trend: 'up', label: 'vs. yesterday' }}
+        change={{ value: '', trend: 'up', label: 'completed' }}
       />
       <DoctorStatCard
         title="Pending Prescriptions"
-        value={4}
+        value={loading ? '—' : pendingRxCount}
         icon={Pill}
         color="purple"
-        change={{ value: '-2', trend: 'down', label: 'vs. yesterday' }}
+        change={{ value: '', trend: 'down', label: 'active Rx' }}
       />
       <DoctorStatCard
         title="Lab Results Pending"
-        value={6}
+        value={loading ? '—' : pendingLabCount}
         icon={FlaskConical}
         color="orange"
-        change={{ value: '+1', trend: 'up', label: 'vs. yesterday' }}
+        change={{ value: '', trend: 'up', label: 'requisitions' }}
       />
     </div>
   );
 
   const rightPanelContent = (
     <>
-      {/* Quick Actions Card with vibrant blue header */}
+      {/* Quick Actions Card */}
       <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
         <div className="bg-blue-600 px-3 py-2 flex items-center gap-2 text-white">
           <Zap className="w-3.5 h-3.5 text-white" />
@@ -225,13 +304,21 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
           </button>
         </div>
         <div className="mt-1.5 space-y-1.5">
-          {[
-            { time: '11:00 AM', name: 'Lidya Kebede', reason: 'Follow-up Visit', status: 'Upcoming' },
-            { time: '01:00 PM', name: 'Samuel Girma', reason: 'Consultation', status: 'Upcoming' },
-            { time: '02:00 PM', name: 'Betlehem Abebe', reason: 'Consultation', status: 'Upcoming' },
-            { time: '03:00 PM', name: 'Daniel Wondimu', reason: 'Follow-up Visit', status: 'Upcoming' },
-          ].map(({ time, name, reason, status }) => (
-            <div key={name} className="flex items-center justify-between gap-2">
+          {(liveAppointments.length > 0
+            ? liveAppointments.slice(0, 4).map((a) => ({
+                time: a.startTime,
+                name: a.patientName,
+                reason: a.reason || a.type || 'Consultation',
+                status: a.status,
+              }))
+            : [
+                { time: '11:00 AM', name: 'Lidya Kebede', reason: 'Follow-up Visit', status: 'Upcoming' },
+                { time: '01:00 PM', name: 'Samuel Girma', reason: 'Consultation', status: 'Upcoming' },
+                { time: '02:00 PM', name: 'Betlehem Abebe', reason: 'Consultation', status: 'Upcoming' },
+                { time: '03:00 PM', name: 'Daniel Wondimu', reason: 'Follow-up Visit', status: 'Upcoming' },
+              ]
+          ).map(({ time, name, reason, status }) => (
+            <div key={name + time} className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="text-[10px] font-bold text-slate-500 w-12 shrink-0">{time}</div>
                 <div className="min-w-0">
@@ -326,7 +413,18 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
               </div>
 
               <div className="divide-y divide-slate-100">
-                {TODAY_SCHEDULE.map((item) => (
+                {(liveAppointments.length > 0
+                  ? liveAppointments.map((item) => ({
+                      id: item.id,
+                      time: item.startTime,
+                      patientName: item.patientName,
+                      reason: item.reason || item.type || 'Consultation',
+                      department: item.branchName || 'General OPD',
+                      status: item.status,
+                      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(item.patientName)}&size=80&background=dbeafe&color=1e40af`,
+                    }))
+                  : TODAY_SCHEDULE
+                ).map((item) => (
                   <div
                     key={item.id}
                     onClick={() => {
@@ -358,9 +456,9 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                       </span>
                       <span
                         className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                          item.status === 'Completed'
+                          item.status.toUpperCase() === 'COMPLETED'
                             ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                            : item.status === 'In Progress'
+                            : item.status.toUpperCase() === 'IN_PROGRESS' || item.status.toUpperCase() === 'CHECKED_IN'
                             ? 'bg-blue-50 text-blue-600 border border-blue-100'
                             : 'bg-cyan-50 text-cyan-600 border border-cyan-100'
                         }`}
@@ -507,10 +605,25 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
-                    {INITIAL_PATIENTS.slice(0, 5).map((patient) => (
+                    {(livePatients.length > 0
+                      ? livePatients.slice(0, 5).map((p) => ({
+                          id: p.id,
+                          name: p.fullName || `${p.firstName} ${p.lastName}`,
+                          pid: p.pid,
+                          age: 35,
+                          gender: p.gender || 'F',
+                          lastVisitReason: 'OPD Visit',
+                          lastVisit: new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName || p.firstName)}&size=80&background=dbeafe&color=1e40af`,
+                        }))
+                      : INITIAL_PATIENTS.slice(0, 5)
+                    ).map((patient) => (
                       <tr
                         key={patient.id}
-                        onClick={() => handleOpenPatient(patient)}
+                        onClick={() => {
+                          const match = INITIAL_PATIENTS.find((p) => p.name === patient.name);
+                          if (match) handleOpenPatient(match);
+                        }}
                         className="hover:bg-slate-50/80 cursor-pointer transition-colors"
                       >
                         <td className="py-2 px-3.5">
@@ -555,11 +668,13 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         isOpen={prescriptionModalOpen}
         onClose={() => setPrescriptionModalOpen(false)}
         defaultPatientId="p-1"
+        onSuccess={() => void loadDashboardData()}
       />
       <DoctorLabOrderModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
         defaultPatientId="p-1"
+        onSuccess={() => void loadDashboardData()}
       />
     </>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Users,
   Clock,
@@ -18,6 +18,7 @@ import {
   HeartPulse,
   Database,
   RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -43,21 +44,192 @@ import {
   PATIENT_TYPES_DONUT,
   RECENT_REGISTRATIONS_DATA,
   CURRENT_QUEUE_ITEMS,
-  TODAY_STATS_MINI,
-  RECENT_BILLS_DATA,
-  TODAY_MESSAGES_DATA,
 } from '../../components/receptionist/receptionistMockData';
 import { useSync } from '../../context/SyncContext';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchQueue, fetchAppointments, fetchPatients } from '../../api';
 import { ReceptionistTab } from '../../components/receptionist/ReceptionistSidebar';
+import type { QueueEntryDTO, AppointmentDTO } from '@mcms/contracts';
 
 interface DashboardPageProps {
   onNavigateTab: (tab: ReceptionistTab) => void;
 }
 
+interface DashboardAppointmentItem {
+  id: string;
+  time: string;
+  patientName: string;
+  doctor: string;
+  status: string;
+}
+
+interface DashboardQueueItem {
+  queueNumber: string;
+  patientName: string;
+  type: string;
+  status: string;
+}
+
 export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
   const { syncStatus, isOnline, triggerSync, isSyncing } = useSync();
+  const { accessToken } = useAuth();
+
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
   const [checkInModalOpen, setCheckInModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Live state
+  const [todayAppointments, setTodayAppointments] = useState<DashboardAppointmentItem[]>(
+    TODAY_DASHBOARD_APPOINTMENTS.map((a) => ({
+      id: a.id,
+      time: a.time,
+      patientName: a.patientName,
+      doctor: a.doctor,
+      status: a.status,
+    })),
+  );
+
+  const [liveQueueItems, setLiveQueueItems] = useState<DashboardQueueItem[]>(
+    CURRENT_QUEUE_ITEMS.map((q) => ({
+      queueNumber: q.queueNumber,
+      patientName: q.patientName,
+      type: q.type,
+      status: q.status,
+    })),
+  );
+
+  const [totalPatientsCount, setTotalPatientsCount] = useState<number>(248);
+  const [waitingCount, setWaitingCount] = useState<number>(8);
+  const [inConsultationCount, setInConsultationCount] = useState<number>(3);
+  const [todayAptCount, setTodayAptCount] = useState<number>(35);
+
+  const loadDashboardData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [queueRes, aptRes, patientsRes] = await Promise.allSettled([
+        fetchQueue(accessToken),
+        fetchAppointments(accessToken),
+        fetchPatients(accessToken, { page: 1, limit: 10 }),
+      ]);
+
+      // 1. Process Queue Data
+      if (queueRes.status === 'fulfilled' && queueRes.value && queueRes.value.length > 0) {
+        const qEntries: QueueEntryDTO[] = queueRes.value;
+        const waiting = qEntries.filter((q) => {
+          const s = (q.status || '').toUpperCase();
+          return s === 'WAITING' || s === 'PENDING' || s === '';
+        }).length;
+        const inConsult = qEntries.filter((q) => {
+          const s = (q.status || '').toUpperCase();
+          return s === 'IN_PROGRESS' || s === 'CALLED' || s === 'IN_CONSULTATION';
+        }).length;
+
+        setWaitingCount(waiting);
+        setInConsultationCount(inConsult);
+
+        const mappedQueue: DashboardQueueItem[] = qEntries.slice(0, 5).map((q) => {
+          let statusText = 'Waiting';
+          const s = (q.status || '').toUpperCase();
+          if (s === 'IN_PROGRESS' || s === 'CALLED') statusText = 'In Consultation';
+          else if (s === 'COMPLETED') statusText = 'Completed';
+
+          return {
+            queueNumber: q.ticketNumber || `Q-${q.id.slice(0, 4)}`,
+            patientName: q.patientName || 'Patient',
+            type: q.priority || 'Standard',
+            status: statusText,
+          };
+        });
+        setLiveQueueItems(mappedQueue);
+      }
+
+      // 2. Process Appointments Data
+      if (aptRes.status === 'fulfilled' && aptRes.value && aptRes.value.length > 0) {
+        const apts: AppointmentDTO[] = aptRes.value;
+        setTodayAptCount(apts.length);
+        const mappedApts: DashboardAppointmentItem[] = apts.slice(0, 5).map((a) => {
+          let status = 'Scheduled';
+          const s = (a.status || '').toUpperCase();
+          if (s === 'CONFIRMED') status = 'Confirmed';
+          else if (s === 'CHECKED_IN') status = 'Checked In';
+          else if (s === 'COMPLETED') status = 'Completed';
+
+          return {
+            id: a.id,
+            time: a.startTime || '09:00',
+            patientName: a.patientName || 'Patient',
+            doctor: a.doctorName || 'Assigned Doctor',
+            status,
+          };
+        });
+        setTodayAppointments(mappedApts);
+      }
+
+      // 3. Process Patients Directory Count
+      if (patientsRes.status === 'fulfilled' && patientsRes.value) {
+        setTotalPatientsCount(patientsRes.value.total || patientsRes.value.data?.length || 248);
+      }
+    } catch (err) {
+      console.warn('Dashboard data fetch fallback:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  // Dynamic KPIs
+  const liveKPIs = useMemo(() => {
+    return [
+      {
+        title: 'Patients Waiting',
+        value: String(waitingCount),
+        change: `${inConsultationCount} in consultation`,
+        trend: 'up' as const,
+        trendLabel: 'live triage queue',
+        iconName: 'clock' as const,
+        color: 'amber' as const,
+      },
+      {
+        title: "Today's Appointments",
+        value: String(todayAptCount),
+        change: 'Scheduled today',
+        trend: 'up' as const,
+        trendLabel: 'across 4 depts',
+        iconName: 'calendar' as const,
+        color: 'blue' as const,
+      },
+      {
+        title: 'Active Patients',
+        value: String(totalPatientsCount),
+        change: '+12% this month',
+        trend: 'up' as const,
+        trendLabel: 'registered dossiers',
+        iconName: 'users' as const,
+        color: 'cyan' as const,
+      },
+      {
+        title: 'Offline Queue',
+        value: String(syncStatus.pendingOperations),
+        suffix: ' ops',
+        change: isOnline ? 'Online Synced' : 'SQLite Local',
+        trendLabel: 'sync engine',
+        iconName: 'clock' as const,
+        color: 'emerald' as const,
+      },
+      {
+        title: 'Consultations Done',
+        value: '28',
+        change: '+6 from morning',
+        trend: 'up' as const,
+        trendLabel: 'target: 35',
+        iconName: 'check-circle' as const,
+        color: 'purple' as const,
+      },
+    ];
+  }, [waitingCount, inConsultationCount, todayAptCount, totalPatientsCount, syncStatus, isOnline]);
 
   return (
     <>
@@ -69,6 +241,17 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
             icon={Users}
             actionElement={
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadDashboardData}
+                  disabled={isLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-xs transition-colors cursor-pointer disabled:opacity-50"
+                  title="Refresh Dashboard"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-600 text-white shadow-xs">
                   <Clock className="w-3.5 h-3.5 text-blue-200" />
                   <div className="text-left">
@@ -93,12 +276,11 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         }
         kpis={
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-2.5">
-            {DASHBOARD_KPIS.map((kpi, idx) => (
+            {liveKPIs.map((kpi, idx) => (
               <ReceptionistStatCard
                 key={idx}
                 title={kpi.title}
                 value={kpi.value}
-                prefix={kpi.prefix}
                 suffix={kpi.suffix}
                 change={kpi.change}
                 trend={kpi.trend}
@@ -111,7 +293,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         }
       >
         {/* Quick Action Station */}
-        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 rounded-xl sm:rounded-2xl p-3.5 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="bg-linear-to-r from-blue-700 via-indigo-700 to-blue-800 rounded-xl sm:rounded-2xl p-3.5 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
               <Database className="w-5 h-5 text-blue-200" />
@@ -232,7 +414,9 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
 
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <span className="text-[10px] font-semibold text-slate-400">Total</span>
-                  <span className="text-lg font-black text-slate-900 leading-none">214</span>
+                  <span className="text-lg font-black text-slate-900 leading-none">
+                    {totalPatientsCount}
+                  </span>
                 </div>
               </div>
             </div>
@@ -266,7 +450,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                 onClick={() => onNavigateTab('appointments')}
                 className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
               >
-                <span>View All (35)</span>
+                <span>View All ({todayAptCount})</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -282,7 +466,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {TODAY_DASHBOARD_APPOINTMENTS.slice(0, 5).map((apt) => (
+                  {todayAppointments.slice(0, 5).map((apt) => (
                     <tr key={apt.id} className="hover:bg-slate-50 transition-colors">
                       <td className="py-2 font-mono font-bold text-slate-700">{apt.time}</td>
                       <td className="py-2 font-bold text-slate-900">{apt.patientName}</td>
@@ -292,8 +476,8 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             apt.status === 'Checked In'
                               ? 'bg-blue-100 text-blue-700'
-                              : apt.status === 'Waiting'
-                              ? 'bg-amber-100 text-amber-700'
+                              : apt.status === 'Confirmed'
+                              ? 'bg-emerald-100 text-emerald-700'
                               : 'bg-slate-100 text-slate-600'
                           }`}
                         >
@@ -320,13 +504,13 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                 onClick={() => onNavigateTab('queue')}
                 className="text-[11px] font-bold text-cyan-600 hover:text-cyan-700 flex items-center gap-1 cursor-pointer"
               >
-                <span>Open Queue (8)</span>
+                <span>Open Queue ({waitingCount})</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
 
             <div className="space-y-2">
-              {CURRENT_QUEUE_ITEMS.slice(0, 4).map((q) => (
+              {liveQueueItems.slice(0, 4).map((q) => (
                 <div
                   key={q.queueNumber}
                   className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors"
@@ -344,7 +528,11 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                   </div>
 
                   <div className="text-right">
-                    <span className="text-[11px] font-bold text-blue-600 block">
+                    <span
+                      className={`text-[11px] font-bold ${
+                        q.status === 'In Consultation' ? 'text-purple-600' : 'text-blue-600'
+                      }`}
+                    >
                       {q.status}
                     </span>
                   </div>
@@ -360,12 +548,20 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         <NewAppointmentModal
           isOpen={appointmentModalOpen}
           onClose={() => setAppointmentModalOpen(false)}
+          onAppointmentBooked={() => {
+            loadDashboardData();
+            setAppointmentModalOpen(false);
+          }}
         />
       )}
       {checkInModalOpen && (
         <CheckInModal
           isOpen={checkInModalOpen}
           onClose={() => setCheckInModalOpen(false)}
+          onCheckInComplete={() => {
+            loadDashboardData();
+            setCheckInModalOpen(false);
+          }}
         />
       )}
     </>

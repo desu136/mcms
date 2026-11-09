@@ -3,7 +3,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { Activity, Lock, Mail, CheckCircle2 } from 'lucide-react';
 
 const DEMO_ACCOUNTS = [
-  { label: 'Receptionist', email: 'receptionist@mcms.local', password: 'Receptionist@123456' },
+  { label: 'Receptionist', email: 'receptionist@mcms.local', password: 'Reception@123456' },
   { label: 'Doctor', email: 'doctor@mcms.local', password: 'Doctor@123456' },
   { label: 'Clinic Admin', email: 'clinic.admin@mcms.local', password: 'ClinicAdmin@123456' },
   { label: 'Admin', email: 'admin@mcms.local', password: 'Admin@123456' },
