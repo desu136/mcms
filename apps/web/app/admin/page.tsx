@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth/auth-context';
 import { fetchClinicDashboardStats } from '../../lib/api/staff';
@@ -20,6 +20,10 @@ import {
   BarChart2,
   ChevronLeft,
   Activity,
+  RefreshCw,
+  Search,
+  ArrowUpRight,
+  Sparkles,
 } from 'lucide-react';
 import {
   LineChart,
@@ -34,41 +38,16 @@ import {
   Cell,
 } from 'recharts';
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+// ─── Default Trend Structure ──────────────────────────────────────────────────
 
-const appointmentsOverview = [
-  { day: 'Mon', thisWeek: 22, lastWeek: 18 },
-  { day: 'Tue', thisWeek: 30, lastWeek: 24 },
-  { day: 'Wed', thisWeek: 27, lastWeek: 32 },
-  { day: 'Thu', thisWeek: 38, lastWeek: 28 },
-  { day: 'Fri', thisWeek: 35, lastWeek: 30 },
-  { day: 'Sat', thisWeek: 40, lastWeek: 22 },
-  { day: 'Sun', thisWeek: 28, lastWeek: 25 },
-];
-
-const departmentVisits = [
-  { name: 'General Medicine', value: 32, color: '#2979FF' },
-  { name: 'Pediatrics', value: 18, color: '#00C853' },
-  { name: 'Gynecology', value: 15, color: '#9C27B0' },
-  { name: 'Cardiology', value: 12, color: '#FF6D00' },
-  { name: 'Orthopedics', value: 10, color: '#F44336' },
-  { name: 'Other', value: 13, color: '#B0BEC5' },
-];
-
-const upcomingAppointments = [
-  { time: '09:00 AM', patient: 'Amanuel Bekele', doctor: 'Dr. Fitsum Alemu', dept: 'General Medicine', deptColor: '#E3F2FD', deptText: '#1565C0' },
-  { time: '10:30 AM', patient: 'Selam Tesfaye', doctor: 'Dr. Hana Mengesha', dept: 'Pediatrics', deptColor: '#E8F5E9', deptText: '#2E7D32' },
-  { time: '01:00 PM', patient: 'Yonas Tadesse', doctor: 'Dr. Abebe Kebede', dept: 'Cardiology', deptColor: '#FFF3E0', deptText: '#E65100' },
-  { time: '03:30 PM', patient: 'Mekdes Worku', doctor: 'Dr. Lealem Demissie', dept: 'Gynecology', deptColor: '#F3E5F5', deptText: '#6A1B9A' },
-  { time: '04:45 PM', patient: 'Abraham Girma', doctor: 'Dr. Fitsum Alemu', dept: 'General Medicine', deptColor: '#E3F2FD', deptText: '#1565C0' },
-];
-
-const recentPatients = [
-  { name: 'Aster Mulu', phone: '+251 912 345 678', dept: 'General Medicine', lastVisit: 'Oct 18, 2026', status: 'Active', avatar: 'AM' },
-  { name: 'Abebe Assefa', phone: '+251 911 234 567', dept: 'Pediatrics', lastVisit: 'Oct 17, 2026', status: 'Active', avatar: 'AA' },
-  { name: 'Tigist Alemu', phone: '+251 913 456 789', dept: 'Gynecology', lastVisit: 'Oct 16, 2026', status: 'Active', avatar: 'TA' },
-  { name: 'Getachew Tadesse', phone: '+251 912 876 543', dept: 'Cardiology', lastVisit: 'Oct 15, 2026', status: 'Active', avatar: 'GT' },
-  { name: 'Lidya Kebede', phone: '+251 918 765 432', dept: 'Orthopedics', lastVisit: 'Oct 14, 2026', status: 'Inactive', avatar: 'LK' },
+const DEFAULT_WEEKLY_TRENDS = [
+  { day: 'Mon', thisWeek: 0, lastWeek: 0 },
+  { day: 'Tue', thisWeek: 0, lastWeek: 0 },
+  { day: 'Wed', thisWeek: 0, lastWeek: 0 },
+  { day: 'Thu', thisWeek: 0, lastWeek: 0 },
+  { day: 'Fri', thisWeek: 0, lastWeek: 0 },
+  { day: 'Sat', thisWeek: 0, lastWeek: 0 },
+  { day: 'Sun', thisWeek: 0, lastWeek: 0 },
 ];
 
 const avatarColors = ['#2979FF', '#00C853', '#9C27B0', '#FF6D00', '#F44336', '#00BCD4'];
@@ -83,6 +62,7 @@ const StatCard = ({
   changeLabel,
   iconBg,
   iconColor,
+  href,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -91,20 +71,27 @@ const StatCard = ({
   changeLabel: string;
   iconBg: string;
   iconColor: string;
+  href: string;
 }) => {
   const isUp = change > 0;
   const isFlat = change === 0;
 
   return (
-    <div className="bg-white rounded-2xl p-3.5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow flex items-center gap-3.5">
+    <Link
+      href={href}
+      className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all flex items-center gap-3.5 group cursor-pointer"
+    >
       <div
-        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+        className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform"
         style={{ backgroundColor: iconBg }}
       >
         <span style={{ color: iconColor }}>{icon}</span>
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-[11px] text-gray-500 font-medium truncate">{label}</div>
+        <div className="text-[11px] text-gray-500 font-medium truncate flex items-center justify-between">
+          <span>{label}</span>
+          <ChevronRight size={13} className="text-gray-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
+        </div>
         <div className="text-2xl font-bold text-gray-800 leading-tight">{value}</div>
         <div className="flex items-center gap-1 text-[11px] font-medium mt-0.5">
           {isFlat ? (
@@ -120,15 +107,19 @@ const StatCard = ({
           <span className="text-gray-400 font-normal">{changeLabel}</span>
         </div>
       </div>
-    </div>
+    </Link>
   );
 };
 
-// Simple mini-calendar
-const MiniCalendar = () => {
-  const today = new Date(2026, 9, 19); // Oct 19 2026
-  const [current, setCurrent] = useState(new Date(2026, 9, 1));
-
+// Interactive mini-calendar with real dates & selection
+const MiniCalendar = ({
+  selectedDate,
+  onSelectDate,
+}: {
+  selectedDate: Date;
+  onSelectDate: (d: Date) => void;
+}) => {
+  const [current, setCurrent] = useState(() => new Date());
   const year = current.getFullYear();
   const month = current.getMonth();
   const monthName = current.toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -139,15 +130,25 @@ const MiniCalendar = () => {
   const days: (number | null)[] = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
   while (days.length % 7 !== 0) days.push(null);
 
+  const today = new Date();
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-semibold text-gray-800">{monthName}</span>
         <div className="flex gap-1">
-          <button onClick={() => setCurrent(new Date(year, month - 1, 1))} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-gray-100 transition">
+          <button
+            type="button"
+            onClick={() => setCurrent(new Date(year, month - 1, 1))}
+            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-gray-100 transition"
+          >
             <ChevronLeft size={14} className="text-gray-500" />
           </button>
-          <button onClick={() => setCurrent(new Date(year, month + 1, 1))} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-gray-100 transition">
+          <button
+            type="button"
+            onClick={() => setCurrent(new Date(year, month + 1, 1))}
+            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-gray-100 transition"
+          >
             <ChevronRight size={14} className="text-gray-500" />
           </button>
         </div>
@@ -159,17 +160,29 @@ const MiniCalendar = () => {
       </div>
       <div className="grid grid-cols-7 gap-y-0.5">
         {days.map((d, i) => {
-          const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+          if (!d) return <div key={i} className="h-8" />;
+          const isToday =
+            d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+          const isSelected =
+            d === selectedDate.getDate() &&
+            month === selectedDate.getMonth() &&
+            year === selectedDate.getFullYear();
+
           return (
             <div key={i} className="flex items-center justify-center h-8">
-              {d ? (
-                <button
-                  className={`w-7 h-7 rounded-full text-xs font-medium transition
-                    ${isToday ? 'bg-[#2979FF] text-white shadow-md shadow-blue-300' : 'text-gray-600 hover:bg-gray-100'}`}
-                >
-                  {d}
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => onSelectDate(new Date(year, month, d))}
+                className={`w-7 h-7 rounded-full text-xs font-medium transition ${
+                  isSelected
+                    ? 'bg-[#2979FF] text-white shadow-md shadow-blue-300 font-bold'
+                    : isToday
+                    ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {d}
+              </button>
             </div>
           );
         })}
@@ -186,6 +199,9 @@ export default function ClinicAdminDashboard() {
 
   const [stats, setStats] = useState<ClinicDashboardStatsDTO | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
+  const [patientSearch, setPatientSearch] = useState('');
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
 
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -206,14 +222,35 @@ export default function ClinicAdminDashboard() {
     void loadStats();
   }, [loadStats]);
 
-  const chartData = stats?.weeklyTrends ?? appointmentsOverview;
+  // Multiply count estimate for week/month periods
+  const periodMultiplier = useMemo(() => {
+    if (selectedPeriod === 'week') return 7;
+    if (selectedPeriod === 'month') return 30;
+    return 1;
+  }, [selectedPeriod]);
+
+  const chartData = stats?.weeklyTrends ?? DEFAULT_WEEKLY_TRENDS;
   const deptData = stats?.departmentBreakdown?.length
     ? stats.departmentBreakdown.map((d, i) => ({
         name: d.name,
         value: d.patientVisits,
-        color: departmentVisits[i]?.color ?? '#B0BEC5',
+        color: d.color || '#2979FF',
       }))
-    : departmentVisits;
+    : [];
+
+  const rawPatients = stats?.recentPatients ?? [];
+  const filteredPatients = useMemo(() => {
+    if (!patientSearch.trim()) return rawPatients;
+    const q = patientSearch.toLowerCase();
+    return rawPatients.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.phone.toLowerCase().includes(q) ||
+        p.department.toLowerCase().includes(q) ||
+        (p as any).pid?.toLowerCase().includes(q),
+    );
+  }, [rawPatients, patientSearch]);
+
   const recentAppts = stats?.recentAppointments ?? [];
   const fmt = (n: number | undefined) => (isLoading ? '—' : (n ?? 0).toLocaleString());
 
@@ -221,20 +258,51 @@ export default function ClinicAdminDashboard() {
     <div className="flex gap-0 h-full">
       {/* ── Left + Center ── */}
       <div className="flex-1 min-w-0 p-6 overflow-y-auto">
-
-        {/* Greeting */}
-        <div className="flex items-start justify-between mb-6">
+        {/* Greeting & Interactive Controls */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">
               Good Morning, {firstName} 👋
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">Here's what's happening at your clinic today.</p>
           </div>
-          <div className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-4 py-2.5 shadow-sm">
-            <CalendarDays size={16} className="text-[#2979FF]" />
-            <div className="text-right">
-              <div className="text-sm font-semibold text-gray-700">{dateStr}</div>
-              <div className="text-xs text-gray-400">{dayStr}</div>
+
+          <div className="flex items-center gap-3">
+            {/* Period Filter */}
+            <div className="flex items-center bg-gray-100 p-1 rounded-xl text-xs font-semibold">
+              {(['today', 'week', 'month'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setSelectedPeriod(p)}
+                  className={`px-3 py-1.5 rounded-lg transition-all capitalize ${
+                    selectedPeriod === p ? 'bg-white text-blue-600 shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
+                </button>
+              ))}
+            </div>
+
+            {/* Refresh Button */}
+            <button
+              type="button"
+              onClick={() => void loadStats()}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-xs font-semibold text-gray-700 shadow-2xs transition disabled:opacity-50"
+              title="Refresh clinic data"
+            >
+              <RefreshCw size={13} className={isLoading ? 'animate-spin text-blue-600' : 'text-gray-500'} />
+              <span>{isLoading ? 'Syncing...' : 'Refresh'}</span>
+            </button>
+
+            {/* Date Display */}
+            <div className="hidden md:flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-4 py-2 shadow-sm">
+              <CalendarDays size={16} className="text-[#2979FF]" />
+              <div className="text-right">
+                <div className="text-xs font-semibold text-gray-700">{dateStr}</div>
+                <div className="text-[10px] text-gray-400">{dayStr}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -260,25 +328,27 @@ export default function ClinicAdminDashboard() {
           </Link>
         </div>
 
-        {/* Stat Cards */}
+        {/* Clickable Stat Cards */}
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <StatCard
             icon={<Users size={22} />}
             label="Total Patients"
             value={fmt(stats?.totalPatients)}
-            change={12}
-            changeLabel="vs. last month"
+            change={0}
+            changeLabel="registered in EHR"
             iconBg="#E3F2FD"
             iconColor="#1565C0"
+            href="/admin/patients"
           />
           <StatCard
             icon={<CalendarDays size={22} />}
-            label="Today's Appointments"
-            value={fmt(stats?.todayAppointmentsCount)}
-            change={8}
-            changeLabel="vs. yesterday"
+            label={selectedPeriod === 'today' ? "Today's Appointments" : 'Estimated Appointments'}
+            value={fmt((stats?.todayAppointmentsCount ?? 0) * periodMultiplier)}
+            change={0}
+            changeLabel="scheduled slots"
             iconBg="#E8F5E9"
             iconColor="#2E7D32"
+            href="/admin/appointments"
           />
           <StatCard
             icon={<Stethoscope size={22} />}
@@ -288,6 +358,7 @@ export default function ClinicAdminDashboard() {
             changeLabel="registered staff"
             iconBg="#F3E5F5"
             iconColor="#6A1B9A"
+            href="/admin/staff"
           />
           <StatCard
             icon={<Activity size={22} />}
@@ -297,6 +368,7 @@ export default function ClinicAdminDashboard() {
             changeLabel="in waiting queue"
             iconBg="#FFF3E0"
             iconColor="#E65100"
+            href="/admin/clinic-management"
           />
         </div>
 
@@ -359,7 +431,7 @@ export default function ClinicAdminDashboard() {
                 </div>
               </div>
               <div className="flex-1 space-y-1.5">
-                {deptData.map((d, i) => (
+                {deptData.slice(0, 5).map((d, i) => (
                   <div key={i} className="flex items-center justify-between text-xs">
                     <span className="flex items-center gap-1.5 text-gray-600 truncate">
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
@@ -373,12 +445,32 @@ export default function ClinicAdminDashboard() {
           </div>
         </div>
 
-        {/* Recent Patients */}
+        {/* Recent Patients Table with Search */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
-            <h2 className="text-sm font-semibold text-gray-800">Recent Patients</h2>
-            <button className="text-xs text-[#2979FF] font-medium hover:underline">View All</button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-gray-50">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800">Recent Patients</h2>
+              <p className="text-xs text-gray-400">Live EHR patient activity</p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search size={13} className="text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search patient..."
+                  value={patientSearch}
+                  onChange={(e) => setPatientSearch(e.target.value)}
+                  className="pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 w-44"
+                />
+              </div>
+
+              <Link href="/admin/patients" className="text-xs text-[#2979FF] font-medium hover:underline shrink-0">
+                View All
+              </Link>
+            </div>
           </div>
+
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -392,38 +484,52 @@ export default function ClinicAdminDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {recentPatients.map((p, i) => (
-                  <tr key={i} className="hover:bg-gray-50/50 transition-colors group">
+                {filteredPatients.map((p, i) => (
+                  <tr key={p.id || i} className="hover:bg-gray-50/50 transition-colors group">
                     <td className="px-5 py-3">
-                      <div className="flex items-center gap-3">
+                      <Link href="/admin/patients" className="flex items-center gap-3">
                         <div
                           className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
                           style={{ backgroundColor: avatarColors[i % avatarColors.length] }}
                         >
                           {p.avatar}
                         </div>
-                        <span className="text-sm font-medium text-gray-800">{p.name}</span>
-                      </div>
+                        <span className="text-sm font-medium text-gray-800 group-hover:text-blue-600 transition-colors">
+                          {p.name}
+                        </span>
+                      </Link>
                     </td>
                     <td className="px-5 py-3 text-sm text-gray-500">{p.phone}</td>
-                    <td className="px-5 py-3 text-sm text-[#2979FF] font-medium">{p.dept}</td>
+                    <td className="px-5 py-3 text-sm text-[#2979FF] font-medium">{p.department}</td>
                     <td className="px-5 py-3 text-sm text-gray-500">{p.lastVisit}</td>
                     <td className="px-5 py-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold
-                        ${p.status === 'Active'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                          : 'bg-red-50 text-red-600 border border-red-100'}`}
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          p.status === 'Active'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                            : 'bg-gray-50 text-gray-600 border border-gray-200'
+                        }`}
                       >
                         {p.status}
                       </span>
                     </td>
-                    <td className="px-3 py-3">
-                      <button className="w-6 h-6 rounded-lg bg-gray-50 hover:bg-blue-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-                        <ChevronRight size={13} className="text-gray-400 hover:text-blue-500" />
-                      </button>
+                    <td className="px-3 py-3 text-right">
+                      <Link
+                        href="/admin/patients"
+                        className="w-6 h-6 rounded-lg bg-gray-50 hover:bg-blue-50 inline-flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <ChevronRight size={13} className="text-gray-400 group-hover:text-blue-500" />
+                      </Link>
                     </td>
                   </tr>
                 ))}
+                {filteredPatients.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-xs text-gray-400">
+                      {isLoading ? 'Loading patient records...' : 'No patient records found in EHR.'}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -436,71 +542,69 @@ export default function ClinicAdminDashboard() {
         <div className="p-5 border-b border-gray-50">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-gray-800">Upcoming Appointments</h2>
-            <button className="text-xs text-[#2979FF] font-medium hover:underline">View All</button>
+            <Link href="/admin/appointments" className="text-xs text-[#2979FF] font-medium hover:underline">
+              View All
+            </Link>
           </div>
           <div className="space-y-3">
             {recentAppts.length > 0 ? (
               recentAppts.slice(0, 5).map((a) => (
-                <div key={a.id} className="flex items-center gap-3 group hover:bg-gray-50 rounded-xl px-2 py-2 -mx-2 transition-colors cursor-pointer">
+                <Link
+                  key={a.id}
+                  href="/admin/appointments"
+                  className="flex items-center gap-3 group hover:bg-gray-50 rounded-xl px-2 py-2 -mx-2 transition-colors cursor-pointer"
+                >
                   <div className="text-xs font-semibold text-gray-500 w-16 flex-shrink-0">{a.startTime || '—'}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-gray-800 truncate">{a.patientName}</div>
+                    <div className="text-xs font-semibold text-gray-800 truncate group-hover:text-blue-600 transition-colors">
+                      {a.patientName}
+                    </div>
                     <div className="text-[10px] text-gray-400 truncate">{a.doctorName}</div>
                   </div>
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 bg-blue-50 text-blue-700">
                     {a.departmentName || a.status}
                   </span>
                   <ChevronRight size={13} className="text-gray-300 flex-shrink-0 opacity-0 group-hover:opacity-100 transition" />
-                </div>
+                </Link>
               ))
             ) : (
-              upcomingAppointments.map((a, i) => (
-                <div key={i} className="flex items-center gap-3 group hover:bg-gray-50 rounded-xl px-2 py-2 -mx-2 transition-colors cursor-pointer">
-                  <div className="text-xs font-semibold text-gray-500 w-16 flex-shrink-0">{a.time}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-gray-800 truncate">{a.patient}</div>
-                    <div className="text-[10px] text-gray-400 truncate">{a.doctor}</div>
-                  </div>
-                  <span
-                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: a.deptColor, color: a.deptText }}
-                  >
-                    {a.dept.split(' ')[0]}
-                  </span>
-                  <ChevronRight size={13} className="text-gray-300 flex-shrink-0 opacity-0 group-hover:opacity-100 transition" />
-                </div>
-              ))
+              <div className="py-6 text-center text-xs text-gray-400">
+                No upcoming appointments today.
+              </div>
             )}
           </div>
         </div>
 
-        {/* Calendar */}
+        {/* Interactive Calendar */}
         <div className="p-5 border-b border-gray-50">
-          <MiniCalendar />
+          <MiniCalendar selectedDate={calendarDate} onSelectDate={setCalendarDate} />
         </div>
 
-        {/* Quick Actions */}
+        {/* Quick Actions (Interactive Links) */}
         <div className="p-5">
           <h2 className="text-sm font-semibold text-gray-800 mb-3">Quick Actions</h2>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { icon: <UserPlus size={18} />, label: 'Register Patient', color: '#E3F2FD', iconColor: '#1565C0' },
-              { icon: <CalendarPlus size={18} />, label: 'Book Appointment', color: '#E8F5E9', iconColor: '#2E7D32' },
-              { icon: <FileText size={18} />, label: 'Add Medical Record', color: '#FFF3E0', iconColor: '#E65100' },
-              { icon: <BarChart2 size={18} />, label: 'Generate Report', color: '#FFF8E1', iconColor: '#F57F17' },
+              { icon: <UserPlus size={18} />, label: 'Register Patient', color: '#E3F2FD', iconColor: '#1565C0', href: '/admin/patients?action=new' },
+              { icon: <CalendarPlus size={18} />, label: 'Book Appointment', color: '#E8F5E9', iconColor: '#2E7D32', href: '/admin/appointments?action=new' },
+              { icon: <FileText size={18} />, label: 'Add Medical Record', color: '#FFF3E0', iconColor: '#E65100', href: '/admin/medical-records' },
+              { icon: <BarChart2 size={18} />, label: 'Generate Report', color: '#FFF8E1', iconColor: '#F57F17', href: '/admin/reports' },
             ].map((action, i) => (
-              <button
+              <Link
                 key={i}
-                className="flex flex-col items-center gap-2 p-3 rounded-xl border border-gray-100 hover:shadow-md hover:border-gray-200 transition-all text-center"
+                href={action.href}
+                className="flex flex-col items-center gap-2 p-3 rounded-xl border border-gray-100 hover:shadow-md hover:border-blue-200 transition-all text-center group"
               >
                 <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  className="w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform"
                   style={{ backgroundColor: action.color }}
                 >
                   <span style={{ color: action.iconColor }}>{action.icon}</span>
                 </div>
-                <span className="text-[11px] font-semibold text-gray-600 leading-tight">{action.label}</span>
-              </button>
+                <span className="text-[11px] font-semibold text-gray-600 group-hover:text-gray-900 leading-tight">
+                  {action.label}
+                </span>
+              </Link>
             ))}
           </div>
         </div>

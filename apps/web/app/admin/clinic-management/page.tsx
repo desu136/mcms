@@ -90,30 +90,8 @@ const ROLE_COLORS: Record<string, { bg: string; text: string; border: string }> 
   PHARMACIST: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
 };
 
-const DEFAULT_DEPARTMENTS_DATA = [
-  { id: 'd1', name: 'General Medicine', desc: 'General outpatient & primary consultation services', rooms: 4, staff: 8, status: 'Active', color: '#2979FF', icon: '🏥' },
-  { id: 'd2', name: 'Pediatrics', desc: 'Child healthcare & developmental pediatric services', rooms: 3, staff: 6, status: 'Active', color: '#00C853', icon: '👶' },
-  { id: 'd3', name: 'Gynecology & Obstetrics', desc: "Women's health, prenatal care & maternity", rooms: 3, staff: 7, status: 'Active', color: '#AA00FF', icon: '💜' },
-  { id: 'd4', name: 'Laboratory', desc: 'Diagnostic pathology, blood chemistry & microbiology', rooms: 2, staff: 5, status: 'Active', color: '#FF6D00', icon: '🔬' },
-  { id: 'd5', name: 'Pharmacy', desc: 'Pharmaceutical medication dispensing & compounding', rooms: 2, staff: 4, status: 'Active', color: '#00BCD4', icon: '💊' },
-  { id: 'd6', name: 'Emergency & Triage', desc: 'Urgent, critical & acute trauma stabilization', rooms: 2, staff: 5, status: 'Active', color: '#F44336', icon: '🚨' },
-];
-
-const DEFAULT_ROOMS = [
-  { id: 'r1', name: 'Consultation Room 101', dept: 'General Medicine', type: 'Consultation', status: 'Available' },
-  { id: 'r2', name: 'Consultation Room 102', dept: 'General Medicine', type: 'Consultation', status: 'In Use' },
-  { id: 'r3', name: 'Pediatric Exam Room 201', dept: 'Pediatrics', type: 'Consultation', status: 'Available' },
-  { id: 'r4', name: 'Emergency Triage Bay', dept: 'Emergency & Triage', type: 'Treatment', status: 'In Use' },
-  { id: 'r5', name: 'Cardiac Ultrasound Suite', dept: 'General Medicine', type: 'Diagnostics', status: 'Available' },
-  { id: 'r6', name: 'Maternity Examination Room', dept: 'Gynecology & Obstetrics', type: 'Consultation', status: 'Available' },
-];
-
-const DEFAULT_SERVICE_POINTS = [
-  { id: 'sp1', name: 'Main Laboratory Phlebotomy Station', dept: 'Laboratory', type: 'Sample Collection', status: 'Active' },
-  { id: 'sp2', name: 'Fast-Track Emergency Triage Station', dept: 'Emergency & Triage', type: 'Assessment', status: 'Active' },
-  { id: 'sp3', name: 'Central Outpatient Reception Desk', dept: 'General Medicine', type: 'Registration', status: 'Active' },
-  { id: 'sp4', name: 'Outpatient Pharmacy Dispensing Window', dept: 'Pharmacy', type: 'Dispensing', status: 'Active' },
-];
+const DEPT_COLORS = ['#2979FF', '#00C853', '#AA00FF', '#FF6D00', '#00BCD4', '#F44336'];
+const DEPT_ICONS = ['🏥', '👶', '💜', '🔬', '💊', '🚨'];
 
 export default function ClinicalAdminClinicManagementPage() {
   const { accessToken } = useAuth();
@@ -221,48 +199,47 @@ export default function ClinicalAdminClinicManagementPage() {
 
   // Departments list for display
   const displayDepartments = useMemo(() => {
-    if (departments.length > 0) {
-      return departments.map((d, i) => {
-        const branchMatch = branches.find((b) => b.id === d.branchId);
-        return {
-          id: d.id,
-          name: d.name,
-          desc: d.description || 'Clinical department services',
-          rooms: 2,
-          staff: staffList.filter((s) => s.staffProfile?.department?.toLowerCase() === d.name.toLowerCase()).length || 4,
-          status: d.isActive ? 'Active' : 'Inactive',
-          branchName: branchMatch ? branchMatch.name : 'Main Facility',
-          color: DEFAULT_DEPARTMENTS_DATA[i % DEFAULT_DEPARTMENTS_DATA.length]!.color,
-          icon: DEFAULT_DEPARTMENTS_DATA[i % DEFAULT_DEPARTMENTS_DATA.length]!.icon,
-        };
-      });
-    }
-    return DEFAULT_DEPARTMENTS_DATA.map((d) => ({
-      ...d,
-      branchName: activeBranch?.name || 'Main Hospital',
-    }));
-  }, [departments, branches, staffList, activeBranch]);
+    return departments.map((d, i) => {
+      const branchMatch = branches.find((b) => b.id === d.branchId);
+      return {
+        id: d.id,
+        name: d.name,
+        desc: d.description || 'Clinical department services',
+        rooms: rooms.filter((r) => r.departmentId === d.id).length,
+        staff: staffList.filter((s) => s.staffProfile?.department?.toLowerCase() === d.name.toLowerCase()).length,
+        status: d.isActive ? 'Active' : 'Inactive',
+        branchName: branchMatch ? branchMatch.name : (activeBranch?.name || 'Main Facility'),
+        color: DEPT_COLORS[i % DEPT_COLORS.length] || '#2979FF',
+        icon: DEPT_ICONS[i % DEPT_ICONS.length] || '🏥',
+      };
+    });
+  }, [departments, branches, staffList, rooms, activeBranch]);
 
   // Rooms list for display
   const displayRooms = useMemo(() => {
-    if (rooms.length > 0) {
-      return rooms.map((r) => {
-        const branchMatch = branches.find((b) => b.id === r.branchId);
-        return {
-          id: r.id,
-          name: r.name,
-          dept: r.departmentName || 'General Medicine',
-          type: r.roomType || 'Consultation',
-          status: r.status === 'AVAILABLE' ? 'Available' : r.status === 'OCCUPIED' ? 'In Use' : 'Maintenance',
-          branchName: branchMatch ? branchMatch.name : (activeBranch?.name || 'Main Facility'),
-        };
-      });
-    }
-    return DEFAULT_ROOMS.map((r) => ({
-      ...r,
-      branchName: activeBranch?.name || 'Main Hospital',
-    }));
+    return rooms.map((r) => {
+      const branchMatch = branches.find((b) => b.id === r.branchId);
+      return {
+        id: r.id,
+        name: r.name,
+        dept: r.departmentName || 'General Practice',
+        type: r.roomType || 'Consultation',
+        status: r.status === 'AVAILABLE' ? 'Available' : r.status === 'OCCUPIED' ? 'In Use' : 'Maintenance',
+        branchName: branchMatch ? branchMatch.name : (activeBranch?.name || 'Main Facility'),
+      };
+    });
   }, [rooms, branches, activeBranch]);
+
+  // Service points derived from rooms
+  const displayServicePoints = useMemo(() => {
+    return displayRooms.filter(
+      (r) =>
+        r.type?.toLowerCase().includes('point') ||
+        r.type?.toLowerCase().includes('station') ||
+        r.type?.toLowerCase().includes('desk') ||
+        r.type?.toLowerCase().includes('sample'),
+    );
+  }, [displayRooms]);
 
   // Chart data
   const pieData = displayDepartments.map((d) => ({
@@ -498,10 +475,12 @@ export default function ClinicalAdminClinicManagementPage() {
                   <Clock className="w-4 h-4" />
                 </div>
               </div>
-              <div className="text-base font-black text-gray-900 truncate">8:00 AM – 8:00 PM</div>
+              <div className="text-base font-black text-gray-900 truncate">
+                {activeBranch?.phone ? 'Facility Active' : 'Operating'}
+              </div>
               <div className="text-[11px] text-emerald-600 font-medium mt-0.5 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Open • Emergency 24/7
+                Active Clinical Facility
               </div>
             </div>
           </div>
@@ -536,7 +515,14 @@ export default function ClinicalAdminClinicManagementPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {displayDepartments.map((d) => (
+                      {displayDepartments.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-gray-400">
+                            No clinical departments created yet. Click &quot;Add Department&quot; to configure one.
+                          </td>
+                        </tr>
+                      ) : (
+                        displayDepartments.map((d) => (
                         <tr key={d.id} className="hover:bg-blue-50/30 transition-colors">
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2.5">
@@ -561,7 +547,7 @@ export default function ClinicalAdminClinicManagementPage() {
                             </span>
                           </td>
                         </tr>
-                      ))}
+                      )))}
                     </tbody>
                   </table>
                 </div>
@@ -600,7 +586,14 @@ export default function ClinicalAdminClinicManagementPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {(roomView === 'Rooms' ? displayRooms : DEFAULT_SERVICE_POINTS).map((item) => (
+                      {(roomView === 'Rooms' ? displayRooms : displayServicePoints).length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-6 text-center text-gray-400">
+                            No {roomView.toLowerCase()} configured in the database.
+                          </td>
+                        </tr>
+                      ) : (
+                        (roomView === 'Rooms' ? displayRooms : displayServicePoints).map((item) => (
                         <tr key={item.id} className="hover:bg-purple-50/20 transition-colors">
                           <td className="py-2.5 px-4 font-bold text-gray-800">{item.name}</td>
                           <td className="py-2.5 px-3">
@@ -615,7 +608,7 @@ export default function ClinicalAdminClinicManagementPage() {
                           <td className="py-2.5 px-3 text-gray-500">{item.type}</td>
                           <td className="py-2.5 px-3 text-center">
                             <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                                 item.status === 'Available' || item.status === 'Active'
                                   ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
                                   : 'bg-amber-50 text-amber-600 border border-amber-200'
@@ -625,7 +618,7 @@ export default function ClinicalAdminClinicManagementPage() {
                             </span>
                           </td>
                         </tr>
-                      ))}
+                      )))}
                     </tbody>
                   </table>
                 </div>
@@ -787,7 +780,12 @@ export default function ClinicalAdminClinicManagementPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {branches.map((b) => (
+            {branches.length === 0 ? (
+              <div className="col-span-full bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400">
+                No facilities or branches registered yet. Click &quot;Add Branch&quot; to configure your primary facility.
+              </div>
+            ) : (
+              branches.map((b) => (
               <div
                 key={b.id}
                 className={`bg-white rounded-2xl border p-5 shadow-sm space-y-3 ${
@@ -854,7 +852,7 @@ export default function ClinicalAdminClinicManagementPage() {
                   </div>
                 </div>
               </div>
-            ))}
+            )))}
           </div>
         </div>
       )}
@@ -877,7 +875,14 @@ export default function ClinicalAdminClinicManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {displayDepartments.map((d) => (
+                {displayDepartments.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-gray-400">
+                      No departments configured in the database yet. Click &quot;Add Department&quot; to configure one.
+                    </td>
+                  </tr>
+                ) : (
+                  displayDepartments.map((d) => (
                   <tr key={d.id} className="hover:bg-blue-50/20 transition-colors">
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
@@ -902,7 +907,7 @@ export default function ClinicalAdminClinicManagementPage() {
                       </span>
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>
@@ -944,7 +949,14 @@ export default function ClinicalAdminClinicManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {(roomView === 'Rooms' ? displayRooms : DEFAULT_SERVICE_POINTS).map((item) => (
+                {(roomView === 'Rooms' ? displayRooms : displayServicePoints).length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-gray-400">
+                      No {roomView.toLowerCase()} configured in the database.
+                    </td>
+                  </tr>
+                ) : (
+                  (roomView === 'Rooms' ? displayRooms : displayServicePoints).map((item) => (
                   <tr key={item.id} className="hover:bg-purple-50/20 transition-colors">
                     <td className="py-3 px-4 font-bold text-gray-800">{item.name}</td>
                     <td className="py-3 px-3">
@@ -952,7 +964,7 @@ export default function ClinicalAdminClinicManagementPage() {
                         <Building2 className="w-3 h-3 text-gray-400" />
                         {('branchName' in item && typeof item.branchName === 'string')
                           ? item.branchName
-                          : activeBranch?.name || 'Main Hospital'}
+                          : activeBranch?.name || 'Main Facility'}
                       </span>
                     </td>
                     <td className="py-3 px-3 text-gray-600 font-medium">{item.dept}</td>
@@ -969,7 +981,7 @@ export default function ClinicalAdminClinicManagementPage() {
                       </span>
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>
@@ -1006,7 +1018,14 @@ export default function ClinicalAdminClinicManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredStaff.map((staff) => {
+                {filteredStaff.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-gray-400">
+                      No staff members assigned to this facility yet.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStaff.map((staff) => {
                   const role = staff.roles[0] || 'STAFF';
                   const Icon = ROLE_ICONS[role] || Users;
                   const colors = ROLE_COLORS[role] || {
@@ -1039,7 +1058,7 @@ export default function ClinicalAdminClinicManagementPage() {
                       <td className="py-3 px-3">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                           <Building2 className="w-3 h-3 text-blue-500" />
-                          {staff.primaryBranchName || 'Main Hospital'}
+                          {staff.primaryBranchName || activeBranch?.name || 'Main Facility'}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-gray-600 font-medium">
@@ -1063,7 +1082,7 @@ export default function ClinicalAdminClinicManagementPage() {
                       </td>
                     </tr>
                   );
-                })}
+                }))}
               </tbody>
             </table>
           </div>
@@ -1086,7 +1105,7 @@ export default function ClinicalAdminClinicManagementPage() {
               <label className="text-xs font-semibold text-gray-700">Weekdays Working Hours</label>
               <input
                 type="text"
-                defaultValue="8:00 AM – 8:00 PM"
+                placeholder="e.g. 8:00 AM – 8:00 PM"
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
@@ -1094,7 +1113,7 @@ export default function ClinicalAdminClinicManagementPage() {
               <label className="text-xs font-semibold text-gray-700">Weekend Emergency Hours</label>
               <input
                 type="text"
-                defaultValue="9:00 AM – 5:00 PM (24/7 Triage)"
+                placeholder="e.g. 9:00 AM – 5:00 PM"
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
@@ -1105,7 +1124,7 @@ export default function ClinicalAdminClinicManagementPage() {
               <label className="text-xs font-semibold text-gray-700">Direct Emergency Hotline</label>
               <input
                 type="text"
-                defaultValue="+251 11 999 0011"
+                placeholder="e.g. +251 11 000 0000"
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>

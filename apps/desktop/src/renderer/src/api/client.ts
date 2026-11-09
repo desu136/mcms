@@ -69,14 +69,15 @@ export async function apiRequest<T>(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({}));
+    const rawMsg = (errorBody as { message?: string | string[] })?.message;
     const message =
-      (errorBody as { message?: string })?.message ??
+      (Array.isArray(rawMsg) ? rawMsg.join(', ') : rawMsg) ||
       `Request to ${cleanPath} failed with status ${res.status}`;
     throw new Error(message);
   }
 
   if (res.status === 204) {
-    return undefined as unknown as T;
+    return ({} as unknown) as T;
   }
 
   return res.json() as Promise<T>;
