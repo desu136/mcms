@@ -6,10 +6,11 @@ import { DoctorLayout } from './components/doctor/DoctorLayout';
 import { ReceptionistLayout } from './components/receptionist/ReceptionistLayout';
 import { NurseLayout } from './components/nurse/NurseLayout';
 import { AdminLayout } from './components/admin/AdminLayout';
+import { LabLayout } from './components/lab/LabLayout';
 
 import type { AuthUser } from './auth/AuthContext';
 
-export type Workstation = 'admin' | 'doctor' | 'nurse' | 'receptionist';
+export type Workstation = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab';
 
 /** Derive the default workstation from a user object. Checks both the primary
  *  `role` field and the `roles[]` array so we handle both correctly. */
@@ -17,8 +18,11 @@ function userToWorkstation(user: AuthUser | null | undefined): Workstation {
   if (!user) return 'receptionist';
   const primary = (user.role ?? '').toUpperCase();
   const all = (user.roles ?? []).map((r) => r.toUpperCase());
+  const email = (user.email ?? '').toLowerCase();
+
   const isAdmin = primary.includes('ADMIN') || all.some((r) => r.includes('ADMIN'));
   if (isAdmin) return 'admin';
+  if (primary.includes('LAB') || all.some((r) => r.includes('LAB')) || email.includes('lab')) return 'lab';
   if (primary === 'DOCTOR' || all.includes('DOCTOR')) return 'doctor';
   if (primary === 'NURSE' || all.includes('NURSE')) return 'nurse';
   return 'receptionist';
@@ -94,6 +98,9 @@ function AppRouter() {
   }
   if (activeWorkstation === 'nurse') {
     return <NurseLayout onSwitchWorkstation={setActiveWorkstation} />;
+  }
+  if (activeWorkstation === 'lab') {
+    return <LabLayout onSwitchWorkstation={setActiveWorkstation} />;
   }
   return <ReceptionistLayout onSwitchWorkstation={setActiveWorkstation} />;
 }

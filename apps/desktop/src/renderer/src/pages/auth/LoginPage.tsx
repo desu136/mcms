@@ -8,6 +8,7 @@ const DEMO_ACCOUNTS = [
   { label: 'Clinic Admin', email: 'clinic.admin@mcms.local', password: 'ClinicAdmin@123456' },
   { label: 'Admin', email: 'admin@mcms.local', password: 'Admin@123456' },
   { label: 'Nurse', email: 'nurse@mcms.local', password: 'Nurse@123456' },
+  { label: 'Lab Tech', email: 'lab@mcms.local', password: 'Lab@123456' },
 ];
 
 export function LoginPage() {

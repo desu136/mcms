@@ -26,8 +26,8 @@ export interface NurseHeaderProps {
   isSyncing?: boolean | undefined;
   pendingSyncOps?: number | undefined;
   onTriggerSync?: (() => void) | undefined;
-  currentWorkstation?: ('admin' | 'receptionist' | 'doctor' | 'nurse') | undefined;
-  onSwitchWorkstation?: ((w: 'admin' | 'receptionist' | 'doctor' | 'nurse') => void) | undefined;
+  currentWorkstation?: ('admin' | 'receptionist' | 'doctor' | 'nurse' | 'lab') | undefined;
+  onSwitchWorkstation?: ((w: 'admin' | 'receptionist' | 'doctor' | 'nurse' | 'lab') => void) | undefined;
 }
 
 export function NurseHeader({
@@ -150,6 +150,17 @@ export function NurseHeader({
               }`}
             >
               Nurse
+            </button>
+            <button
+              onClick={() => onSwitchWorkstation('lab')}
+              type="button"
+              className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                currentWorkstation === 'lab'
+                  ? 'bg-cyan-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Lab
             </button>
           </div>
         )}
