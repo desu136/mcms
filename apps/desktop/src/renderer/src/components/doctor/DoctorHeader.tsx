@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Search,
   Bell,
@@ -9,13 +9,14 @@ import {
   Database,
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
+import { getAllowedWorkstations } from '../../App';
 
 export interface DoctorHeaderProps {
   onOpenSearch?: () => void;
   onNavigateTab?: (tab: string) => void;
   onLogout?: () => void;
   syncReady?: boolean;
-  onSwitchWorkstation?: ((w: 'admin' | 'doctor' | 'nurse' | 'receptionist') => void) | undefined;
+  onSwitchWorkstation?: ((w: 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab') => void) | undefined;
 }
 
 export function DoctorHeader({
@@ -26,6 +27,7 @@ export function DoctorHeader({
   onSwitchWorkstation,
 }: DoctorHeaderProps) {
   const { user, logout } = useAuth();
+  const allowed = useMemo(() => getAllowedWorkstations(user), [user]);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -81,33 +83,50 @@ export function DoctorHeader({
           </span>
         </div>
 
-        {/* Workstation Switcher */}
-        {onSwitchWorkstation && (
+        {/* Workstation Switcher - Strictly restricted to authorized roles */}
+        {onSwitchWorkstation && allowed.length > 1 && (
           <div className="hidden lg:flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-semibold">
-            <button
-              onClick={() => onSwitchWorkstation('admin')}
-              className="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 cursor-pointer"
-            >
-              Admin
-            </button>
-            <button
-              onClick={() => onSwitchWorkstation('doctor')}
-              className="px-2.5 py-1 rounded-lg bg-white text-blue-600 shadow-xs cursor-default font-bold"
-            >
-              Doctor
-            </button>
-            <button
-              onClick={() => onSwitchWorkstation('nurse')}
-              className="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 cursor-pointer"
-            >
-              Nurse
-            </button>
-            <button
-              onClick={() => onSwitchWorkstation('receptionist')}
-              className="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 cursor-pointer"
-            >
-              Receptionist
-            </button>
+            {allowed.includes('admin') && (
+              <button
+                onClick={() => onSwitchWorkstation('admin')}
+                className="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                Admin
+              </button>
+            )}
+            {allowed.includes('doctor') && (
+              <button
+                onClick={() => onSwitchWorkstation('doctor')}
+                className="px-2.5 py-1 rounded-lg bg-white text-blue-600 shadow-xs cursor-default font-bold"
+              >
+                Doctor
+              </button>
+            )}
+            {allowed.includes('nurse') && (
+              <button
+                onClick={() => onSwitchWorkstation('nurse')}
+                className="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                Nurse
+              </button>
+            )}
+            {allowed.includes('receptionist') && (
+              <button
+                onClick={() => onSwitchWorkstation('receptionist')}
+                className="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                Receptionist
+              </button>
+            )}
+            {allowed.includes('lab') && (
+              <button
+                onClick={() => onSwitchWorkstation('lab')}
+                type="button"
+                className="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer"
+              >
+                Lab
+              </button>
+            )}
           </div>
         )}
 

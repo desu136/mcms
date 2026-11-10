@@ -129,33 +129,43 @@ class _NurseVitalsScreenState extends ConsumerState<NurseVitalsScreen> {
 
           // Readings list
           Expanded(
-            child: filtered.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+            child: RefreshIndicator(
+              onRefresh: () => NurseRepository.loadFromApi(ref),
+              child: filtered.isEmpty
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       children: [
-                        Icon(Icons.monitor_heart_outlined,
-                            size: 48, color: Colors.blueGrey.shade300),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'No vitals records found',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
+                        SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+                        Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.monitor_heart_outlined,
+                                  size: 48, color: Colors.blueGrey.shade300),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No vitals records found',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final item = filtered[index];
+                        return _buildVitalsCard(item);
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final item = filtered[index];
-                      return _buildVitalsCard(item);
-                    },
-                  ),
+            ),
           ),
         ],
       ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/nurse_models.dart';
@@ -195,6 +196,20 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
           ),
           ...list,
         ]);
+
+    final nurseProfile = ref.read(nurseProfileProvider);
+    final vitalsPayload = {
+      'patientId': patient.id,
+      'bloodPressureSystolic': sys,
+      'bloodPressureDiastolic': int.tryParse(_diastolicCtrl.text) ?? 80,
+      'heartRate': hr,
+      'temperature': temp,
+      'oxygenSaturation': spo2,
+      'respiratoryRate': resp,
+      'recordedBy': nurseProfile.name,
+      'notes': notes.isNotEmpty ? notes : 'Routine vitals observation recorded.',
+    };
+    NurseRepository.recordVitalsViaApi(ref, vitalsPayload);
 
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -726,8 +741,8 @@ class _AdministerMedSheet extends ConsumerWidget {
             width: double.infinity,
             height: 48,
             child: ElevatedButton.icon(
-              onPressed: () {
-                // Update Medication State
+              onPressed: () async {
+                // Update local state immediately
                 ref.read(nurseMedicationsProvider.notifier).update((list) {
                   return list.map((m) {
                     if (m.id == med.id) {
@@ -753,6 +768,15 @@ class _AdministerMedSheet extends ConsumerWidget {
                       ),
                       ...list,
                     ]);
+
+                // Sync to backend
+                unawaited(NurseRepository.administerMedicationViaApi(ref, med.id, {
+                  'status': 'ADMINISTERED',
+                  'administeredAt': DateTime.now().toIso8601String(),
+                  'patientId': med.patientId,
+                  'medicationName': med.medicationName,
+                  'dose': med.dose,
+                }));
 
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(

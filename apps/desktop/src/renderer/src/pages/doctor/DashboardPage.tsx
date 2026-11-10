@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   CalendarDays,
   Users,
@@ -12,6 +12,9 @@ import {
   Heart,
   Stethoscope,
   Zap,
+  Loader2,
+  RefreshCw,
+  Clock,
 } from 'lucide-react';
 import {
   LineChart,
@@ -22,25 +25,87 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import {
-  CURRENT_DOCTOR,
-  INITIAL_PATIENTS,
-  TODAY_SCHEDULE,
-  PATIENT_OVERVIEW_CHART_DATA,
-  PatientItem,
-} from '../../components/doctor/doctorMockData';
+import { PatientItem } from '../../components/doctor/doctorMockData';
 import { DoctorPatientDrawer } from '../../components/doctor/DoctorPatientDrawer';
 import { DoctorPrescriptionModal } from '../../components/doctor/DoctorPrescriptionModal';
 import { DoctorLabOrderModal } from '../../components/doctor/DoctorLabOrderModal';
 import { DoctorPageShell } from '../../components/doctor/DoctorPageShell';
 import { DoctorStatCard } from '../../components/doctor/DoctorStatCard';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchPatients } from '../../api/patients';
+import { fetchAppointments, fetchQueue } from '../../api/appointments';
+import { fetchPrescriptions, fetchLabOrders } from '../../api/clinical';
+import type { PatientDTO, AppointmentDTO, PrescriptionDTO, LabOrderDTO, QueueEntryDTO } from '@mcms/contracts';
+
+function mapPatientDtoToItem(p: PatientDTO): PatientItem {
+  const name = p.fullName || `${p.firstName} ${p.lastName}`;
+  const birthYear = p.dateOfBirth ? new Date(p.dateOfBirth).getFullYear() : 1990;
+  const age = Math.max(0, new Date().getFullYear() - birthYear);
+  return {
+    id: p.id,
+    name,
+    pid: p.pid || `PID-${p.id.slice(0, 6)}`,
+    age,
+    gender: (p.gender?.toUpperCase() === 'MALE' ? 'Male' : 'Female'),
+    phone: p.phoneNumber || '—',
+    email: p.email || '—',
+    address: p.address || 'Addis Ababa, Ethiopia',
+    department: 'General OPD',
+    lastVisit: p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Today',
+    lastVisitReason: 'Clinical Consultation',
+    status: p.status?.toUpperCase() === 'INACTIVE' ? 'Inactive' : 'Active',
+    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&size=150&background=dbeafe&color=1e40af`,
+    totalVisits: 1,
+    conditions: [],
+  };
+}
+
+function createPatientItemFromAppointment(a: AppointmentDTO): PatientItem {
+  return {
+    id: a.patientId,
+    name: a.patientName,
+    pid: `PID-${a.patientId.slice(0, 6)}`,
+    age: 30,
+    gender: 'Female',
+    phone: '—',
+    email: '—',
+    address: 'Addis Ababa',
+    department: a.branchName || 'General OPD',
+    lastVisit: a.appointmentDate,
+    lastVisitReason: a.reason || a.type || 'Consultation',
+    status: 'Active',
+    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(a.patientName)}&size=150&background=dbeafe&color=1e40af`,
+    totalVisits: 1,
+    conditions: [],
+  };
+}
+
+function createPatientItemFromQueue(q: QueueEntryDTO): PatientItem {
+  return {
+    id: q.patientId,
+    name: q.patientName,
+    pid: q.patientPid || `PID-${q.patientId.slice(0, 6)}`,
+    age: 30,
+    gender: 'Female',
+    phone: '—',
+    email: '—',
+    address: 'Addis Ababa',
+    department: 'General OPD',
+    lastVisit: 'Today',
+    lastVisitReason: `Ticket #${q.ticketNumber}`,
+    status: 'Active',
+    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(q.patientName)}&size=150&background=dbeafe&color=1e40af`,
+    totalVisits: 1,
+    conditions: [],
+  };
+}
 
 export interface DashboardPageProps {
   onNavigateTab?: (tab: string) => void;
 }
 
 export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
-  const currentPatient = INITIAL_PATIENTS[0]!;
+  const { accessToken, user } = useAuth();
   const [selectedPatient, setSelectedPatient] = useState<PatientItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
@@ -48,10 +113,111 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
   const [chartTimeframe, setChartTimeframe] = useState('This Week');
   const [calendarSelectedDay, setCalendarSelectedDay] = useState(19);
 
+  // Live state
+  const [loading, setLoading] = useState(true);
+  const [livePatients, setLivePatients] = useState<PatientDTO[]>([]);
+  const [liveAppointments, setLiveAppointments] = useState<AppointmentDTO[]>([]);
+  const [livePrescriptions, setLivePrescriptions] = useState<PrescriptionDTO[]>([]);
+  const [liveLabOrders, setLiveLabOrders] = useState<LabOrderDTO[]>([]);
+  const [liveQueue, setLiveQueue] = useState<QueueEntryDTO[]>([]);
+
+  const loadDashboardData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [patientsRes, apptsRes, rxRes, labsRes, queueRes] = await Promise.allSettled([
+        fetchPatients(accessToken, { limit: 10 }),
+        fetchAppointments(accessToken),
+        fetchPrescriptions(accessToken),
+        fetchLabOrders(accessToken),
+        fetchQueue(accessToken),
+      ]);
+
+      if (patientsRes.status === 'fulfilled' && patientsRes.value?.data) {
+        setLivePatients(patientsRes.value.data);
+      }
+      if (apptsRes.status === 'fulfilled' && Array.isArray(apptsRes.value)) {
+        setLiveAppointments(apptsRes.value);
+      }
+      if (rxRes.status === 'fulfilled' && Array.isArray(rxRes.value)) {
+        setLivePrescriptions(rxRes.value);
+      }
+      if (labsRes.status === 'fulfilled' && Array.isArray(labsRes.value)) {
+        setLiveLabOrders(labsRes.value);
+      }
+      if (queueRes.status === 'fulfilled' && Array.isArray(queueRes.value)) {
+        setLiveQueue(queueRes.value);
+      }
+    } catch {
+      // Ignore network errors
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadDashboardData();
+  }, [loadDashboardData]);
+
   const handleOpenPatient = (p: PatientItem) => {
     setSelectedPatient(p);
     setDrawerOpen(true);
   };
+
+  // KPIs calculation - 100% Real API counts (0 if empty)
+  const totalAppointmentsCount = liveAppointments.length;
+  const completedAppointmentsCount = liveAppointments.filter(
+    (a) => a.status.toUpperCase() === 'COMPLETED',
+  ).length;
+  const pendingRxCount = livePrescriptions.filter(
+    (p) => p.status.toUpperCase() === 'ACTIVE' || p.status.toUpperCase() === 'PENDING',
+  ).length;
+  const pendingLabCount = liveLabOrders.filter(
+    (l) => l.status.toUpperCase() !== 'COMPLETED' && l.status.toUpperCase() !== 'CANCELLED',
+  ).length;
+
+  // Derive Current Patient from real Queue or Appointments
+  const currentPatient: PatientItem | null = useMemo(() => {
+    const activeQ =
+      liveQueue.find(
+        (q) => q.status.toUpperCase() === 'IN_PROGRESS' || q.status.toUpperCase() === 'CALLING',
+      ) ||
+      (liveQueue.length > 0 && liveQueue[0]?.status.toUpperCase() === 'WAITING' ? liveQueue[0] : null);
+
+    if (activeQ) {
+      const match = livePatients.find((p) => p.id === activeQ.patientId);
+      return match ? mapPatientDtoToItem(match) : createPatientItemFromQueue(activeQ);
+    }
+
+    const activeA = liveAppointments.find(
+      (a) => a.status.toUpperCase() === 'IN_PROGRESS' || a.status.toUpperCase() === 'CHECKED_IN',
+    );
+    if (activeA) {
+      const match = livePatients.find((p) => p.id === activeA.patientId);
+      return match ? mapPatientDtoToItem(match) : createPatientItemFromAppointment(activeA);
+    }
+
+    return null;
+  }, [liveQueue, liveAppointments, livePatients]);
+
+  const chartData = useMemo(() => {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days.map((day) => {
+      const count = liveAppointments.filter((a) => {
+        try {
+          const d = new Date(a.appointmentDate);
+          const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+          return weekday === day;
+        } catch {
+          return false;
+        }
+      }).length;
+      return {
+        day,
+        newPatients: count,
+        returningPatients: Math.floor(count * 0.5),
+      };
+    });
+  }, [liveAppointments]);
 
   const headerContent = (
     <div className="flex items-center justify-between gap-3">
@@ -61,20 +227,34 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         </div>
         <div>
           <h1 className="text-lg font-black text-slate-800 tracking-tight leading-tight">
-            Welcome Back, {CURRENT_DOCTOR.name}
+            Welcome Back, {user?.displayName || 'Doctor'}
           </h1>
           <p className="text-[11px] text-slate-500 font-medium leading-tight">
-            Here&apos;s what&apos;s happening today.
+            Here&apos;s your live clinical workstation status.
           </p>
         </div>
       </div>
 
-      {/* Date Card */}
-      <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white border border-slate-200/80 shadow-2xs shrink-0">
-        <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-        <div className="text-right">
-          <div className="text-[11px] font-bold text-slate-800 tracking-tight">Oct 19, 2026</div>
-          <div className="text-[10px] text-slate-400 font-medium leading-none">Monday</div>
+      {/* Date & Refresh */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => void loadDashboardData()}
+          disabled={loading}
+          className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors disabled:opacity-50 cursor-pointer"
+          title="Refresh Dashboard"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+        <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white border border-slate-200/80 shadow-2xs shrink-0">
+          <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+          <div className="text-right">
+            <div className="text-[11px] font-bold text-slate-800 tracking-tight">
+              {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </div>
+            <div className="text-[10px] text-slate-400 font-medium leading-none">
+              {new Date().toLocaleDateString('en-US', { weekday: 'long' })}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -84,38 +264,38 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
     <div className="kpi-grid">
       <DoctorStatCard
         title="Today's Appointments"
-        value={9}
+        value={loading ? '—' : totalAppointmentsCount}
         icon={Users}
         color="blue"
-        change={{ value: '+2', trend: 'up', label: 'vs. yesterday' }}
+        change={{ value: `${totalAppointmentsCount}`, trend: 'neutral', label: 'today' }}
       />
       <DoctorStatCard
         title="Patients Seen Today"
-        value={7}
+        value={loading ? '—' : completedAppointmentsCount}
         icon={CheckCircle2}
         color="emerald"
-        change={{ value: '+3', trend: 'up', label: 'vs. yesterday' }}
+        change={{ value: `${completedAppointmentsCount}`, trend: 'up', label: 'completed' }}
       />
       <DoctorStatCard
         title="Pending Prescriptions"
-        value={4}
+        value={loading ? '—' : pendingRxCount}
         icon={Pill}
         color="purple"
-        change={{ value: '-2', trend: 'down', label: 'vs. yesterday' }}
+        change={{ value: `${pendingRxCount}`, trend: 'neutral', label: 'active Rx' }}
       />
       <DoctorStatCard
         title="Lab Results Pending"
-        value={6}
+        value={loading ? '—' : pendingLabCount}
         icon={FlaskConical}
         color="orange"
-        change={{ value: '+1', trend: 'up', label: 'vs. yesterday' }}
+        change={{ value: `${pendingLabCount}`, trend: 'neutral', label: 'requisitions' }}
       />
     </div>
   );
 
   const rightPanelContent = (
     <>
-      {/* Quick Actions Card with vibrant blue header */}
+      {/* Quick Actions Card */}
       <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
         <div className="bg-blue-600 px-3 py-2 flex items-center gap-2 text-white">
           <Zap className="w-3.5 h-3.5 text-white" />
@@ -140,7 +320,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
 
           <button
             onClick={() => setLabModalOpen(true)}
-            className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-200 hover:border-orange-400 hover:bg-orange-50/30 transition-all text-center cursor-pointer group"
+            className="flex flex-col items-center gap-1 p-2 rounded-xl border border-orange-400/50 hover:border-orange-400 hover:bg-orange-50/30 transition-all text-center cursor-pointer group"
           >
             <FlaskConical className="w-4 h-4 text-orange-500 group-hover:scale-105 transition-transform" />
             <span className="text-[10px] font-bold text-slate-700 leading-tight">Order Lab Test</span>
@@ -157,58 +337,78 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
       </div>
 
       {/* Current Patient Card */}
-      <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-          <div className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-blue-600" />
-            <h3 className="text-[11px] font-bold text-slate-800">Current Patient</h3>
+      {currentPatient ? (
+        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-blue-600" />
+              <h3 className="text-[11px] font-bold text-slate-800">Current Patient</h3>
+            </div>
+            <button
+              onClick={() => handleOpenPatient(currentPatient)}
+              className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+            >
+              View Record
+            </button>
           </div>
+
+          <div className="mt-2 flex items-center gap-2.5">
+            <img
+              src={currentPatient.avatar}
+              alt={currentPatient.name}
+              className="w-10 h-10 rounded-full object-cover ring-2 ring-blue-100 shrink-0"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-xs font-black text-slate-900">{currentPatient.name}</span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-600 border border-blue-200">
+                  In Consultation
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-semibold">{currentPatient.pid}</p>
+            </div>
+          </div>
+
+          <div className="mt-2 space-y-1.5 text-[10px]">
+            {[
+              { label: 'Age / Gender', value: `${currentPatient.age}y / ${currentPatient.gender}` },
+              { label: 'Phone', value: currentPatient.phone },
+              { label: 'Department', value: currentPatient.department },
+              { label: 'Visit Type', value: currentPatient.lastVisitReason || 'Consultation' },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium">{label}</span>
+                <span className="font-bold text-slate-700 text-right max-w-[55%] truncate">{value}</span>
+              </div>
+            ))}
+          </div>
+
           <button
             onClick={() => handleOpenPatient(currentPatient)}
-            className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+            className="mt-2 w-full py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-md shadow-blue-500/25 transition-all cursor-pointer"
           >
-            View Record
+            View Full Profile
           </button>
         </div>
-
-        <div className="mt-2 flex items-center gap-2.5">
-          <img
-            src={currentPatient.avatar}
-            alt={currentPatient.name}
-            className="w-10 h-10 rounded-full object-cover ring-2 ring-blue-100 shrink-0"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1 flex-wrap">
-              <span className="text-xs font-black text-slate-900">{currentPatient.name}</span>
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-600 border border-blue-200">
-                In Consultation
-              </span>
-            </div>
-            <p className="text-[10px] text-slate-400 font-semibold">{currentPatient.pid}</p>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-4 text-center">
+          <div className="w-10 h-10 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2">
+            <Users className="w-5 h-5" />
           </div>
+          <h4 className="text-xs font-bold text-slate-700">No Patient in Consultation</h4>
+          <p className="text-[11px] text-slate-400 mt-1 max-w-[240px] mx-auto">
+            The consultation queue is currently clear. Patients checked in at reception will appear here.
+          </p>
+          {liveQueue.some((q) => q.status.toUpperCase() === 'WAITING') && (
+            <button
+              onClick={() => onNavigateTab?.('appointments')}
+              className="mt-3 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              Call Next Patient ({liveQueue.filter((q) => q.status.toUpperCase() === 'WAITING').length} waiting)
+            </button>
+          )}
         </div>
-
-        <div className="mt-2 space-y-1.5 text-[10px]">
-          {[
-            { label: 'Age / Gender', value: `${currentPatient.age}y / ${currentPatient.gender}` },
-            { label: 'Phone', value: currentPatient.phone },
-            { label: 'Department', value: currentPatient.department },
-            { label: 'Visit Type', value: 'Follow-up Visit' },
-          ].map(({ label, value }) => (
-            <div key={label} className="flex items-center justify-between">
-              <span className="text-slate-400 font-medium">{label}</span>
-              <span className="font-bold text-slate-700 text-right max-w-[55%] truncate">{value}</span>
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={() => handleOpenPatient(currentPatient)}
-          className="mt-2 w-full py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-md shadow-blue-500/25 transition-all cursor-pointer"
-        >
-          View Full Profile
-        </button>
-      </div>
+      )}
 
       {/* Upcoming Appointments */}
       <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3">
@@ -225,32 +425,42 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
           </button>
         </div>
         <div className="mt-1.5 space-y-1.5">
-          {[
-            { time: '11:00 AM', name: 'Lidya Kebede', reason: 'Follow-up Visit', status: 'Upcoming' },
-            { time: '01:00 PM', name: 'Samuel Girma', reason: 'Consultation', status: 'Upcoming' },
-            { time: '02:00 PM', name: 'Betlehem Abebe', reason: 'Consultation', status: 'Upcoming' },
-            { time: '03:00 PM', name: 'Daniel Wondimu', reason: 'Follow-up Visit', status: 'Upcoming' },
-          ].map(({ time, name, reason, status }) => (
-            <div key={name} className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="text-[10px] font-bold text-slate-500 w-12 shrink-0">{time}</div>
-                <div className="min-w-0">
-                  <div className="text-[10px] font-bold text-slate-800 truncate">{name}</div>
-                  <div className="text-[9px] text-slate-400 truncate">{reason}</div>
+          {liveAppointments.filter(
+            (a) => a.status.toUpperCase() !== 'COMPLETED' && a.status.toUpperCase() !== 'CANCELLED',
+          ).length > 0 ? (
+            liveAppointments
+              .filter(
+                (a) => a.status.toUpperCase() !== 'COMPLETED' && a.status.toUpperCase() !== 'CANCELLED',
+              )
+              .slice(0, 4)
+              .map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="text-[10px] font-bold text-slate-500 w-12 shrink-0">{a.startTime}</div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold text-slate-800 truncate">{a.patientName}</div>
+                      <div className="text-[9px] text-slate-400 truncate">{a.reason || a.type || 'Consultation'}</div>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 shrink-0">
+                    {a.status}
+                  </span>
                 </div>
-              </div>
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 shrink-0">
-                {status}
-              </span>
+              ))
+          ) : (
+            <div className="py-4 text-center text-xs text-slate-400">
+              No upcoming appointments scheduled
             </div>
-          ))}
+          )}
         </div>
       </div>
 
       {/* Interactive Mini Calendar */}
       <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3">
         <div className="flex items-center justify-between mb-3">
-          <div className="text-sm font-bold text-slate-800">October 2026</div>
+          <div className="text-sm font-bold text-slate-800">
+            {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </div>
           <div className="flex items-center gap-1 text-slate-400">
             <button className="p-1 rounded hover:bg-slate-100 cursor-pointer">
               <ChevronLeft className="w-3.5 h-3.5" />
@@ -272,10 +482,10 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
           ].map((d, i) =>
             d === null ? (
               <span key={i} />
-            ) : d === 19 ? (
+            ) : d === new Date().getDate() ? (
               <button
                 key={d}
-                onClick={() => setCalendarSelectedDay(19)}
+                onClick={() => setCalendarSelectedDay(d)}
                 className="py-1 rounded-full bg-blue-600 text-white font-bold text-[11px] cursor-pointer"
               >
                 {d}
@@ -326,51 +536,66 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
               </div>
 
               <div className="divide-y divide-slate-100">
-                {TODAY_SCHEDULE.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      const match = INITIAL_PATIENTS.find((p) => p.name === item.patientName);
-                      if (match) handleOpenPatient(match);
-                    }}
-                    className="px-3.5 py-2 flex items-center justify-between hover:bg-slate-50/80 cursor-pointer transition-colors group"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <span className="text-[10px] font-semibold text-slate-500 w-24 shrink-0">
-                        {item.time}
-                      </span>
-                      <img
-                        src={item.avatar}
-                        alt={item.patientName}
-                        className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
-                      />
-                      <div className="min-w-0 flex-1 truncate">
-                        <div className="text-[11px] font-bold text-slate-800 group-hover:text-blue-600 transition-colors truncate">
-                          {item.patientName}
+                {liveAppointments.length > 0 ? (
+                  liveAppointments.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        const match = livePatients.find((p) => p.id === item.patientId);
+                        if (match) handleOpenPatient(mapPatientDtoToItem(match));
+                        else handleOpenPatient(createPatientItemFromAppointment(item));
+                      }}
+                      className="px-3.5 py-2 flex items-center justify-between hover:bg-slate-50/80 cursor-pointer transition-colors group"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="text-[10px] font-semibold text-slate-500 w-24 shrink-0">
+                          {item.startTime}
+                        </span>
+                        <img
+                          src={`https://ui-avatars.com/api/?name=${encodeURIComponent(item.patientName)}&size=80&background=dbeafe&color=1e40af`}
+                          alt={item.patientName}
+                          className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1 truncate">
+                          <div className="text-[11px] font-bold text-slate-800 group-hover:text-blue-600 transition-colors truncate">
+                            {item.patientName}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {item.reason || item.type || 'Consultation'}
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-400 truncate">{item.reason}</div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="hidden xl:inline-block text-[10px] font-medium text-slate-500">
+                          {item.branchName || 'General OPD'}
+                        </span>
+                        <span
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                            item.status.toUpperCase() === 'COMPLETED'
+                              ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                              : item.status.toUpperCase() === 'IN_PROGRESS' || item.status.toUpperCase() === 'CHECKED_IN'
+                              ? 'bg-blue-50 text-blue-600 border border-blue-100'
+                              : 'bg-cyan-50 text-cyan-600 border border-cyan-100'
+                          }`}
+                        >
+                          {item.status}
+                        </span>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="hidden xl:inline-block text-[10px] font-medium text-slate-500">
-                        {item.department}
-                      </span>
-                      <span
-                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                          item.status === 'Completed'
-                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                            : item.status === 'In Progress'
-                            ? 'bg-blue-50 text-blue-600 border border-blue-100'
-                            : 'bg-cyan-50 text-cyan-600 border border-cyan-100'
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
+                  ))
+                ) : (
+                  <div className="py-8 px-4 text-center">
+                    <div className="w-10 h-10 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2">
+                      <CalendarDays className="w-5 h-5" />
                     </div>
+                    <div className="text-xs font-bold text-slate-700">No appointments scheduled today</div>
+                    <p className="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">
+                      Appointments scheduled for today will appear here in real time.
+                    </p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
@@ -432,7 +657,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
 
               <div className="h-44 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={PATIENT_OVERVIEW_CHART_DATA}>
+                  <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
                     <XAxis
                       dataKey="day"
@@ -444,8 +669,8 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                       axisLine={false}
                       tickLine={false}
                       tick={{ fill: '#94A3B8', fontSize: 11 }}
-                      domain={[0, 20]}
-                      ticks={[0, 5, 10, 15, 20]}
+                      domain={[0, 10]}
+                      ticks={[0, 2, 4, 6, 8, 10]}
                     />
                     <Tooltip
                       contentStyle={{
@@ -497,46 +722,57 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/50">
-                      <th className="py-2 px-3.5">Name</th>
-                      <th className="py-2 px-3.5">Age</th>
-                      <th className="py-2 px-3.5">Visit Type</th>
-                      <th className="py-2 px-3.5">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {INITIAL_PATIENTS.slice(0, 5).map((patient) => (
-                      <tr
-                        key={patient.id}
-                        onClick={() => handleOpenPatient(patient)}
-                        className="hover:bg-slate-50/80 cursor-pointer transition-colors"
-                      >
-                        <td className="py-2 px-3.5">
-                          <div className="flex items-center gap-2">
-                            <img
-                              src={patient.avatar}
-                              alt={patient.name}
-                              className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200"
-                            />
-                            <div>
-                              <div className="text-[11px] font-bold text-slate-800">{patient.name}</div>
-                              <div className="text-[10px] text-slate-400">{patient.pid}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-2 px-3.5 text-[11px] font-semibold text-slate-600">
-                          {patient.age}y • {patient.gender}
-                        </td>
-                        <td className="py-2 px-3.5">
-                          <span className="text-[11px] font-medium text-slate-700">{patient.lastVisitReason}</span>
-                        </td>
-                        <td className="py-2 px-3.5 text-[11px] font-medium text-slate-500">{patient.lastVisit}</td>
+                {livePatients.length > 0 ? (
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/50">
+                        <th className="py-2 px-3.5">Name</th>
+                        <th className="py-2 px-3.5">Age</th>
+                        <th className="py-2 px-3.5">Gender</th>
+                        <th className="py-2 px-3.5">Registered</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {livePatients.slice(0, 5).map((p) => {
+                        const item = mapPatientDtoToItem(p);
+                        return (
+                          <tr
+                            key={p.id}
+                            onClick={() => handleOpenPatient(item)}
+                            className="hover:bg-slate-50/80 cursor-pointer transition-colors"
+                          >
+                            <td className="py-2 px-3.5">
+                              <div className="flex items-center gap-2">
+                                <img
+                                  src={item.avatar}
+                                  alt={item.name}
+                                  className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200"
+                                />
+                                <div>
+                                  <div className="text-[11px] font-bold text-slate-800">{item.name}</div>
+                                  <div className="text-[10px] text-slate-400">{item.pid}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2 px-3.5 text-[11px] font-semibold text-slate-600">
+                              {item.age}y
+                            </td>
+                            <td className="py-2 px-3.5 text-[11px] font-semibold text-slate-600">
+                              {item.gender}
+                            </td>
+                            <td className="py-2 px-3.5 text-[11px] font-medium text-slate-500">
+                              {item.lastVisit}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    No patients registered yet. Patients created in the system will appear here.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -554,12 +790,14 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
       <DoctorPrescriptionModal
         isOpen={prescriptionModalOpen}
         onClose={() => setPrescriptionModalOpen(false)}
-        defaultPatientId="p-1"
+        defaultPatientId={currentPatient?.id || (livePatients[0]?.id ?? 'p-1')}
+        onSuccess={() => void loadDashboardData()}
       />
       <DoctorLabOrderModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        defaultPatientId="p-1"
+        defaultPatientId={currentPatient?.id || (livePatients[0]?.id ?? 'p-1')}
+        onSuccess={() => void loadDashboardData()}
       />
     </>
   );

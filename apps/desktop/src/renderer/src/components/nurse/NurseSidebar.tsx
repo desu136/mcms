@@ -15,7 +15,7 @@ import {
   Database,
   HeartPulse,
 } from 'lucide-react';
-import { CURRENT_NURSE } from './nurseMockData';
+import { useAuth } from '../../auth/AuthContext';
 
 export type NurseTab =
   | 'dashboard'
@@ -61,6 +61,11 @@ export function NurseSidebar({
   pendingSyncOps = 0,
   isOnline = true,
 }: NurseSidebarProps) {
+  const { user } = useAuth();
+  const nurseName = user?.displayName || user?.email || 'Nurse';
+  const nurseRole = user?.staffProfile?.jobTitle || (user?.role === 'NURSE' ? 'Staff Nurse' : (user?.role || 'Nurse'));
+  const nurseDept = user?.staffProfile?.department || 'Triage OPD';
+  const nurseAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(nurseName)}&background=059669&color=fff&rounded=true&bold=true`;
   return (
     <aside
       className={`h-screen h-[100dvh] flex flex-col transition-all duration-300 ease-in-out shrink-0
@@ -175,13 +180,13 @@ export function NurseSidebar({
           className={`flex items-center gap-3 p-2 rounded-xl bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/80 cursor-pointer transition-colors ${
             isCollapsed ? 'justify-center p-1.5' : ''
           }`}
-          title={isCollapsed ? `${CURRENT_NURSE.name} (${CURRENT_NURSE.role})` : undefined}
+          title={isCollapsed ? `${nurseName} (${nurseRole})` : undefined}
         >
           <div className="relative shrink-0">
             <img
-              src={CURRENT_NURSE.avatar}
-              alt={CURRENT_NURSE.name}
-              className="w-9 h-9 rounded-full object-cover ring-2 ring-blue-500/40"
+              src={nurseAvatar}
+              alt={nurseName}
+              className="w-9 h-9 rounded-full object-cover ring-2 ring-emerald-500/40"
             />
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#0D1527]" />
           </div>
@@ -189,10 +194,10 @@ export function NurseSidebar({
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
               <div className="text-xs font-bold text-white truncate tracking-tight">
-                {CURRENT_NURSE.name}
+                {nurseName}
               </div>
               <div className="text-[11px] text-slate-400 truncate">
-                {CURRENT_NURSE.role} · {CURRENT_NURSE.department}
+                {nurseRole} · {nurseDept}
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />

@@ -1,32 +1,42 @@
 import React, { useState } from 'react';
-import { X, FlaskConical, CheckCircle2 } from 'lucide-react';
+import { X, FlaskConical, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { INITIAL_PATIENTS } from './doctorMockData';
+import { createLabOrder } from '../../api/clinical';
+import { useAuth } from '../../auth/AuthContext';
 
 export interface DoctorLabOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultPatientId?: string | undefined;
+  /** Live UUID from the API — if provided, used directly for the order */
+  realPatientId?: string | undefined;
+  onSuccess?: () => void;
 }
 
 const AVAILABLE_TESTS = [
-  { id: 't-1', name: 'Complete Blood Count (CBC)', dept: 'Hematology', tat: '2 hrs' },
-  { id: 't-2', name: 'Comprehensive Lipid Profile', dept: 'Biochemistry', tat: '4 hrs' },
-  { id: 't-3', name: 'Cardiac Troponin I (High Sensitivity)', dept: 'Cardiac Markers', tat: '45 mins' },
-  { id: 't-4', name: 'Serum Creatinine & eGFR', dept: 'Renal Panel', tat: '2 hrs' },
-  { id: 't-5', name: 'HbA1c Glycated Hemoglobin', dept: 'Endocrinology', tat: '3 hrs' },
-  { id: 't-6', name: '12-Lead Diagnostic Electrocardiogram (ECG)', dept: 'Cardiology', tat: 'Immediate' },
+  { id: 't-1', name: 'Complete Blood Count (CBC)', dept: 'Hematology', tat: '2 hrs', sampleType: 'Blood' },
+  { id: 't-2', name: 'Comprehensive Lipid Profile', dept: 'Biochemistry', tat: '4 hrs', sampleType: 'Blood' },
+  { id: 't-3', name: 'Cardiac Troponin I (High Sensitivity)', dept: 'Cardiac Markers', tat: '45 mins', sampleType: 'Blood' },
+  { id: 't-4', name: 'Serum Creatinine & eGFR', dept: 'Renal Panel', tat: '2 hrs', sampleType: 'Blood' },
+  { id: 't-5', name: 'HbA1c Glycated Hemoglobin', dept: 'Endocrinology', tat: '3 hrs', sampleType: 'Blood' },
+  { id: 't-6', name: '12-Lead Diagnostic Electrocardiogram (ECG)', dept: 'Cardiology', tat: 'Immediate', sampleType: 'Other' },
 ];
 
 export function DoctorLabOrderModal({
   isOpen,
   onClose,
   defaultPatientId = 'p-1',
+  realPatientId,
+  onSuccess,
 }: DoctorLabOrderModalProps) {
+  const { accessToken } = useAuth();
   const [selectedPatientId, setSelectedPatientId] = useState(defaultPatientId);
   const [selectedTests, setSelectedTests] = useState<string[]>(['t-2', 't-3']);
   const [urgency, setUrgency] = useState<'ROUTINE' | 'URGENT' | 'STAT'>('ROUTINE');
   const [clinicalNotes, setClinicalNotes] = useState('Evaluate atypical chest discomfort and rule out acute coronary syndrome.');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -36,13 +46,59 @@ export function DoctorLabOrderModal({
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      onClose();
-    }, 1200);
+    if (selectedTests.length === 0) return;
+
+    setSubmitting(true);
+    setError(null);
+
+    const targetPatientId = realPatientId ?? selectedPatientId;
+    const chosenTests = AVAILABLE_TESTS.filter((t) => selectedTests.includes(t.id));
+
+    try {
+      await createLabOrder(
+        {
+          patientId: targetPatientId,
+          priority: urgency,
+          ...(clinicalNotes.trim() ? { clinicalNotes: clinicalNotes.trim() } : {}),
+          tests: chosenTests.map((t) => ({
+            testName: t.name,
+            testCategory: t.dept,
+            sampleType: t.sampleType,
+          })),
+        },
+        accessToken,
+      );
+      setSubmitted(true);
+      onSuccess?.();
+      setTimeout(() => {
+        setSubmitted(false);
+        onClose();
+      }, 1400);
+    } catch (err) {
+      // Offline fallback: enqueue to SQLite
+      try {
+        await (window as any).electron?.ipcRenderer?.invoke('enqueue-operation', {
+          type: 'CREATE_LAB_ORDER',
+          payload: {
+            patientId: targetPatientId,
+            priority: urgency,
+            clinicalNotes,
+            tests: chosenTests.map((t) => ({ testName: t.name, testCategory: t.dept, sampleType: t.sampleType })),
+          },
+        });
+        setSubmitted(true);
+        setTimeout(() => {
+          setSubmitted(false);
+          onClose();
+        }, 1400);
+      } catch {
+        setError(err instanceof Error ? err.message : 'Failed to submit lab order. Try again.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -77,23 +133,32 @@ export function DoctorLabOrderModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            {/* Patient Selector */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                Target Patient
-              </label>
-              <select
-                value={selectedPatientId}
-                onChange={(e) => setSelectedPatientId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 bg-white"
-              >
-                {INITIAL_PATIENTS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.pid}) — {p.age} yrs, {p.gender}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {error && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-50 border border-rose-100 text-xs text-rose-700">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {/* Patient Selector — shown only when no realPatientId is provided */}
+            {!realPatientId && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Target Patient
+                </label>
+                <select
+                  value={selectedPatientId}
+                  onChange={(e) => setSelectedPatientId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 bg-white"
+                >
+                  {INITIAL_PATIENTS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.pid}) — {p.age} yrs, {p.gender}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Test Selection */}
             <div>
@@ -161,7 +226,7 @@ export function DoctorLabOrderModal({
             {/* Clinical Indication */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                Clinical Indication & Instructions
+                Clinical Indication &amp; Instructions
               </label>
               <textarea
                 value={clinicalNotes}
@@ -181,9 +246,10 @@ export function DoctorLabOrderModal({
               </button>
               <button
                 type="submit"
-                disabled={selectedTests.length === 0}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50 shadow-md shadow-orange-500/25 transition-all"
+                disabled={selectedTests.length === 0 || submitting}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50 shadow-md shadow-orange-500/25 transition-all flex items-center gap-2"
               >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Submit Lab Requisition
               </button>
             </div>

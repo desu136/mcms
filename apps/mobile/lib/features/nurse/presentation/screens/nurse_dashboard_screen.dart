@@ -28,6 +28,14 @@ class _NurseDashboardScreenState
     extends ConsumerState<NurseDashboardScreen> {
   int _currentTabIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NurseRepository.loadFromApi(ref);
+    });
+  }
+
   void _onSelectTab(int index) {
     setState(() => _currentTabIndex = index);
   }
@@ -320,9 +328,7 @@ class _NurseHomeBody extends ConsumerWidget {
         .length;
 
     return RefreshIndicator(
-      onRefresh: () async {
-        await Future<void>.delayed(const Duration(milliseconds: 300));
-      },
+      onRefresh: () => NurseRepository.loadFromApi(ref),
       color: const Color(0xFF2563EB),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),

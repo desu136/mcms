@@ -5,6 +5,8 @@ enum UserRole {
   doctor('DOCTOR'),
   nurse('NURSE'),
   receptionist('RECEPTIONIST'),
+  labTechnician('LAB_TECHNICIAN'),
+  lab('LAB'),
   patient('PATIENT');
 
   final String value;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CalendarDays,
   Clock,
@@ -30,18 +30,39 @@ import RecordVitalsModal from '../../components/nurse/RecordVitalsModal';
 import AdministerMedModal from '../../components/nurse/AdministerMedModal';
 import CollectLabModal from '../../components/nurse/CollectLabModal';
 import AddNoteModal from '../../components/nurse/AddNoteModal';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchNursingTasks, fetchMedications } from '../../api/clinical';
+import { fetchPatients } from '../../api/patients';
 
 export interface DashboardPageProps {
   onNavigateTab?: (tab: string) => void;
 }
 
 export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
+  const { accessToken, user } = useAuth();
   const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
   const [administerModalOpen, setAdministerModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
+
+  const [liveTaskCount, setLiveTaskCount] = useState<number | null>(null);
+  const [liveMedCount, setLiveMedCount] = useState<number | null>(null);
+  const [livePatientCount, setLivePatientCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const [tasksRes, medsRes, patientsRes] = await Promise.allSettled([
+        fetchNursingTasks(accessToken),
+        fetchMedications(accessToken),
+        fetchPatients(accessToken, { limit: 50 }),
+      ]);
+      if (tasksRes.status === 'fulfilled' && Array.isArray(tasksRes.value)) setLiveTaskCount(tasksRes.value.length);
+      if (medsRes.status === 'fulfilled' && Array.isArray(medsRes.value)) setLiveMedCount(medsRes.value.length);
+      if (patientsRes.status === 'fulfilled' && patientsRes.value?.total) setLivePatientCount(patientsRes.value.total);
+    })();
+  }, [accessToken]);
 
   const handleOpenPatientDetails = (patient: NursePatient) => {
     setSelectedPatient(patient);
@@ -58,21 +79,23 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight">Good morning, {CURRENT_NURSE.name}</h1>
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight">Good morning, {user?.displayName || CURRENT_NURSE.name}</h1>
             <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-400/20 text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               On Duty
             </span>
           </div>
           <p className="text-xs text-blue-100/80 mt-0.5">
-            {CURRENT_NURSE.ward} · 4 patients awaiting vital check, 2 scheduled for 10:00 AM med pass
+            {CURRENT_NURSE.ward} · Live electronic telemetry and nursing shift dashboard
           </p>
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0 z-10 self-end sm:self-auto">
         <div className="bg-white/15 backdrop-blur-md rounded-lg px-2.5 py-1 text-xs border border-white/15 flex items-center gap-1.5">
           <CalendarDays className="w-3.5 h-3.5 text-blue-200" />
-          <span className="font-semibold text-white">Oct 19, 2026 · Shift A</span>
+          <span className="font-semibold text-white">
+            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </span>
         </div>
         <button
           onClick={() => setVitalsModalOpen(true)}
@@ -90,27 +113,27 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
       <NurseStatCard
         title="Total In Ward"
-        value={18}
+        value={livePatientCount ?? 18}
         iconName="users"
-        trendText="+2 from yesterday"
+        trendText="active patients"
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="blue"
       />
       <NurseStatCard
-        title="In Active Care"
-        value={14}
+        title="Nursing Tasks"
+        value={liveTaskCount ?? 14}
         iconName="activity"
-        trendText="85% occupancy"
+        trendText="live shift tasks"
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="green"
       />
       <NurseStatCard
-        title="Meds Due (Shift A)"
-        value={8}
+        title="Meds Due"
+        value={liveMedCount ?? 8}
         iconName="syringe"
-        trendText="4 completed"
+        trendText="scheduled doses"
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="purple"
@@ -119,7 +142,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         title="Vitals Observation"
         value={6}
         iconName="heart"
-        trendText="2 high priority"
+        trendText="priority queue"
         trendDirection="down"
         trendIsPositive={false}
         colorTheme="orange"

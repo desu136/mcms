@@ -20,7 +20,7 @@ import { ReportsPage } from '../../pages/admin/ReportsPage';
 import { SettingsPage } from '../../pages/admin/SettingsPage';
 
 export interface AdminLayoutProps {
-  onSwitchWorkstation?: (w: 'admin' | 'doctor' | 'nurse' | 'receptionist') => void;
+  onSwitchWorkstation?: ((w: 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab') => void) | undefined;
 }
 
 export function AdminLayout({ onSwitchWorkstation }: AdminLayoutProps) {

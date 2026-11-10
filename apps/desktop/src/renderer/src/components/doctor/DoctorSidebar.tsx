@@ -15,7 +15,7 @@ import {
   LogOut,
   Database,
 } from 'lucide-react';
-import { CURRENT_DOCTOR } from './doctorMockData';
+import { useAuth } from '../../auth/AuthContext';
 
 export type DoctorTab =
   | 'dashboard'
@@ -57,6 +57,11 @@ export function DoctorSidebar({
   onToggleCollapse,
   pendingSyncOps = 0,
 }: DoctorSidebarProps) {
+  const { user } = useAuth();
+  const doctorName = user?.displayName || user?.email || 'Doctor';
+  const doctorRole = user?.staffProfile?.jobTitle || (user?.role === 'DOCTOR' ? 'Attending Physician' : (user?.role || 'Doctor'));
+  const doctorAvatar =
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(doctorName)}&background=0284c7&color=fff&rounded=true&bold=true`;
   return (
     <aside
       className={`h-screen h-[100dvh] flex flex-col transition-all duration-300 ease-in-out shrink-0
@@ -165,12 +170,12 @@ export function DoctorSidebar({
           className={`flex items-center gap-3 p-2 rounded-xl bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/80 cursor-pointer transition-colors ${
             isCollapsed ? 'justify-center p-1.5' : ''
           }`}
-          title={isCollapsed ? `${CURRENT_DOCTOR.name} (${CURRENT_DOCTOR.role})` : undefined}
+          title={isCollapsed ? `${doctorName} (${doctorRole})` : undefined}
         >
           <div className="relative shrink-0">
             <img
-              src={CURRENT_DOCTOR.avatar}
-              alt={CURRENT_DOCTOR.name}
+              src={doctorAvatar}
+              alt={doctorName}
               className="w-9 h-9 rounded-full object-cover ring-2 ring-cyan-500/40"
             />
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#0D1527]" />
@@ -179,10 +184,10 @@ export function DoctorSidebar({
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
               <div className="text-xs font-bold text-white truncate tracking-tight">
-                {CURRENT_DOCTOR.name}
+                {doctorName}
               </div>
               <div className="text-[11px] text-slate-400 truncate">
-                {CURRENT_DOCTOR.role}
+                {doctorRole}
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />

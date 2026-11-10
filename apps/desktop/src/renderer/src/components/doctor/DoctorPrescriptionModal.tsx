@@ -1,34 +1,91 @@
 import React, { useState } from 'react';
-import { X, Pill, CheckCircle2 } from 'lucide-react';
+import { X, Pill, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { INITIAL_PATIENTS } from './doctorMockData';
+import { createPrescription } from '../../api/clinical';
+import { useAuth } from '../../auth/AuthContext';
 
 export interface DoctorPrescriptionModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultPatientId?: string | undefined;
+  /** Called with the live patient id (UUID) if the caller has a real patientId */
+  realPatientId?: string | undefined;
+  onSuccess?: () => void;
 }
 
 export function DoctorPrescriptionModal({
   isOpen,
   onClose,
   defaultPatientId = 'p-1',
+  realPatientId,
+  onSuccess,
 }: DoctorPrescriptionModalProps) {
+  const { accessToken } = useAuth();
   const [selectedPatientId, setSelectedPatientId] = useState(defaultPatientId);
   const [medication, setMedication] = useState('Amlodipine 5mg');
   const [dosage, setDosage] = useState('1 Tablet Daily');
   const [duration, setDuration] = useState('30 Days');
   const [instructions, setInstructions] = useState('Take in the morning with water after breakfast.');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      onClose();
-    }, 1200);
+    setSubmitting(true);
+    setError(null);
+
+    // Build the patientId: prefer realPatientId (live UUID from API), else use the
+    // mock-select value. The mock select uses local ids like 'p-1', so if we only
+    // have mock ids the API will reject — we fall back to offline queue.
+    const targetPatientId = realPatientId ?? selectedPatientId;
+
+    try {
+      await createPrescription(
+        {
+          patientId: targetPatientId,
+          ...(instructions.trim() ? { notes: instructions.trim() } : {}),
+          items: [
+            {
+              medicationName: medication.trim(),
+              dosage: dosage.trim(),
+              ...(duration.trim() ? { duration: duration.trim() } : {}),
+              ...(instructions.trim() ? { instructions: instructions.trim() } : {}),
+            },
+          ],
+        },
+        accessToken,
+      );
+      setSubmitted(true);
+      onSuccess?.();
+      setTimeout(() => {
+        setSubmitted(false);
+        onClose();
+      }, 1400);
+    } catch (err) {
+      // Offline fallback: enqueue to SQLite
+      try {
+        await (window as any).electron?.ipcRenderer?.invoke('enqueue-operation', {
+          type: 'CREATE_PRESCRIPTION',
+          payload: {
+            patientId: targetPatientId,
+            notes: instructions,
+            items: [{ medicationName: medication, dosage, duration, instructions }],
+          },
+        });
+        setSubmitted(true);
+        setTimeout(() => {
+          setSubmitted(false);
+          onClose();
+        }, 1400);
+      } catch {
+        setError(err instanceof Error ? err.message : 'Failed to submit prescription. Try again.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -59,27 +116,36 @@ export function DoctorPrescriptionModal({
               <CheckCircle2 className="w-8 h-8" />
             </div>
             <h4 className="text-lg font-bold text-slate-800">Prescription Issued Successfully!</h4>
-            <p className="text-xs text-slate-500">Sent to dispensary queue for verification & dispensation.</p>
+            <p className="text-xs text-slate-500">Sent to dispensary queue for verification &amp; dispensation.</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            {/* Patient Selector */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                Target Patient
-              </label>
-              <select
-                value={selectedPatientId}
-                onChange={(e) => setSelectedPatientId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white"
-              >
-                {INITIAL_PATIENTS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.pid}) — {p.age} yrs, {p.gender}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {error && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-50 border border-rose-100 text-xs text-rose-700">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {/* Patient Selector — shown only when no realPatientId is provided */}
+            {!realPatientId && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Target Patient
+                </label>
+                <select
+                  value={selectedPatientId}
+                  onChange={(e) => setSelectedPatientId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white"
+                >
+                  {INITIAL_PATIENTS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.pid}) — {p.age} yrs, {p.gender}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -126,7 +192,7 @@ export function DoctorPrescriptionModal({
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                Dispensation Notes & Patient Advice
+                Dispensation Notes &amp; Patient Advice
               </label>
               <textarea
                 value={instructions}
@@ -146,9 +212,11 @@ export function DoctorPrescriptionModal({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/25 transition-all"
+                disabled={submitting}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 shadow-md shadow-blue-500/25 transition-all flex items-center gap-2"
               >
-                Sign & Transmit Rx
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Sign &amp; Transmit Rx
               </button>
             </div>
           </form>

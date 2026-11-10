@@ -16,7 +16,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { useSync } from '../../context/SyncContext';
 
 export interface NurseLayoutProps {
-  onSwitchWorkstation?: (w: 'admin' | 'doctor' | 'nurse' | 'receptionist') => void;
+  onSwitchWorkstation?: ((w: 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab') => void) | undefined;
 }
 
 export function NurseLayout({ onSwitchWorkstation }: NurseLayoutProps) {

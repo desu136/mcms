@@ -48,8 +48,9 @@ export default function DoctorHeader({ onOpenSearch, onOpenMobileSidebar }: Doct
     window.location.href = '/login';
   };
 
-  const doctorName = user?.displayName || CURRENT_DOCTOR.name;
-  const doctorSpecialty = user?.staffProfile?.jobTitle || CURRENT_DOCTOR.role;
+  const doctorName = user?.displayName || 'Doctor';
+  const doctorSpecialty = user?.staffProfile?.jobTitle || (user?.role === 'DOCTOR' ? 'Attending Physician' : (user?.role || 'Doctor'));
+  const doctorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(doctorName)}&background=0284c7&color=fff&rounded=true&bold=true`;
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-8 flex items-center justify-between gap-4 shadow-2xs">
@@ -152,7 +153,7 @@ export default function DoctorHeader({ onOpenSearch, onOpenMobileSidebar }: Doct
             className="flex items-center gap-3 p-1.5 pl-2 rounded-xl hover:bg-slate-100 transition-colors"
           >
             <img
-              src={CURRENT_DOCTOR.avatar}
+              src={doctorAvatar}
               alt={doctorName}
               className="w-9 h-9 rounded-full object-cover ring-2 ring-blue-500/30"
             />

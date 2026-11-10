@@ -20,7 +20,7 @@ interface SyncStatus {
 }
 
 export interface DoctorLayoutProps {
-  onSwitchWorkstation?: ((w: 'admin' | 'doctor' | 'nurse' | 'receptionist') => void) | undefined;
+  onSwitchWorkstation?: ((w: 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab') => void) | undefined;
 }
 
 export function DoctorLayout({ onSwitchWorkstation }: DoctorLayoutProps) {

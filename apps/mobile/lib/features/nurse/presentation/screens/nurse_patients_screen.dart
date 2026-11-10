@@ -168,36 +168,40 @@ class _NursePatientsScreenState extends ConsumerState<NursePatientsScreen> {
 
           // Patients List
           Expanded(
-            child: filtered.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.person_off_rounded,
-                          size: 48,
-                          color: Colors.blueGrey.shade300,
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'No inpatients found',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
+            child: RefreshIndicator(
+              onRefresh: () => NurseRepository.loadFromApi(ref),
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.person_off_rounded,
+                            size: 48,
+                            color: Colors.blueGrey.shade300,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 12),
+                          const Text(
+                            'No inpatients found',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final patient = filtered[index];
+                        return _buildPatientCard(patient);
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final patient = filtered[index];
-                      return _buildPatientCard(patient);
-                    },
-                  ),
+            ),
           ),
         ],
       ),

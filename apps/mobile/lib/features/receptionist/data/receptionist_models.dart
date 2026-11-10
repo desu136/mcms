@@ -55,6 +55,45 @@ class RegistrationPatient {
     this.conditions = const [],
   });
 
+  factory RegistrationPatient.fromDto(Map<String, dynamic> json) {
+    final dName = json['fullName'] as String? ??
+        '${json['firstName'] ?? ''} ${json['lastName'] ?? ''}'.trim();
+    int age = 30;
+    final dobStr = json['dateOfBirth'] as String?;
+    if (dobStr != null && dobStr.isNotEmpty) {
+      final dob = DateTime.tryParse(dobStr);
+      if (dob != null) {
+        age = (DateTime.now().difference(dob).inDays / 365.25).floor();
+      }
+    }
+
+    String regDate = 'Recent';
+    final createdStr = json['createdAt'] as String?;
+    if (createdStr != null && createdStr.isNotEmpty) {
+      final dt = DateTime.tryParse(createdStr);
+      if (dt != null) {
+        regDate = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      }
+    }
+
+    return RegistrationPatient(
+      id: json['id'] as String? ?? '',
+      pid: json['pid'] as String? ?? '',
+      name: dName.isNotEmpty ? dName : 'Patient',
+      age: age > 0 ? age : 30,
+      gender: json['gender'] as String? ?? 'Other',
+      phone: json['phoneNumber'] as String? ?? '—',
+      email: json['email'] as String? ?? '—',
+      address: json['address'] as String? ?? '—',
+      bloodType: 'O+',
+      emergencyContact: 'Family',
+      emergencyPhone: '—',
+      registrationDate: regDate,
+      status: json['status'] == 'ACTIVE' ? 'Active' : (json['status'] as String? ?? 'Active'),
+      conditions: const [],
+    );
+  }
+
   String get initials {
     final parts = name.trim().split(' ');
     if (parts.length >= 2) {
@@ -94,6 +133,47 @@ class ReceptionistAppointment {
     required this.status,
     this.notes,
   });
+
+  factory ReceptionistAppointment.fromDto(Map<String, dynamic> json) {
+    String dateStr = 'Today';
+    String timeStr = '09:00 AM';
+    final dtRaw = json['appointmentDate'] as String?;
+    if (dtRaw != null && dtRaw.isNotEmpty) {
+      final dt = DateTime.tryParse(dtRaw);
+      if (dt != null) {
+        dateStr = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+        final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+        final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+        timeStr = '${hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} $ampm';
+      }
+    }
+
+    final rawStatus = (json['status'] as String? ?? 'CONFIRMED').toUpperCase();
+    ReceptionistAppointmentStatus status = ReceptionistAppointmentStatus.confirmed;
+    if (rawStatus == 'CANCELLED') {
+      status = ReceptionistAppointmentStatus.cancelled;
+    } else if (rawStatus == 'COMPLETED') {
+      status = ReceptionistAppointmentStatus.completed;
+    } else if (rawStatus == 'IN_PROGRESS' || rawStatus == 'IN_CONSULTATION') {
+      status = ReceptionistAppointmentStatus.inProgress;
+    } else if (rawStatus == 'PENDING' || rawStatus == 'SCHEDULED') {
+      status = ReceptionistAppointmentStatus.pending;
+    }
+
+    return ReceptionistAppointment(
+      id: json['id'] as String? ?? '',
+      patientName: json['patientName'] as String? ?? 'Patient',
+      patientId: json['patientId'] as String? ?? '',
+      pid: json['patientPid'] as String? ?? '',
+      doctorName: json['doctorName'] as String? ?? 'Attending Doctor',
+      department: json['departmentName'] as String? ?? 'General Practice',
+      date: dateStr,
+      time: timeStr,
+      reason: json['reason'] as String? ?? 'Consultation',
+      status: status,
+      notes: json['notes'] as String?,
+    );
+  }
 
   String get statusLabel {
     switch (status) {
@@ -151,6 +231,53 @@ class QueueEntry {
     required this.status,
     required this.priority,
   });
+
+  factory QueueEntry.fromDto(Map<String, dynamic> json) {
+    int qNum = 1;
+    if (json['queueNumber'] is int) {
+      qNum = json['queueNumber'] as int;
+    } else if (json['queueNumber'] != null) {
+      qNum = int.tryParse(json['queueNumber'].toString()) ?? 1;
+    }
+
+    String timeStr = 'Just now';
+    final rawTime = json['checkedInAt'] as String? ?? json['createdAt'] as String?;
+    if (rawTime != null && rawTime.isNotEmpty) {
+      final dt = DateTime.tryParse(rawTime);
+      if (dt != null) {
+        final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+        final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+        timeStr = '${hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} $ampm';
+      }
+    }
+
+    final rawStatus = (json['status'] as String? ?? 'WAITING').toUpperCase();
+    QueueStatus status = QueueStatus.waiting;
+    if (rawStatus == 'CALLED') {
+      status = QueueStatus.called;
+    } else if (rawStatus == 'IN_CONSULTATION' || rawStatus == 'IN_PROGRESS') {
+      status = QueueStatus.inConsultation;
+    } else if (rawStatus == 'COMPLETED' || rawStatus == 'DONE') {
+      status = QueueStatus.done;
+    } else if (rawStatus == 'NO_SHOW') {
+      status = QueueStatus.noShow;
+    }
+
+    return QueueEntry(
+      id: json['id'] as String? ?? '',
+      queueNumber: qNum,
+      patientName: json['patientName'] as String? ?? 'Patient',
+      patientId: json['patientId'] as String? ?? '',
+      pid: json['patientPid'] as String? ?? '',
+      reason: json['chiefComplaint'] as String? ?? json['reason'] as String? ?? 'Consultation',
+      department: json['departmentName'] as String? ?? 'General Practice',
+      doctorName: json['doctorName'] as String? ?? 'Attending Doctor',
+      checkinTime: timeStr,
+      estimatedWait: json['estimatedWait'] as String? ?? '10 min',
+      status: status,
+      priority: json['priority'] as String? ?? 'Normal',
+    );
+  }
 
   String get statusLabel {
     switch (status) {

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/doctor_repository.dart';
 
-class DoctorAppBar extends StatelessWidget implements PreferredSizeWidget {
+class DoctorAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final VoidCallback? onAvatarTap;
   final VoidCallback? onNotificationsTap;
 
@@ -16,8 +17,8 @@ class DoctorAppBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => const Size.fromHeight(60);
 
   @override
-  Widget build(BuildContext context) {
-    const doctor = DoctorRepository.currentDoctor;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final doctor = ref.watch(doctorProfileProvider);
 
     return Container(
       color: Colors.white,

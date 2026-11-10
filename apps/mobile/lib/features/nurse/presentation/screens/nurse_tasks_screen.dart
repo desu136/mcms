@@ -1,10 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/nurse_models.dart';
 import '../../data/nurse_repository.dart';
 import '../widgets/nurse_modals.dart';
-
 class NurseTasksScreen extends ConsumerStatefulWidget {
   const NurseTasksScreen({super.key});
 
@@ -83,36 +83,40 @@ class _NurseTasksScreenState extends ConsumerState<NurseTasksScreen> {
 
           // Tasks List
           Expanded(
-            child: filtered.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.task_alt_rounded,
-                          size: 48,
-                          color: Colors.blueGrey.shade300,
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'No tasks in this category',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
+            child: RefreshIndicator(
+              onRefresh: () => NurseRepository.loadFromApi(ref),
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.task_alt_rounded,
+                            size: 48,
+                            color: Colors.blueGrey.shade300,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 12),
+                          const Text(
+                            'No tasks in this category',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final task = filtered[index];
+                        return _buildTaskCard(task);
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final task = filtered[index];
-                      return _buildTaskCard(task);
-                    },
-                  ),
+            ),
           ),
         ],
       ),
@@ -213,14 +217,13 @@ class _NurseTasksScreenState extends ConsumerState<NurseTasksScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(5),
               ),
-              onChanged: (_) {
+              onChanged: (_) async {
+                final newStatus = isDone ? TaskStatus.pending : TaskStatus.completed;
                 ref.read(nurseTasksProvider.notifier).update((list) {
                   return list.map((t) {
                     if (t.id == task.id) {
                       return t.copyWith(
-                        status: isDone
-                            ? TaskStatus.pending
-                            : TaskStatus.completed,
+                        status: newStatus,
                         completedAt: isDone
                             ? null
                             : 'Today, ${TimeOfDay.now().format(context)}',
@@ -229,6 +232,13 @@ class _NurseTasksScreenState extends ConsumerState<NurseTasksScreen> {
                     return t;
                   }).toList();
                 });
+                // Sync to backend
+                unawaited(NurseRepository.updateNursingTaskViaApi(ref, task.id, {
+                  'status': newStatus == TaskStatus.completed ? 'COMPLETED' : 'PENDING',
+                  'completedAt': newStatus == TaskStatus.completed
+                      ? DateTime.now().toIso8601String()
+                      : null,
+                }));
               },
             ),
             const SizedBox(width: 8),

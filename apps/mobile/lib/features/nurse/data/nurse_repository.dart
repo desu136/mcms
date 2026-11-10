@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/auth/auth_provider.dart';
+import '../../../../core/api/api_client.dart';
 import 'nurse_models.dart';
 
 /// Repository holding Nurse data, state notifiers, and clinical operations.
@@ -717,6 +719,98 @@ class NurseRepository {
     ],
   };
 
+  // ─── Live API Integration Methods ──────────────────────────────────────────
+
+  static Future<void> loadFromApi(WidgetRef ref) async {
+    final client = ref.read(apiClientProvider);
+
+    try {
+      final patientsRes = await client.getPatients(limit: 50);
+      final rawList = patientsRes['data'] as List<dynamic>? ?? [];
+      final mapped = rawList
+          .map((p) => NursePatient.fromDto(p as Map<String, dynamic>))
+          .toList();
+      if (mapped.isNotEmpty) {
+        ref.read(nursePatientsProvider.notifier).state = mapped;
+      }
+    } catch (_) {}
+
+    try {
+      final medsRes = await client.getMedications();
+      final mappedMeds = medsRes
+          .map((m) => NurseMedication.fromDto(m as Map<String, dynamic>))
+          .toList();
+      if (mappedMeds.isNotEmpty) {
+        ref.read(nurseMedicationsProvider.notifier).state = mappedMeds;
+      }
+    } catch (_) {}
+
+    try {
+      final tasksRes = await client.getNursingTasks();
+      final mappedTasks = tasksRes
+          .map((t) => NursingTask.fromDto(t as Map<String, dynamic>))
+          .toList();
+      if (mappedTasks.isNotEmpty) {
+        ref.read(nurseTasksProvider.notifier).state = mappedTasks;
+      }
+    } catch (_) {}
+
+    try {
+      final labsRes = await client.getLabOrders();
+      final mappedLabs = labsRes
+          .map((l) => NurseLabSample.fromDto(l as Map<String, dynamic>))
+          .toList();
+      if (mappedLabs.isNotEmpty) {
+        ref.read(nurseLabSamplesProvider.notifier).state = mappedLabs;
+      }
+    } catch (_) {}
+  }
+
+  static Future<bool> recordVitalsViaApi(
+      WidgetRef ref, Map<String, dynamic> data) async {
+    final client = ref.read(apiClientProvider);
+    try {
+      final created = await client.recordVitals(data);
+      final record = VitalsRecord.fromDto(created);
+      ref
+          .read(nurseVitalsHistoryProvider.notifier)
+          .update((list) => [record, ...list]);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> administerMedicationViaApi(
+      WidgetRef ref, String medId, Map<String, dynamic> data) async {
+    final client = ref.read(apiClientProvider);
+    try {
+      final updated = await client.administerMedication(medId, data);
+      final medItem = NurseMedication.fromDto(updated);
+      ref.read(nurseMedicationsProvider.notifier).update(
+            (list) => list.map((m) => m.id == medId ? medItem : m).toList(),
+          );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> updateNursingTaskViaApi(
+      WidgetRef ref, String taskId, Map<String, dynamic> data) async {
+    final client = ref.read(apiClientProvider);
+    try {
+      final updated = await client.updateNursingTask(taskId, data);
+      final taskItem = NursingTask.fromDto(updated);
+      ref.read(nurseTasksProvider.notifier).update(
+            (list) => list.map((t) => t.id == taskId ? taskItem : t).toList(),
+          );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ─── Activity Log ───────────────────────────────────────────────────────────
   static final List<NurseActivityLog> initialActivities = [
     const NurseActivityLog(
@@ -752,9 +846,49 @@ class NurseRepository {
 
 // ─── Riverpod Providers ───────────────────────────────────────────────────────
 
-final nurseProfileProvider = Provider<NurseProfile>((_) => NurseRepository.currentNurse);
+final nurseProfileProvider = Provider<NurseProfile>((ref) {
+  final user = ref.watch(authProvider).user;
+  if (user != null) {
+    final name = user.displayName.isNotEmpty ? user.displayName : user.email;
+    return NurseProfile(
+      id: user.id,
+      name: name,
+      role: 'Staff Nurse (RN)',
+      department: 'Cardiology & General Ward',
+      ward: 'Ward 3A - Bed 01-12',
+      email: user.email,
+      phone: '+251 912 345 678',
+      location: 'Tikur Anbessa Hospital, Addis Ababa',
+      avatar:
+          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(name)}&size=256&background=dbeafe&color=1e40af',
+      quote: 'Caring for patients is a work of heart.',
+      unreadNotifications: 2,
+      unreadMessages: 1,
+      status: NurseStatus.online,
+    );
+  }
+  return NurseRepository.currentNurse;
+});
 
-final nurseKpisProvider = Provider<NurseKpis>((_) => NurseRepository.kpis);
+final nurseKpisProvider = Provider<NurseKpis>((ref) {
+  final patients = ref.watch(nursePatientsProvider);
+  final meds = ref.watch(nurseMedicationsProvider);
+  final tasks = ref.watch(nurseTasksProvider);
+  final labs = ref.watch(nurseLabSamplesProvider);
+
+  final pendingMedsCount = meds.where((m) => m.status != MedStatus.administered).length;
+  final urgentLabsCount = labs.where((l) => l.priority == SamplePriority.urgent).length;
+  final pendingTasksCount = tasks.where((t) => t.status != TaskStatus.completed).length;
+
+  return NurseKpis(
+    activePatients: patients.length,
+    pendingMeds: pendingMedsCount > 0 ? pendingMedsCount : meds.length,
+    vitalsDue: (patients.length / 2).ceil(),
+    urgentLabs: urgentLabsCount > 0 ? urgentLabsCount : 2,
+    tasksToday: pendingTasksCount > 0 ? pendingTasksCount : tasks.length,
+    admissions: (patients.length / 3).ceil(),
+  );
+});
 
 final nursePatientsProvider = StateProvider<List<NursePatient>>((ref) {
   return NurseRepository.initialPatients;

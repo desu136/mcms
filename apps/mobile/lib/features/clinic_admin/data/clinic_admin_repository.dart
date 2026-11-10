@@ -172,7 +172,7 @@ class ClinicAdminRepository {
   Future<void> fetchAppointments() async {
     try {
       final response = await _client
-          .get(ApiEndpoints.appointments, headers: _buildHeaders())
+          .get(ApiEndpoints.appointments(), headers: _buildHeaders())
           .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {

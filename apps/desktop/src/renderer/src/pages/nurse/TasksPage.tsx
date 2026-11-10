@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   ClipboardList,
   CheckCircle2,
@@ -19,8 +19,11 @@ import {
   Eye,
 } from 'lucide-react';
 import { NurseStatCard } from '../../components/nurse/NurseStatCard';
-import { NURSE_TASKS, NURSE_PATIENTS, NursePatient } from '../../components/nurse/nurseMockData';
+import { NURSE_PATIENTS, NursePatient } from '../../components/nurse/nurseMockData';
 import NursePatientDetailsModal from '../../components/nurse/NursePatientDetailsModal';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchNursingTasks, updateNursingTask } from '../../api/clinical';
+import type { NursingTaskDTO } from '@mcms/contracts';
 
 const PRIORITY_STYLES: Record<string, string> = {
   High:   'bg-red-100 text-red-600',
@@ -60,7 +63,33 @@ const PROGRESS_CATEGORIES = [
   { label: 'Other',       done: 0,  total: 6,  color: 'bg-gray-400' },
 ];
 
+// Map DTO priority/status to UI display labels
+function mapPriority(p: string): string {
+  if (p === 'HIGH') return 'High';
+  if (p === 'MEDIUM') return 'Medium';
+  if (p === 'LOW') return 'Low';
+  return p;
+}
+
+function mapStatus(s: string): string {
+  if (s === 'PENDING') return 'Pending';
+  if (s === 'IN_PROGRESS') return 'In Progress';
+  if (s === 'COMPLETED') return 'Completed';
+  if (s === 'SCHEDULED') return 'Scheduled';
+  return s;
+}
+
+function mapTaskType(t: string): string {
+  if (t === 'MEDICATION') return 'Medication';
+  if (t === 'VITAL_SIGNS') return 'Vital Signs';
+  if (t === 'WOUND_CARE') return 'Wound Care';
+  if (t === 'LAB_SAMPLE') return 'Lab Sample';
+  if (t === 'EDUCATION') return 'Education';
+  return t;
+}
+
 export function TasksPage() {
+  const { accessToken } = useAuth();
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('All Priorities');
@@ -70,30 +99,67 @@ export function TasksPage() {
   const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
   const rowsPerPage = 10;
 
-  const handleOpenDetails = (patientPid: string, patientName: string) => {
-    const p = NURSE_PATIENTS.find((np) => np.pid === patientPid || np.name === patientName) || NURSE_PATIENTS[0]!;
+  const [tasks, setTasks] = useState<NursingTaskDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadTasks = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchNursingTasks(accessToken);
+      setTasks(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load tasks');
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
+
+  const handleCompleteTask = async (taskId: string) => {
+    try {
+      await updateNursingTask(taskId, { status: 'COMPLETED' }, accessToken);
+      await loadTasks();
+    } catch (err) {
+      try {
+        await (window as any).electron?.ipcRenderer?.invoke('enqueue-operation', {
+          type: 'COMPLETE_NURSING_TASK',
+          payload: { taskId, status: 'COMPLETED' },
+        });
+      } catch { /* ignore */ }
+    }
+  };
+
+  const handleOpenDetails = (patientName: string) => {
+    const p = NURSE_PATIENTS.find((np) => np.name === patientName) || NURSE_PATIENTS[0]!;
     setSelectedPatient(p);
     setDetailsOpen(true);
   };
 
-  const filtered = NURSE_TASKS.filter((t) => {
+  const filtered = tasks.filter((t) => {
     const q = searchQuery.toLowerCase();
+    const uiType = mapTaskType(t.taskType);
+    const uiStatus = mapStatus(t.status);
+    const uiPriority = mapPriority(t.priority);
     const matchQ =
       !q ||
       t.patientName.toLowerCase().includes(q) ||
-      t.title.toLowerCase().includes(q) ||
-      t.room.toLowerCase().includes(q);
-    const matchTab = activeTab === 'all' || t.type === activeTab;
-    const matchPriority = selectedPriority === 'All Priorities' || t.priority === selectedPriority;
-    const matchStatus = selectedStatus === 'All Statuses' || t.status === selectedStatus;
+      t.title.toLowerCase().includes(q);
+    const matchTab = activeTab === 'all' || uiType === activeTab;
+    const matchPriority = selectedPriority === 'All Priorities' || uiPriority === selectedPriority;
+    const matchStatus = selectedStatus === 'All Statuses' || uiStatus === selectedStatus;
     return matchQ && matchTab && matchPriority && matchStatus;
   });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const paginated = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
-  const completedCount = NURSE_TASKS.filter((t) => t.status === 'Completed').length;
-  const totalCount = NURSE_TASKS.length;
-  const pct = Math.round((completedCount / totalCount) * 100);
+  const completedCount = tasks.filter((t) => t.status === 'COMPLETED').length;
+  const totalCount = tasks.length;
+  const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
     <div className="h-full flex overflow-hidden bg-[#F4F7FC]">
@@ -158,7 +224,15 @@ export function TasksPage() {
         </div>
 
         {/* Table */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden relative">
+          {loading && (
+            <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10">
+              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+          {error && (
+            <div className="p-3 text-xs text-red-600 bg-red-50">{error}</div>
+          )}
           <div className="p-2.5 sm:p-3 border-b border-gray-100 flex flex-wrap items-center gap-2.5">
             <div className="relative flex-1 min-w-[200px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -213,7 +287,10 @@ export function TasksPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {paginated.map((task) => {
-                  const cfg = TYPE_CONFIGS[task.type] || { bg: 'bg-gray-100', text: 'text-gray-600', Icon: ClipboardList };
+                  const uiType = mapTaskType(task.taskType);
+                  const uiStatus = mapStatus(task.status);
+                  const uiPriority = mapPriority(task.priority);
+                  const cfg = TYPE_CONFIGS[uiType] || { bg: 'bg-gray-100', text: 'text-gray-600', Icon: ClipboardList };
                   const TypeIcon = cfg.Icon;
                   return (
                     <tr key={task.id} className="hover:bg-blue-50/30 transition-colors">
@@ -228,7 +305,7 @@ export function TasksPage() {
                           <div>
                             <p className="font-medium text-gray-800 text-xs leading-tight">{task.patientName}</p>
                             <p className="text-[10px] text-gray-400">
-                              {task.patientPid} · {task.room}
+                              {task.assignedToName ?? '—'}
                             </p>
                           </div>
                         </div>
@@ -240,33 +317,33 @@ export function TasksPage() {
                       <td className="px-3 py-2">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${cfg.bg} ${cfg.text}`}>
                           <TypeIcon size={10} />
-                          {task.type}
+                          {uiType}
                         </span>
                       </td>
                       <td className="px-3 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${PRIORITY_STYLES[task.priority] || 'bg-gray-100 text-gray-600'}`}>
-                          {task.priority}
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${PRIORITY_STYLES[uiPriority] || 'bg-gray-100 text-gray-600'}`}>
+                          {uiPriority}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                         <div>{task.dueTime}</div>
-                        <div className="text-[10px] text-gray-400">{task.dueDate}</div>
                       </td>
                       <td className="px-3 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_STYLES[task.status] || 'bg-gray-100 text-gray-600'}`}>
-                          {task.status}
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_STYLES[uiStatus] || 'bg-gray-100 text-gray-600'}`}>
+                          {uiStatus}
                         </span>
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => handleOpenDetails(task.patientPid, task.patientName)}
+                            onClick={() => handleOpenDetails(task.patientName)}
                             className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-50 text-blue-500 transition-colors cursor-pointer"
                             title="View Patient Details"
                           >
                             <Eye size={13} />
                           </button>
                           <button
+                            onClick={() => void handleCompleteTask(task.id)}
                             className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-green-50 text-green-500 transition-colors cursor-pointer"
                             title="Complete"
                           >
