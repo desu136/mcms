@@ -139,16 +139,20 @@ class _ReceptionistPatientsScreenState
             ),
             // List
             Expanded(
-              child: filtered.isEmpty
-                  ? _EmptyPatientsState()
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) => _PatientCard(
-                        patient: filtered[i],
-                        onTap: () => _showPatientDetail(filtered[i]),
+              child: RefreshIndicator(
+                onRefresh: () => ReceptionistRepository.loadFromApi(ref),
+                child: filtered.isEmpty
+                    ? _EmptyPatientsState()
+                    : ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) => _PatientCard(
+                          patient: filtered[i],
+                          onTap: () => _showPatientDetail(filtered[i]),
+                        ),
                       ),
-                    ),
+              ),
             ),
           ],
         ),
@@ -696,14 +700,15 @@ class _InfoRow extends StatelessWidget {
 
 // ─── Register Patient Sheet ───────────────────────────────────────────────────
 
-class _RegisterPatientSheet extends StatefulWidget {
+class _RegisterPatientSheet extends ConsumerStatefulWidget {
   const _RegisterPatientSheet();
 
   @override
-  State<_RegisterPatientSheet> createState() => _RegisterPatientSheetState();
+  ConsumerState<_RegisterPatientSheet> createState() =>
+      _RegisterPatientSheetState();
 }
 
-class _RegisterPatientSheetState extends State<_RegisterPatientSheet> {
+class _RegisterPatientSheetState extends ConsumerState<_RegisterPatientSheet> {
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -865,18 +870,45 @@ class _RegisterPatientSheetState extends State<_RegisterPatientSheet> {
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
+                        final firstName = _firstNameCtrl.text.trim();
+                        final lastName = _lastNameCtrl.text.trim();
+                        if (firstName.isEmpty || lastName.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please enter both first and last name'),
+                            ),
+                          );
+                          return;
+                        }
+
+                        final data = {
+                          'firstName': firstName,
+                          'lastName': lastName,
+                          'phoneNumber': _phoneCtrl.text.trim(),
+                          'email': _emailCtrl.text.trim(),
+                          'gender': _gender.toUpperCase(),
+                          'bloodType': _bloodType,
+                        };
+
                         Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content:
-                                const Text('Patient registered successfully'),
-                            backgroundColor: AppTheme.success,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                          ),
-                        );
+                        final success =
+                            await ReceptionistRepository.registerPatient(
+                                ref, data);
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success
+                                  ? 'Patient registered and synced with server'
+                                  : 'Patient registered locally'),
+                              backgroundColor: AppTheme.success,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
+                          );
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primary,

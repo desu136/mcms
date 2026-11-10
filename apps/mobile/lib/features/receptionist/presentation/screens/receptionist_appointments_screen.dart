@@ -64,16 +64,20 @@ class _ReceptionistAppointmentsScreenState
             _buildFilterChips(),
             // List
             Expanded(
-              child: filtered.isEmpty
-                  ? _EmptyState(filter: _selectedFilter)
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) => AppointmentCard(
-                        appt: filtered[i],
-                        onTap: () => _showAppointmentDetail(filtered[i]),
+              child: RefreshIndicator(
+                onRefresh: () => ReceptionistRepository.loadFromApi(ref),
+                child: filtered.isEmpty
+                    ? _EmptyState(filter: _selectedFilter)
+                    : ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) => AppointmentCard(
+                          appt: filtered[i],
+                          onTap: () => _showAppointmentDetail(filtered[i]),
+                        ),
                       ),
-                    ),
+              ),
             ),
           ],
         ),
@@ -447,14 +451,15 @@ class _DetailRow extends StatelessWidget {
 
 // ─── Book Appointment Sheet ───────────────────────────────────────────────────
 
-class _BookAppointmentSheet extends StatefulWidget {
+class _BookAppointmentSheet extends ConsumerStatefulWidget {
   const _BookAppointmentSheet();
 
   @override
-  State<_BookAppointmentSheet> createState() => _BookAppointmentSheetState();
+  ConsumerState<_BookAppointmentSheet> createState() =>
+      _BookAppointmentSheetState();
 }
 
-class _BookAppointmentSheetState extends State<_BookAppointmentSheet> {
+class _BookAppointmentSheetState extends ConsumerState<_BookAppointmentSheet> {
   final _formKey = GlobalKey<FormState>();
   final _patientCtrl = TextEditingController();
   final _reasonCtrl = TextEditingController();
@@ -550,18 +555,46 @@ class _BookAppointmentSheetState extends State<_BookAppointmentSheet> {
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Appointment booked successfully'),
-                            backgroundColor: AppTheme.success,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                      onPressed: () async {
+                        final patientText = _patientCtrl.text.trim();
+                        if (patientText.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please enter patient name or PID'),
                             ),
-                          ),
-                        );
+                          );
+                          return;
+                        }
+
+                        final appointmentData = {
+                          'patientName': patientText,
+                          'department': _selectedDept,
+                          'time': _selectedTime,
+                          'reason': _reasonCtrl.text.trim().isNotEmpty
+                              ? _reasonCtrl.text.trim()
+                              : 'General Consultation',
+                          'status': 'CONFIRMED',
+                        };
+
+                        Navigator.pop(context);
+                        final success =
+                            await ReceptionistRepository.createAppointment(
+                                ref, appointmentData);
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success
+                                  ? 'Appointment booked and synced with server'
+                                  : 'Appointment booked locally'),
+                              backgroundColor: AppTheme.success,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          );
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primary,

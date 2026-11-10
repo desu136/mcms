@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/storage/sqlite_database.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/api/api_client.dart';
+import '../../data/doctor_models.dart';
 import '../../data/doctor_repository.dart';
 import '../widgets/doctor_app_bar.dart';
 import '../widgets/doctor_kpi_card.dart';
@@ -30,6 +32,15 @@ class DoctorDashboardScreen extends ConsumerStatefulWidget {
 
 class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   int _currentTabIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final client = ref.read(apiClientProvider);
+      ref.read(doctorProvider.notifier).loadFromApi(client);
+    });
+  }
 
   void _onSelectTab(int index) {
     setState(() => _currentTabIndex = index);
@@ -166,6 +177,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   }
 
   void _showDoctorMenu(BuildContext context) {
+    final doc = ref.read(doctorProfileProvider);
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -181,12 +193,12 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
             ListTile(
               leading: CircleAvatar(
                 backgroundImage:
-                    NetworkImage(DoctorRepository.currentDoctor.avatar),
+                    NetworkImage(doc.avatar),
               ),
-              title: Text(DoctorRepository.currentDoctor.name,
+              title: Text(doc.name,
                   style: const TextStyle(fontWeight: FontWeight.w700)),
               subtitle: Text(
-                  '${DoctorRepository.currentDoctor.role} • ${DoctorRepository.currentDoctor.department}'),
+                  '${doc.role} • ${doc.department}'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push<void>(
@@ -309,16 +321,34 @@ class _DoctorHomeBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(doctorProfileProvider);
     final state = ref.watch(doctorProvider);
     final appointments = state.appointments;
     final patients = state.patients;
-    final currentPatient = patients.first; // Aster Mulu
+    final currentPatient = patients.isNotEmpty ? patients.first : null;
+
+    final todayAppointmentsCount = appointments.length;
+    final completedCount = appointments
+        .where((a) => a.status == AppointmentStatus.completed)
+        .length;
+    final pendingRxCount = state.prescriptions
+        .where((p) =>
+            p.status.toUpperCase() == 'ACTIVE' ||
+            p.status.toUpperCase() == 'PENDING')
+        .length;
+    final pendingLabCount = state.labResults
+        .where((l) =>
+            l.status.toUpperCase() != 'COMPLETED' &&
+            l.status.toUpperCase() != 'CANCELLED')
+        .length;
 
     return RefreshIndicator(
       color: const Color(0xFF1E6BFF),
       backgroundColor: Colors.white,
       onRefresh: () async {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
+        await ref
+            .read(doctorProvider.notifier)
+            .loadFromApi(ref.read(apiClientProvider));
       },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -328,13 +358,13 @@ class _DoctorHomeBody extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Welcome Back, Dr. Fitsum Alemu',
-                      style: TextStyle(
+                      'Welcome Back, ${profile.name}',
+                      style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
                         color: AppTheme.textPrimary,
@@ -342,8 +372,8 @@ class _DoctorHomeBody extends ConsumerWidget {
                         height: 1.2,
                       ),
                     ),
-                    SizedBox(height: 3),
-                    Text(
+                    const SizedBox(height: 3),
+                    const Text(
                       "Here's what's happening with your patients today.",
                       style: TextStyle(
                         fontSize: 11.5,
@@ -418,7 +448,7 @@ class _DoctorHomeBody extends ConsumerWidget {
               Expanded(
                 child: DoctorKpiCard(
                   title: "Today's Appointments",
-                  value: '9',
+                  value: '$todayAppointmentsCount',
                   valueColor: const Color(0xFF1E6BFF),
                   trendValue: '2',
                   isTrendUp: true,
@@ -430,7 +460,7 @@ class _DoctorHomeBody extends ConsumerWidget {
               Expanded(
                 child: DoctorKpiCard(
                   title: 'Patients Seen Today',
-                  value: '7',
+                  value: '$completedCount',
                   valueColor: const Color(0xFF10B981),
                   trendValue: '3',
                   isTrendUp: true,
@@ -446,7 +476,7 @@ class _DoctorHomeBody extends ConsumerWidget {
               Expanded(
                 child: DoctorKpiCard(
                   title: 'Pending Prescriptions',
-                  value: '4',
+                  value: '$pendingRxCount',
                   valueColor: const Color(0xFF8B5CF6),
                   trendValue: '2',
                   isTrendUp: false,
@@ -464,7 +494,7 @@ class _DoctorHomeBody extends ConsumerWidget {
               Expanded(
                 child: DoctorKpiCard(
                   title: 'Lab Results Pending',
-                  value: '6',
+                  value: '$pendingLabCount',
                   valueColor: const Color(0xFFF97316),
                   trendValue: '1',
                   isTrendUp: true,
@@ -737,61 +767,62 @@ class _DoctorHomeBody extends ConsumerWidget {
           const SizedBox(height: 18),
 
           // ─── Current Patient Card ──────────────────────────────────────────
-          CurrentPatientCard(
-            patient: currentPatient,
-            onViewRecord: () {
-              Navigator.push<void>(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => const DoctorMedicalRecordsScreen(),
-                ),
-              );
-            },
-            onTap: () {
-              showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (_) => PatientDetailSheet(
-                  patient: currentPatient,
-                  onPrescribe: () {
-                    showModalBottomSheet<void>(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => AddPrescriptionSheet(
-                        patients: patients,
-                        onAdd: (item) => ref
-                            .read(doctorProvider.notifier)
-                            .addPrescription(item),
-                      ),
-                    );
-                  },
-                  onOrderLab: () {
-                    showModalBottomSheet<void>(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => OrderLabSheet(
-                        patients: patients,
-                        onAdd: (item) => ref
-                            .read(doctorProvider.notifier)
-                            .addLabOrder(item),
-                      ),
-                    );
-                  },
-                  onViewRecords: () {
-                    Navigator.push<void>(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (_) => const DoctorMedicalRecordsScreen(),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
+          if (currentPatient != null)
+            CurrentPatientCard(
+              patient: currentPatient,
+              onViewRecord: () {
+                Navigator.push<void>(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const DoctorMedicalRecordsScreen(),
+                  ),
+                );
+              },
+              onTap: () {
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => PatientDetailSheet(
+                    patient: currentPatient,
+                    onPrescribe: () {
+                      showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => AddPrescriptionSheet(
+                          patients: patients,
+                          onAdd: (item) => ref
+                              .read(doctorProvider.notifier)
+                              .addPrescription(item),
+                        ),
+                      );
+                    },
+                    onOrderLab: () {
+                      showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => OrderLabSheet(
+                          patients: patients,
+                          onAdd: (item) => ref
+                              .read(doctorProvider.notifier)
+                              .addLabOrder(item),
+                        ),
+                      );
+                    },
+                    onViewRecords: () {
+                      Navigator.push<void>(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => const DoctorMedicalRecordsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
           const SizedBox(height: 20),
         ],
       ),

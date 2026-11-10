@@ -50,25 +50,29 @@ class _ReceptionistQueueScreenState
             _buildFilterChips(),
             // Queue list
             Expanded(
-              child: filtered.isEmpty
-                  ? _EmptyQueueState(filter: _selectedFilter)
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) {
-                        final entry = filtered[i];
-                        return QueueEntryCard(
-                          entry: entry,
-                          onCallNext: entry.status == QueueStatus.waiting
-                              ? () => _callPatient(entry)
-                              : null,
-                          onMarkDone:
-                              entry.status == QueueStatus.inConsultation
-                                  ? () => _markDone(entry)
-                                  : null,
-                        );
-                      },
-                    ),
+              child: RefreshIndicator(
+                onRefresh: () => ReceptionistRepository.loadFromApi(ref),
+                child: filtered.isEmpty
+                    ? _EmptyQueueState(filter: _selectedFilter)
+                    : ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) {
+                          final entry = filtered[i];
+                          return QueueEntryCard(
+                            entry: entry,
+                            onCallNext: entry.status == QueueStatus.waiting
+                                ? () => _callPatient(entry)
+                                : null,
+                            onMarkDone:
+                                entry.status == QueueStatus.inConsultation
+                                    ? () => _markDone(entry)
+                                    : null,
+                          );
+                        },
+                      ),
+              ),
             ),
           ],
         ),
@@ -188,7 +192,7 @@ class _ReceptionistQueueScreenState
     );
   }
 
-  void _callPatient(QueueEntry entry) {
+  void _callPatient(QueueEntry entry) async {
     final queue = ref.read(receptionistQueueProvider);
     final updated = queue.map((q) {
       if (q.id == entry.id) {
@@ -202,7 +206,7 @@ class _ReceptionistQueueScreenState
           department: q.department,
           doctorName: q.doctorName,
           checkinTime: q.checkinTime,
-          estimatedWait: q.estimatedWait,
+          estimatedWait: 'Calling now',
           status: QueueStatus.called,
           priority: q.priority,
         );
@@ -210,18 +214,21 @@ class _ReceptionistQueueScreenState
       return q;
     }).toList();
     ref.read(receptionistQueueProvider.notifier).state = updated;
+    await ReceptionistRepository.updateQueueStatus(ref, entry.id, 'CALLING');
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${entry.patientName} has been called'),
-        backgroundColor: AppTheme.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${entry.patientName} has been called'),
+          backgroundColor: AppTheme.primary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
   }
 
-  void _markDone(QueueEntry entry) {
+  void _markDone(QueueEntry entry) async {
     final queue = ref.read(receptionistQueueProvider);
     final updated = queue.map((q) {
       if (q.id == entry.id) {
@@ -243,15 +250,18 @@ class _ReceptionistQueueScreenState
       return q;
     }).toList();
     ref.read(receptionistQueueProvider.notifier).state = updated;
+    await ReceptionistRepository.updateQueueStatus(ref, entry.id, 'COMPLETED');
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${entry.patientName} marked as done'),
-        backgroundColor: AppTheme.success,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${entry.patientName} marked as done'),
+          backgroundColor: AppTheme.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
   }
 
   void _showAddToQueueSheet(BuildContext context) {
@@ -352,14 +362,14 @@ class _EmptyQueueState extends StatelessWidget {
 
 // ─── Add to Queue Sheet ───────────────────────────────────────────────────────
 
-class _AddToQueueSheet extends StatefulWidget {
+class _AddToQueueSheet extends ConsumerStatefulWidget {
   const _AddToQueueSheet();
 
   @override
-  State<_AddToQueueSheet> createState() => _AddToQueueSheetState();
+  ConsumerState<_AddToQueueSheet> createState() => _AddToQueueSheetState();
 }
 
-class _AddToQueueSheetState extends State<_AddToQueueSheet> {
+class _AddToQueueSheetState extends ConsumerState<_AddToQueueSheet> {
   final _patientCtrl = TextEditingController();
   final _reasonCtrl = TextEditingController();
   String _priority = 'Normal';
@@ -464,17 +474,43 @@ class _AddToQueueSheetState extends State<_AddToQueueSheet> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
+                  final patientName = _patientCtrl.text.trim();
+                  if (patientName.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please enter patient name'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  final queueData = {
+                    'patientName': patientName,
+                    'reason': _reasonCtrl.text.trim().isNotEmpty
+                        ? _reasonCtrl.text.trim()
+                        : 'Consultation',
+                    'priority': _priority.toUpperCase(),
+                    'status': 'WAITING',
+                  };
+
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text('Patient added to queue'),
-                      backgroundColor: AppTheme.success,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                  );
+                  final success = await ReceptionistRepository.addToQueue(
+                      ref, queueData);
+
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(success
+                            ? 'Patient added to queue and synced with server'
+                            : 'Patient added to queue locally'),
+                        backgroundColor: AppTheme.success,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    );
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
