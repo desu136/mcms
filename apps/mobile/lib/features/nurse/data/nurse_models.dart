@@ -188,6 +188,54 @@ class NursePatient {
       nextFollowUp: nextFollowUp,
     );
   }
+
+  factory NursePatient.fromDto(Map<String, dynamic> json) {
+    final rawName = json['fullName'] as String? ??
+        '${json['firstName'] ?? ''} ${json['lastName'] ?? ''}'.trim();
+    final name = rawName.isNotEmpty ? rawName : 'Patient';
+    final rawId = json['id'] as String? ?? '';
+    final pid = json['pid'] as String? ??
+        (rawId.isNotEmpty ? 'PID-${rawId.substring(0, rawId.length > 6 ? 6 : rawId.length)}' : 'PID-000000');
+    final rawDob = json['dateOfBirth'] as String?;
+    int age = 30;
+    if (rawDob != null) {
+      try {
+        final dob = DateTime.parse(rawDob);
+        age = DateTime.now().year - dob.year;
+      } catch (_) {}
+    }
+
+    final gender = (json['gender'] as String? ?? 'Other').toUpperCase() == 'MALE'
+        ? 'Male'
+        : (json['gender'] as String? ?? 'Other').toUpperCase() == 'FEMALE'
+            ? 'Female'
+            : 'Other';
+
+    return NursePatient(
+      id: rawId,
+      pid: pid,
+      name: name,
+      age: age,
+      gender: gender,
+      avatar:
+          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(name)}&size=160&background=dbeafe&color=1e40af',
+      phone: json['phoneNumber'] as String? ?? '—',
+      email: json['email'] as String? ?? '—',
+      address: json['address'] as String? ?? 'Addis Ababa',
+      room: json['roomNumber'] as String? ?? 'Ward 3A',
+      bed: json['bedNumber'] as String? ?? 'Bed 01',
+      department: json['department'] as String? ?? 'Cardiology & OPD',
+      visitReason: json['visitReason'] as String? ?? 'Clinical Inpatient Care',
+      status: PatientWardStatus.inWard,
+      vitalsStatus: VitalsCondition.normal,
+      vitals: const PatientVitals(bp: '120/80', hr: 75, temp: 36.8, spo2: 98),
+      doctor: json['doctorName'] as String? ?? 'Dr. Fitsum Alemu',
+      admissionDate: json['createdAt'] != null
+          ? (json['createdAt'] as String).split('T').first
+          : 'Today',
+      nextFollowUp: 'Tomorrow, 09:00 AM',
+    );
+  }
 }
 
 // ─── Vitals Log Reading ─────────────────────────────────────────────────────
@@ -220,6 +268,33 @@ class VitalsRecord {
     required this.recordedBy,
     this.notes,
   });
+
+  factory VitalsRecord.fromDto(Map<String, dynamic> json) {
+    final systolic = json['systolic'] ?? json['bloodPressureSystolic'] ?? 120;
+    final diastolic = json['diastolic'] ?? json['bloodPressureDiastolic'] ?? 80;
+    final bp = '$systolic/$diastolic';
+    final hr = (json['heartRate'] as num?)?.toInt() ?? (json['pulse'] as num?)?.toInt() ?? 75;
+    final temp = (json['temperature'] as num?)?.toDouble() ?? 36.8;
+    final spo2 = (json['oxygenSaturation'] as num?)?.toInt() ?? (json['spo2'] as num?)?.toInt() ?? 98;
+    final respRate = (json['respiratoryRate'] as num?)?.toInt() ?? 18;
+
+    return VitalsRecord(
+      id: json['id'] as String? ?? '',
+      patientId: json['patientId'] as String? ?? '',
+      patientName: json['patientName'] as String? ?? 'Patient',
+      patientPid: json['patientPid'] as String? ?? 'PID-000000',
+      dateTime: json['recordedAt'] != null
+          ? (json['recordedAt'] as String).replaceFirst('T', ' ').substring(0, 16)
+          : 'Today',
+      bp: bp,
+      hr: hr,
+      temp: temp,
+      spo2: spo2,
+      respRate: respRate,
+      recordedBy: json['recordedBy'] as String? ?? 'Staff Nurse',
+      notes: json['notes'] as String?,
+    );
+  }
 }
 
 // ─── Medication Administration Record ───────────────────────────────────────
@@ -299,6 +374,43 @@ class NurseMedication {
       sideEffects: sideEffects,
     );
   }
+
+  factory NurseMedication.fromDto(Map<String, dynamic> json) {
+    final rawStatus = (json['status'] as String? ?? 'PENDING').toUpperCase();
+    MedStatus status = MedStatus.pending;
+    if (rawStatus == 'ADMINISTERED' || rawStatus == 'COMPLETED') {
+      status = MedStatus.administered;
+    } else if (rawStatus == 'DUE_SOON') {
+      status = MedStatus.dueSoon;
+    } else if (rawStatus == 'MISSED') {
+      status = MedStatus.missed;
+    }
+
+    final pName = json['patientName'] as String? ?? 'Patient';
+
+    return NurseMedication(
+      id: json['id'] as String? ?? '',
+      patientId: json['patientId'] as String? ?? '',
+      patientName: pName,
+      patientPid: json['patientPid'] as String? ?? 'PID-000000',
+      patientAvatar:
+          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(pName)}&size=160&background=dbeafe&color=1e40af',
+      age: (json['patientAge'] as num?)?.toInt() ?? 30,
+      gender: json['patientGender'] as String? ?? 'Female',
+      room: json['room'] as String? ?? 'Ward 3A',
+      department: json['department'] as String? ?? 'Cardiology',
+      medicationName: json['medicationName'] as String? ?? json['name'] as String? ?? 'Medication',
+      condition: json['condition'] as String? ?? 'Inpatient Care',
+      dose: json['dose'] as String? ?? json['dosage'] as String? ?? '1 dose',
+      route: json['route'] as String? ?? 'Oral',
+      schedule: json['schedule'] as String? ?? 'Daily',
+      nextDue: json['nextDue'] as String? ?? 'Today 02:00 PM',
+      status: status,
+      prescribingDoctor: json['prescribingDoctor'] as String? ?? 'Dr. Fitsum Alemu',
+      instructions: json['instructions'] as String? ?? 'Administer with water after meals',
+      lastAdministered: json['lastAdministered'] as String?,
+    );
+  }
 }
 
 // ─── Lab Sample Collection ──────────────────────────────────────────────────
@@ -370,6 +482,49 @@ class NurseLabSample {
       deliveredAt: deliveredAt ?? this.deliveredAt,
     );
   }
+
+  factory NurseLabSample.fromDto(Map<String, dynamic> json) {
+    final rawStatus = (json['status'] as String? ?? 'PENDING').toUpperCase();
+    SampleStatus status = SampleStatus.pending;
+    if (rawStatus == 'COLLECTED') {
+      status = SampleStatus.collected;
+    } else if (rawStatus == 'IN_LAB' || rawStatus == 'PROCESSING') {
+      status = SampleStatus.inLab;
+    } else if (rawStatus == 'COMPLETED') {
+      status = SampleStatus.completed;
+    }
+
+    final rawPriority = (json['priority'] as String? ?? 'NORMAL').toUpperCase();
+    SamplePriority priority = SamplePriority.normal;
+    if (rawPriority == 'URGENT') {
+      priority = SamplePriority.urgent;
+    } else if (rawPriority == 'HIGH') {
+      priority = SamplePriority.high;
+    }
+
+    final pName = json['patientName'] as String? ?? 'Patient';
+
+    return NurseLabSample(
+      id: json['id'] as String? ?? '',
+      sampleId: json['sampleId'] as String? ?? 'SMP-${(json['id'] ?? '').toString().substring(0, 6)}',
+      patientId: json['patientId'] as String? ?? '',
+      patientName: pName,
+      patientPid: json['patientPid'] as String? ?? 'PID-000000',
+      patientAvatar:
+          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(pName)}&size=160&background=dbeafe&color=1e40af',
+      room: json['room'] as String? ?? 'Ward 3A',
+      department: json['department'] as String? ?? 'Laboratory',
+      testName: json['testName'] as String? ?? 'Lab Sample Test',
+      sampleType: json['sampleType'] as String? ?? 'Blood',
+      priority: priority,
+      collectionTime: json['collectionTime'] as String? ?? 'Today 10:00 AM',
+      status: status,
+      doctor: json['doctor'] as String? ?? 'Dr. Fitsum Alemu',
+      instructions: json['instructions'] as String?,
+      collectedAt: json['collectedAt'] as String?,
+      deliveredAt: json['deliveredAt'] as String?,
+    );
+  }
 }
 
 // ─── Nursing Tasks ──────────────────────────────────────────────────────────
@@ -426,6 +581,42 @@ class NursingTask {
       dueDate: dueDate,
       status: status ?? this.status,
       completedAt: completedAt ?? this.completedAt,
+    );
+  }
+
+  factory NursingTask.fromDto(Map<String, dynamic> json) {
+    final rawStatus = (json['status'] as String? ?? 'PENDING').toUpperCase();
+    TaskStatus status = TaskStatus.pending;
+    if (rawStatus == 'IN_PROGRESS') {
+      status = TaskStatus.inProgress;
+    } else if (rawStatus == 'SCHEDULED') {
+      status = TaskStatus.scheduled;
+    } else if (rawStatus == 'COMPLETED') {
+      status = TaskStatus.completed;
+    }
+
+    final rawPriority = (json['priority'] as String? ?? 'MEDIUM').toUpperCase();
+    TaskPriority priority = TaskPriority.medium;
+    if (rawPriority == 'HIGH' || rawPriority == 'URGENT') {
+      priority = TaskPriority.high;
+    } else if (rawPriority == 'LOW') {
+      priority = TaskPriority.low;
+    }
+
+    return NursingTask(
+      id: json['id'] as String? ?? '',
+      patientId: json['patientId'] as String? ?? '',
+      patientName: json['patientName'] as String? ?? 'Patient',
+      patientPid: json['patientPid'] as String? ?? 'PID-000000',
+      room: json['room'] as String? ?? 'Ward 3A',
+      title: json['title'] as String? ?? json['task'] as String? ?? 'Nursing Care Task',
+      details: json['description'] as String? ?? json['details'] as String?,
+      type: json['category'] as String? ?? json['type'] as String? ?? 'General Care',
+      priority: priority,
+      dueTime: json['dueTime'] as String? ?? '12:00 PM',
+      dueDate: json['dueDate'] as String? ?? 'Today',
+      status: status,
+      completedAt: json['completedAt'] as String?,
     );
   }
 }

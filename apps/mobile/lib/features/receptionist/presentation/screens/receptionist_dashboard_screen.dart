@@ -28,6 +28,14 @@ class _ReceptionistDashboardScreenState
     extends ConsumerState<ReceptionistDashboardScreen> {
   int _currentTabIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ReceptionistRepository.loadFromApi(ref);
+    });
+  }
+
   void _onSelectTab(int index) {
     setState(() => _currentTabIndex = index);
   }
@@ -178,7 +186,9 @@ class _ReceptionistHomeBody extends ConsumerWidget {
         .take(3)
         .toList();
 
-    return CustomScrollView(
+    return RefreshIndicator(
+      onRefresh: () => ReceptionistRepository.loadFromApi(ref),
+      child: CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
@@ -408,6 +418,7 @@ class _ReceptionistHomeBody extends ConsumerWidget {
           ),
         ),
       ],
+    ),
     );
   }
 }

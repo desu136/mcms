@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Pill,
   CheckCircle2,
@@ -26,8 +26,54 @@ import {
 import { NurseStatCard } from '../../components/nurse/NurseStatCard';
 import NurseMedicationDetailsModal from '../../components/nurse/NurseMedicationDetailsModal';
 import AdministerMedModal from '../../components/nurse/AdministerMedModal';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchMedications, administerMedication } from '../../api/clinical';
+import type { MedicationAdminDTO } from '@mcms/contracts';
+
+function mapDTOToRecord(dto: MedicationAdminDTO): NurseMedicationRecord {
+  const dtoStatus = (dto.status || '').toUpperCase();
+  let uiStatus: NurseMedicationRecord['status'] = 'Pending';
+  if (dtoStatus === 'ADMINISTERED') uiStatus = 'Administered';
+  else if (dtoStatus === 'MISSED') uiStatus = 'Missed';
+  else if (dtoStatus === 'DUE_SOON') uiStatus = 'Due Soon';
+  else if (dtoStatus === 'REFILL_DUE') uiStatus = 'Refill Due';
+
+  const validRoute = (['Oral', 'Subcutaneous', 'Intravenous', 'Intramuscular', 'Inhalation', 'Topical'] as const).find(
+    (r) => r.toLowerCase() === (dto.route || '').toLowerCase()
+  ) ?? 'Oral';
+
+  const validSchedule = (['BID', 'TID', 'QID', 'Daily', 'Before Meals', 'PRN', 'Every 8 hrs'] as const).find(
+    (s) => s.toLowerCase() === (dto.schedule || '').toLowerCase()
+  ) ?? 'Daily';
+
+  return {
+    id: dto.id,
+    patientId: dto.patientId,
+    patientName: dto.patientName,
+    patientPid: `PID-${dto.patientId.slice(0, 6).toUpperCase()}`,
+    patientAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(dto.patientName)}&background=EFF6FF&color=2563EB&size=64`,
+    age: 35,
+    gender: 'Female',
+    phone: '+251 911 000 000',
+    email: `${dto.patientName.toLowerCase().replace(/\s+/g, '.')}@mcms.local`,
+    address: 'Addis Ababa, Ethiopia',
+    room: 'Ward 3A',
+    department: 'Cardiology',
+    condition: 'Under Care',
+    medicationName: dto.medicationName,
+    dose: dto.dose,
+    route: validRoute,
+    schedule: validSchedule,
+    nextDue: dto.scheduledTime ?? 'Today 12:00 PM',
+    status: uiStatus,
+    prescribingDoctor: dto.administeredByName ?? 'Attending Physician',
+    instructions: dto.instructions ?? 'Administer per schedule',
+    ...(dto.administeredAt ? { lastAdministered: dto.administeredAt } : {}),
+  };
+}
 
 export function MedicationsPage() {
+  const { accessToken } = useAuth();
   const [activeTab, setActiveTab] = useState<'all' | 'records' | 'pending' | 'missed' | 'refills'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
@@ -35,13 +81,62 @@ export function MedicationsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
 
-  const [selectedMed, setSelectedMed] = useState<NurseMedicationRecord>(NURSE_MEDICATIONS[0]!);
+  const [meds, setMeds] = useState<NurseMedicationRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [selectedMed, setSelectedMed] = useState<NurseMedicationRecord | null>(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [administerModalOpen, setAdministerModalOpen] = useState(false);
   const [medForAdminister, setMedForAdminister] = useState<NurseMedicationRecord | null>(null);
 
+  const loadMeds = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchMedications(accessToken);
+      if (Array.isArray(data) && data.length > 0) {
+        const mapped = data.map(mapDTOToRecord);
+        setMeds(mapped);
+        if (!selectedMed) setSelectedMed(mapped[0]!);
+      } else {
+        setMeds(NURSE_MEDICATIONS);
+        if (!selectedMed) setSelectedMed(NURSE_MEDICATIONS[0]!);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load medications');
+      setMeds(NURSE_MEDICATIONS);
+      if (!selectedMed) setSelectedMed(NURSE_MEDICATIONS[0]!);
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadMeds();
+  }, [loadMeds]);
+
+  const handleAdminister = async (med: NurseMedicationRecord) => {
+    try {
+      await administerMedication(
+        med.id,
+        { status: 'ADMINISTERED', administeredAt: new Date().toISOString() },
+        accessToken,
+      );
+      await loadMeds();
+    } catch (err) {
+      try {
+        await (window as any).electron?.ipcRenderer?.invoke('enqueue-operation', {
+          type: 'ADMINISTER_MEDICATION',
+          payload: { medId: med.id, status: 'ADMINISTERED', administeredAt: new Date().toISOString() },
+        });
+      } catch { /* ignore */ }
+    }
+    setAdministerModalOpen(false);
+  };
+
   const filteredMeds = useMemo(() => {
-    return NURSE_MEDICATIONS.filter((med) => {
+    return meds.filter((med) => {
       if (activeTab === 'pending' && med.status !== 'Pending' && med.status !== 'Due Soon') return false;
       if (activeTab === 'missed' && med.status !== 'Missed') return false;
       if (activeTab === 'refills' && med.status !== 'Refill Due') return false;
@@ -60,22 +155,13 @@ export function MedicationsPage() {
       }
       return true;
     });
-  }, [activeTab, selectedStatus, selectedDept, searchQuery]);
+  }, [meds, activeTab, selectedStatus, selectedDept, searchQuery]);
 
-  const totalPages = Math.ceil(filteredMeds.length / rowsPerPage) || 1;
+  const totalPages = Math.max(1, Math.ceil(filteredMeds.length / rowsPerPage));
   const paginatedMeds = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
     return filteredMeds.slice(start, start + rowsPerPage);
-  }, [filteredMeds, currentPage]);
-
-  const stats = useMemo(() => {
-    const total = NURSE_MEDICATIONS.length;
-    const administered = NURSE_MEDICATIONS.filter((m) => m.status === 'Administered').length;
-    const pending = NURSE_MEDICATIONS.filter((m) => m.status === 'Pending' || m.status === 'Due Soon').length;
-    const missed = NURSE_MEDICATIONS.filter((m) => m.status === 'Missed').length;
-    const refills = NURSE_MEDICATIONS.filter((m) => m.status === 'Refill Due').length;
-    return { total, administered, pending, missed, refills };
-  }, []);
+  }, [filteredMeds, currentPage, rowsPerPage]);
 
   const handleOpenDetails = (med: NurseMedicationRecord) => {
     setSelectedMed(med);
@@ -90,186 +176,215 @@ export function MedicationsPage() {
   return (
     <div className="h-full flex overflow-hidden bg-[#F4F7FC]">
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto p-3.5 sm:p-4 space-y-3.5">
-        {/* Banner */}
-        <div className="flex items-center justify-between">
+      <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-3.5">
+        {/* Banner Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20">
               <Pill size={18} />
             </div>
             <div>
               <h1 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight">Medications & eMAR</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Electronic Medication Administration Record and dose validation</p>
+              <p className="text-xs text-gray-400 mt-0.5">Administer, verify and track patient pharmacological rounds</p>
             </div>
           </div>
-          <button
-            onClick={() => {
-              setMedForAdminister(selectedMed);
-              setAdministerModalOpen(true);
-            }}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Pill size={13} />
-            <span>Administer Dose</span>
-          </button>
-        </div>
 
-        {/* KPI Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-          <NurseStatCard icon={<Pill size={18} className="text-blue-600" />} iconBg="bg-blue-50" label="Total Prescribed" value={stats.total} trend="+4 new orders" trendUp />
-          <NurseStatCard icon={<CheckCircle2 size={18} className="text-green-600" />} iconBg="bg-green-50" label="Administered" value={stats.administered} trend="92% on schedule" trendUp />
-          <NurseStatCard icon={<Clock size={18} className="text-amber-600" />} iconBg="bg-amber-50" label="Pending / Due" value={stats.pending} trend="Next pass at 10:00" trendUp={false} />
-          <NurseStatCard icon={<AlertTriangle size={18} className="text-red-600" />} iconBg="bg-red-50" label="Missed / Refills" value={stats.missed + stats.refills} trend="Requires verification" trendUp={false} />
-        </div>
-
-        {/* Tab Filters */}
-        <div className="flex items-center gap-1.5">
-          {[
-            { id: 'all', label: 'All Medications', count: stats.total },
-            { id: 'pending', label: 'Due & Pending', count: stats.pending },
-            { id: 'records', label: 'Administered', count: stats.administered },
-            { id: 'missed', label: 'Missed', count: stats.missed },
-            { id: 'refills', label: 'Refills Needed', count: stats.refills },
-          ].map((tab) => (
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="bg-white border border-gray-200/80 rounded-lg px-2.5 py-1 text-xs text-gray-600 flex items-center gap-1.5 shadow-xs">
+              <Clock size={13} className="text-purple-600" />
+              <span className="font-medium text-[11px]">Shift Round: 08:00 - 16:00</span>
+            </div>
             <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id as any);
-                setCurrentPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === tab.id
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
-              }`}
+              onClick={() => void loadMeds()}
+              disabled={loading}
+              className="bg-white border border-gray-200/80 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
-              {tab.label} ({tab.count})
+              <RotateCw size={13} className={loading ? 'animate-spin' : ''} />
+              <span>Refresh</span>
             </button>
-          ))}
-        </div>
-
-        {/* Search & Filter Bar */}
-        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by patient, medication, or room..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedDept}
-              onChange={(e) => {
-                setSelectedDept(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option>All Departments</option>
-              <option>Cardiology</option>
-              <option>Internal Medicine</option>
-              <option>Endocrinology</option>
-            </select>
-            <select
-              value={selectedStatus}
-              onChange={(e) => {
-                setSelectedStatus(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option>All Statuses</option>
-              <option>Administered</option>
-              <option>Pending</option>
-              <option>Due Soon</option>
-              <option>Missed</option>
-              <option>Refill Due</option>
-            </select>
           </div>
         </div>
 
-        {/* Medications Table */}
-        <div className="bg-white rounded-xl border border-gray-200/80 shadow-xs overflow-hidden flex flex-col">
+        {/* KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+          <NurseStatCard
+            title="Scheduled Today"
+            value={meds.length}
+            iconName="calendar"
+            trendText="total doses"
+            trendDirection="up"
+            trendIsPositive={true}
+            color="purple"
+          />
+          <NurseStatCard
+            title="Administered"
+            value={meds.filter((m) => m.status === 'Administered').length}
+            iconName="check"
+            trendText="verified given"
+            trendDirection="up"
+            trendIsPositive={true}
+            color="emerald"
+          />
+          <NurseStatCard
+            title="Pending Due"
+            value={meds.filter((m) => m.status === 'Pending' || m.status === 'Due Soon').length}
+            iconName="clock"
+            trendText="next rounds"
+            trendDirection="up"
+            trendIsPositive={false}
+            color="amber"
+          />
+          <NurseStatCard
+            title="Missed / Refill"
+            value={meds.filter((m) => m.status === 'Missed' || m.status === 'Refill Due').length}
+            iconName="alert"
+            trendText="requires action"
+            trendDirection="down"
+            trendIsPositive={false}
+            color="rose"
+          />
+        </div>
+
+        {/* Filters & Tabs */}
+        <div className="bg-white rounded-xl border border-gray-200/80 shadow-2xs overflow-hidden">
+          <div className="p-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+              {(
+                [
+                  { id: 'all', label: 'All Medications' },
+                  { id: 'pending', label: 'Pending / Due' },
+                  { id: 'records', label: 'Administered' },
+                  { id: 'missed', label: 'Missed' },
+                  { id: 'refills', label: 'Refills Needed' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                    activeTab === tab.id
+                      ? 'bg-purple-600 text-white shadow-2xs'
+                      : 'text-gray-600 hover:bg-gray-100/80'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-56">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search med, patient, room..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                />
+              </div>
+
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none"
+              >
+                <option value="All Statuses">All Statuses</option>
+                <option value="Administered">Administered</option>
+                <option value="Pending">Pending</option>
+                <option value="Due Soon">Due Soon</option>
+                <option value="Missed">Missed</option>
+                <option value="Refill Due">Refill Due</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Table */}
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                <tr className="bg-gray-50/80 border-b border-gray-100 text-[10px] font-bold uppercase tracking-wider text-gray-400">
                   <th className="py-2.5 px-3">Patient</th>
                   <th className="py-2.5 px-3">Medication</th>
                   <th className="py-2.5 px-3">Dosage / Route</th>
-                  <th className="py-2.5 px-3">Scheduled Time</th>
+                  <th className="py-2.5 px-3">Schedule</th>
                   <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Prescriber</th>
-                  <th className="py-2.5 px-3 text-center">Actions</th>
+                  <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-gray-100">
                 {paginatedMeds.map((med) => {
-                  const isSelected = selectedMed.id === med.id;
+                  const isSelected = selectedMed?.id === med.id;
                   return (
                     <tr
                       key={med.id}
                       onClick={() => setSelectedMed(med)}
-                      className={`hover:bg-blue-50/40 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/50' : ''}`}
+                      className={`hover:bg-purple-50/40 transition-colors cursor-pointer ${
+                        isSelected ? 'bg-purple-50/60' : ''
+                      }`}
                     >
                       <td className="py-2 px-3">
                         <div className="flex items-center gap-2">
-                          <img src={med.patientAvatar} alt={med.patientName} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                          <img
+                            src={med.patientAvatar}
+                            alt={med.patientName}
+                            className="w-7 h-7 rounded-full object-cover shrink-0"
+                          />
                           <div>
-                            <p className="font-bold text-gray-800 leading-tight">{med.patientName}</p>
-                            <p className="text-[10px] text-gray-400 font-mono">
-                              {med.patientPid} · Room {med.room}
-                            </p>
+                            <span className="font-bold text-gray-800 block leading-tight">{med.patientName}</span>
+                            <span className="text-[10px] text-gray-400 font-mono">
+                              {med.patientPid} · {med.room}
+                            </span>
                           </div>
                         </div>
                       </td>
-                      <td className="py-2 px-3 font-semibold text-gray-800">{med.medicationName}</td>
-                      <td className="py-2 px-3 text-gray-600">
-                        {med.dose} · {med.route}
+                      <td className="py-2 px-3">
+                        <span className="font-bold text-gray-800 block">{med.medicationName}</span>
+                        <span className="text-[10px] text-gray-400">{med.condition}</span>
                       </td>
-                      <td className="py-2 px-3 text-gray-600 whitespace-nowrap">
-                        <span className="font-mono text-gray-800 block">{med.nextDue}</span>
-                        <span className="text-[10px] text-gray-400">{med.schedule}</span>
+                      <td className="py-2 px-3">
+                        <span className="font-semibold text-gray-700">{med.dose}</span>
+                        <span className="text-[10px] text-purple-600 block">{med.route}</span>
+                      </td>
+                      <td className="py-2 px-3">
+                        <span className="font-medium text-gray-700">{med.schedule}</span>
+                        <span className="text-[10px] text-gray-400 block">Due: {med.nextDue}</span>
                       </td>
                       <td className="py-2 px-3">
                         <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             med.status === 'Administered'
                               ? 'bg-emerald-100 text-emerald-700'
-                              : med.status === 'Due Soon'
+                              : med.status === 'Due Soon' || med.status === 'Pending'
                               ? 'bg-amber-100 text-amber-700'
                               : med.status === 'Missed'
                               ? 'bg-rose-100 text-rose-700'
-                              : 'bg-blue-100 text-blue-700'
+                              : 'bg-purple-100 text-purple-700'
                           }`}
                         >
                           {med.status}
                         </span>
                       </td>
-                      <td className="py-2 px-3 text-gray-600">{med.prescribingDoctor}</td>
-                      <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
+                      <td className="py-2 px-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={() => handleOpenDetails(med)}
-                            className="p-1.5 rounded-md border border-gray-200 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                            className="p-1 rounded-md hover:bg-gray-100 text-gray-500 transition-colors cursor-pointer"
                             title="View Details"
                           >
                             <Eye size={13} />
                           </button>
-                          <button
-                            onClick={() => handleOpenAdminister(med)}
-                            className="p-1.5 rounded-md border border-gray-200 text-purple-600 hover:bg-purple-50 transition-colors cursor-pointer"
-                            title="Administer Dose"
-                          >
-                            <Pill size={13} />
-                          </button>
+                          {med.status !== 'Administered' && (
+                            <button
+                              onClick={() => handleOpenAdminister(med)}
+                              className="px-2 py-0.5 rounded-md bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                            >
+                              Administer
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -279,9 +394,11 @@ export function MedicationsPage() {
             </table>
           </div>
 
-          <div className="px-3.5 py-2.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+          {/* Pagination */}
+          <div className="p-2.5 sm:p-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
             <span>
-              Showing {(currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filteredMeds.length)} of {filteredMeds.length} medications
+              Showing {filteredMeds.length > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0} to{' '}
+              {Math.min(currentPage * rowsPerPage, filteredMeds.length)} of {filteredMeds.length} records
             </span>
             <div className="flex items-center gap-1">
               <button
@@ -291,17 +408,6 @@ export function MedicationsPage() {
               >
                 <ChevronLeft size={13} />
               </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setCurrentPage(n)}
-                  className={`w-7 h-7 rounded-lg font-semibold text-xs transition-all cursor-pointer ${
-                    currentPage === n ? 'bg-blue-600 text-white shadow-2xs' : 'border border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
               <button
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
@@ -318,40 +424,44 @@ export function MedicationsPage() {
       <aside className="w-72 xl:w-80 border-l border-gray-200 bg-white overflow-y-auto p-3 space-y-3 shrink-0">
         <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800 mb-2.5">Selected Dose Details</h3>
-          <div className="space-y-2 text-xs">
-            <div className="p-2.5 rounded-lg bg-blue-50/60 border border-blue-100">
-              <div className="font-bold text-gray-900 text-sm">{selectedMed.medicationName}</div>
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                {selectedMed.dose} · {selectedMed.route} ({selectedMed.schedule})
-              </p>
-              <div className="mt-2 pt-2 border-t border-blue-100/60 flex items-center justify-between text-[11px]">
-                <span className="text-gray-500">Scheduled:</span>
-                <span className="font-bold text-blue-700">{selectedMed.nextDue}</span>
+          {selectedMed ? (
+            <div className="space-y-2 text-xs">
+              <div className="p-2.5 rounded-lg bg-blue-50/60 border border-blue-100">
+                <div className="font-bold text-gray-900 text-sm">{selectedMed.medicationName}</div>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  {selectedMed.dose} · {selectedMed.route} ({selectedMed.schedule})
+                </p>
+                <div className="mt-2 pt-2 border-t border-blue-100/60 flex items-center justify-between text-[11px]">
+                  <span className="text-gray-500">Scheduled:</span>
+                  <span className="font-bold text-blue-700">{selectedMed.nextDue}</span>
+                </div>
               </div>
-            </div>
 
-            <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100 text-[11px] space-y-1">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Patient:</span>
-                <span className="font-semibold text-gray-800">{selectedMed.patientName}</span>
+              <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100 text-[11px] space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Patient:</span>
+                  <span className="font-semibold text-gray-800">{selectedMed.patientName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Location:</span>
+                  <span className="text-gray-700">Room {selectedMed.room}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Prescriber:</span>
+                  <span className="text-gray-700">{selectedMed.prescribingDoctor}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Location:</span>
-                <span className="text-gray-700">Room {selectedMed.room}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Prescriber:</span>
-                <span className="text-gray-700">{selectedMed.prescribingDoctor}</span>
-              </div>
-            </div>
 
-            <button
-              onClick={() => handleOpenAdminister(selectedMed)}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
-            >
-              Verify & Administer
-            </button>
-          </div>
+              <button
+                onClick={() => handleOpenAdminister(selectedMed)}
+                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
+              >
+                Verify & Administer
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 py-3 text-center">Select a medication to view details</p>
+          )}
         </div>
 
         {/* Clinical Alerts */}
@@ -378,7 +488,7 @@ export function MedicationsPage() {
         onClose={() => setDetailsModalOpen(false)}
         onAdminister={() => {
           setDetailsModalOpen(false);
-          handleOpenAdminister(selectedMed);
+          if (selectedMed) handleOpenAdminister(selectedMed);
         }}
       />
       <AdministerMedModal

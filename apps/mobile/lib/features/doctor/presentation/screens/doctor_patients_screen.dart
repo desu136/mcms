@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/api/api_client.dart';
 import '../../data/doctor_repository.dart';
 import '../widgets/patient_detail_sheet.dart';
 import '../widgets/doctor_modals.dart';
@@ -80,16 +81,23 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
 
           // Patients List
           Expanded(
-            child: filtered.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No patients found',
-                      style: TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filtered.length,
+            child: RefreshIndicator(
+              onRefresh: () async {
+                await ref
+                    .read(doctorProvider.notifier)
+                    .loadFromApi(ref.read(apiClientProvider));
+              },
+              child: filtered.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No patients found',
+                        style: TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
+                      ),
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final p = filtered[index];
                       return Container(
@@ -270,6 +278,7 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
                       );
                     },
                   ),
+            ),
           ),
         ],
       ),

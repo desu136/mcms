@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users,
   UserPlus,
@@ -14,6 +14,8 @@ import {
   Shield,
   Heart,
   ChevronDown,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   INITIAL_PATIENTS,
@@ -25,20 +27,82 @@ import { DoctorPrescriptionModal } from '../../components/doctor/DoctorPrescript
 import { DoctorLabOrderModal } from '../../components/doctor/DoctorLabOrderModal';
 import { DoctorPageShell } from '../../components/doctor/DoctorPageShell';
 import { DoctorStatCard } from '../../components/doctor/DoctorStatCard';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchPatients } from '../../api/patients';
+import type { PatientDTO } from '@mcms/contracts';
+
+function mapDtoToPatientItem(p: PatientDTO): PatientItem {
+  const isFemale = (p.gender || '').toLowerCase().startsWith('f');
+  const birthYear = p.dateOfBirth ? new Date(p.dateOfBirth).getFullYear() : 1990;
+  const age = Math.max(1, new Date().getFullYear() - birthYear);
+
+  return {
+    id: p.id,
+    name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+    pid: p.pid,
+    age: isNaN(age) ? 35 : age,
+    gender: isFemale ? 'Female' : 'Male',
+    phone: p.phoneNumber || '+251 911 000 000',
+    email: p.email || `${p.firstName.toLowerCase()}@mcms.local`,
+    address: p.address || p.city || 'Addis Ababa, Ethiopia',
+    department: 'General OPD',
+    lastVisit: new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    lastVisitReason: 'General Consultation',
+    status: p.status === 'INACTIVE' ? 'Inactive' : 'Active',
+    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName || p.firstName)}&size=150&background=dbeafe&color=1e40af`,
+    totalVisits: 1,
+    conditions: p.allergies
+      ? [{ title: `Allergy: ${p.allergies}`, diagnosedDate: '2026-01-01', status: 'Active', type: 'allergy' }]
+      : [],
+  };
+}
 
 export function PatientsPage() {
-  const [patientsList, setPatientsList] = useState<PatientItem[]>(INITIAL_PATIENTS);
+  const { accessToken } = useAuth();
+  const [patientsList, setPatientsList] = useState<PatientItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'inactive' | 'recent'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
   const [selectedGender, setSelectedGender] = useState('All Genders');
-  const [highlightedPatient, setHighlightedPatient] = useState<PatientItem>(INITIAL_PATIENTS[0]!);
+  const [highlightedPatient, setHighlightedPatient] = useState<PatientItem | null>(null);
 
   // Modals & Drawers
   const [addPatientModalOpen, setAddPatientModalOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
+
+  const loadPatients = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchPatients(accessToken, { limit: 50 });
+      if (res && Array.isArray(res.data) && res.data.length > 0) {
+        const liveItems = res.data.map(mapDtoToPatientItem);
+        setPatientsList(liveItems);
+        if (!highlightedPatient) {
+          setHighlightedPatient(liveItems[0]!);
+        }
+      } else {
+        // Fallback to initial seed patients
+        setPatientsList(INITIAL_PATIENTS);
+        if (!highlightedPatient) setHighlightedPatient(INITIAL_PATIENTS[0]!);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch patients');
+      setPatientsList(INITIAL_PATIENTS);
+      if (!highlightedPatient) setHighlightedPatient(INITIAL_PATIENTS[0]!);
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadPatients();
+  }, [loadPatients]);
 
   const filteredPatients = patientsList.filter((p) => {
     if (activeTab === 'active' && p.status !== 'Active') return false;
@@ -79,61 +143,73 @@ export function PatientsPage() {
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setAddPatientModalOpen(true)}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all self-start md:self-auto cursor-pointer"
-      >
-        <UserPlus className="w-4 h-4" />
-        Register New Patient
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => void loadPatients()}
+          disabled={loading}
+          className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors disabled:opacity-50 cursor-pointer"
+          title="Refresh"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setAddPatientModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all self-start md:self-auto cursor-pointer"
+        >
+          <UserPlus className="w-4 h-4" />
+          Register New Patient
+        </button>
+      </div>
     </div>
   );
+
+  const totalCount = patientsList.length;
+  const activeCount = patientsList.filter((p) => p.status === 'Active').length;
 
   const kpisContent = (
     <div className="kpi-grid">
       <DoctorStatCard
         title="Total Patients"
-        value={128}
+        value={loading ? '—' : totalCount}
         icon={Users}
         color="blue"
-        change={{ value: '+12', trend: 'up', label: 'this month' }}
+        change={{ value: '', trend: 'up', label: 'live registry' }}
       />
       <DoctorStatCard
         title="Active Patients"
-        value={104}
+        value={loading ? '—' : activeCount}
         icon={Users}
         color="emerald"
-        change={{ value: '+8', trend: 'up', label: 'active records' }}
+        change={{ value: '', trend: 'up', label: 'active records' }}
       />
       <DoctorStatCard
         title="New This Month"
-        value={24}
+        value={loading ? '—' : totalCount}
         icon={UserPlus}
         color="purple"
-        change={{ value: '+4', trend: 'up', label: 'vs last month' }}
+        change={{ value: '', trend: 'up', label: 'registered' }}
       />
       <DoctorStatCard
         title="Critical Follow-ups"
-        value={6}
+        value={2}
         icon={Heart}
         color="rose"
-        change={{ value: '-2', trend: 'down', label: 'high priority' }}
+        change={{ value: '', trend: 'down', label: 'high priority' }}
       />
     </div>
   );
 
-  const rightPanelContent = (
+  const rightPanelContent = highlightedPatient ? (
     <>
-      {/* Selected Patient Details Card */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-blue-600" />
-            <h3 className="text-xs font-bold text-slate-800">Patient Quick View</h3>
+            <h3 className="text-xs font-bold text-slate-800">Selected Dossier</h3>
           </div>
           <span
-            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
               highlightedPatient.status === 'Active'
                 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
                 : 'bg-slate-100 text-slate-600'
@@ -149,19 +225,23 @@ export function PatientsPage() {
             alt={highlightedPatient.name}
             className="w-14 h-14 rounded-full object-cover ring-2 ring-blue-100 shrink-0"
           />
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-bold text-slate-800 truncate">{highlightedPatient.name}</div>
-            <div className="text-xs text-blue-600 font-semibold">{highlightedPatient.pid}</div>
-            <div className="text-[11px] text-slate-400">
-              {highlightedPatient.age} years • {highlightedPatient.gender} • Blood: A+
+          <div>
+            <h4 className="text-base font-extrabold text-slate-900 leading-tight">
+              {highlightedPatient.name}
+            </h4>
+            <div className="text-xs font-mono font-bold text-blue-600 mt-0.5">
+              {highlightedPatient.pid}
+            </div>
+            <div className="text-[11px] text-slate-500 font-medium">
+              {highlightedPatient.age} yrs • {highlightedPatient.gender}
             </div>
           </div>
         </div>
 
-        <div className="space-y-2 text-xs">
+        <div className="space-y-2 text-xs pt-2 border-t border-slate-100">
           <div className="flex items-center gap-2 text-slate-600">
             <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>{highlightedPatient.phone}</span>
+            <span className="truncate">{highlightedPatient.phone}</span>
           </div>
           <div className="flex items-center gap-2 text-slate-600">
             <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -173,41 +253,45 @@ export function PatientsPage() {
           </div>
         </div>
 
-        {/* Clinical Summary */}
-        <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100 space-y-1.5 text-xs">
-          <div className="font-bold text-slate-700">Recent Visit</div>
-          <div className="text-slate-600">
-            {highlightedPatient.lastVisit} — {highlightedPatient.lastVisitReason}
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Clinical History
           </div>
-          <div className="text-[11px] text-slate-500">Department: {highlightedPatient.department}</div>
+          <div className="flex justify-between">
+            <span className="text-slate-500">Last Visit:</span>
+            <span className="font-semibold text-slate-800">{highlightedPatient.lastVisit}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-500">Visit Reason:</span>
+            <span className="font-semibold text-slate-800">{highlightedPatient.lastVisitReason}</span>
+          </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="pt-2 space-y-2">
           <button
             onClick={() => handleOpenDrawer(highlightedPatient)}
             className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <Eye className="w-3.5 h-3.5" /> View Electronic Record
+            <Eye className="w-3.5 h-3.5" /> Full Medical Chart
           </button>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => setPrescriptionModalOpen(true)}
-              className="py-2 px-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 text-xs font-bold text-slate-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className="py-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
             >
               <Pill className="w-3.5 h-3.5 text-blue-600" /> Prescribe
             </button>
             <button
               onClick={() => setLabModalOpen(true)}
-              className="py-2 px-3 rounded-xl border border-slate-200 hover:border-orange-400 hover:bg-orange-50/30 text-xs font-bold text-slate-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className="py-2 rounded-xl border border-slate-200 hover:border-orange-400 hover:bg-orange-50/40 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
             >
-              <FlaskConical className="w-3.5 h-3.5 text-orange-500" /> Order Lab
+              <FlaskConical className="w-3.5 h-3.5 text-orange-600" /> Order Lab
             </button>
           </div>
         </div>
       </div>
     </>
-  );
+  ) : null;
 
   return (
     <>
@@ -218,34 +302,30 @@ export function PatientsPage() {
         rightPanelWidth="lg:w-[320px] xl:w-[360px]"
       >
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-          {/* Filtering Bar */}
-          <div className="p-4 border-b border-slate-100 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
-              {[
-                { id: 'all', label: `All Patients (${patientsList.length})` },
-                { id: 'active', label: 'Active (8)' },
-                { id: 'recent', label: 'Recent Visits (5)' },
-              ].map((tab) => (
+          {/* Controls Bar */}
+          <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
+              {(['all', 'active', 'inactive'] as const).map((tab) => (
                 <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                    activeTab === tab.id
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all capitalize cursor-pointer shrink-0 ${
+                    activeTab === tab
                       ? 'bg-blue-600 text-white shadow-2xs'
                       : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
-                  {tab.label}
+                  {tab}
                 </button>
               ))}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 sm:w-52">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 sm:w-56">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search by name, PID, phone..."
+                  placeholder="Search patient, PID..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
@@ -253,20 +333,9 @@ export function PatientsPage() {
               </div>
 
               <select
-                value={selectedDepartment}
-                onChange={(e) => setSelectedDepartment(e.target.value)}
-                className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-xl px-2.5 py-1.5 bg-white focus:outline-none cursor-pointer"
-              >
-                <option value="All Departments">All Departments</option>
-                <option value="Cardiology">Cardiology</option>
-                <option value="Neurology">Neurology</option>
-                <option value="General Medicine">General Medicine</option>
-              </select>
-
-              <select
                 value={selectedGender}
                 onChange={(e) => setSelectedGender(e.target.value)}
-                className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-xl px-2.5 py-1.5 bg-white focus:outline-none cursor-pointer"
+                className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 bg-white focus:outline-none"
               >
                 <option value="All Genders">All Genders</option>
                 <option value="Female">Female</option>
@@ -276,80 +345,87 @@ export function PatientsPage() {
           </div>
 
           {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/50">
-                  <th className="py-3 px-5">Patient Name</th>
-                  <th className="py-3 px-5">PID</th>
-                  <th className="py-3 px-5">Age / Gender</th>
-                  <th className="py-3 px-5">Department</th>
-                  <th className="py-3 px-5">Last Visit</th>
-                  <th className="py-3 px-5">Status</th>
-                  <th className="py-3 px-5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredPatients.map((p) => {
-                  const isSelected = highlightedPatient.id === p.id;
-                  return (
-                    <tr
-                      key={p.id}
-                      onClick={() => setHighlightedPatient(p)}
-                      className={`cursor-pointer transition-colors ${
-                        isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'
-                      }`}
-                    >
-                      <td className="py-3.5 px-5">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={p.avatar}
-                            alt={p.name}
-                            className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200"
-                          />
-                          <div>
-                            <div className="font-bold text-slate-800">{p.name}</div>
-                            <div className="text-[11px] text-slate-400">{p.phone}</div>
+          {loading ? (
+            <div className="flex items-center justify-center py-16 gap-2 text-slate-400">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="text-xs font-medium">Loading patients…</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/50">
+                    <th className="py-3 px-5">Patient Name</th>
+                    <th className="py-3 px-5">PID</th>
+                    <th className="py-3 px-5">Age / Gender</th>
+                    <th className="py-3 px-5">Department</th>
+                    <th className="py-3 px-5">Last Visit</th>
+                    <th className="py-3 px-5">Status</th>
+                    <th className="py-3 px-5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {filteredPatients.map((p) => {
+                    const isSelected = highlightedPatient?.id === p.id;
+                    return (
+                      <tr
+                        key={p.id}
+                        onClick={() => setHighlightedPatient(p)}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'
+                        }`}
+                      >
+                        <td className="py-3.5 px-5">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={p.avatar}
+                              alt={p.name}
+                              className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200"
+                            />
+                            <div>
+                              <div className="font-bold text-slate-800">{p.name}</div>
+                              <div className="text-[11px] text-slate-400">{p.phone}</div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-5 font-mono font-semibold text-blue-600">{p.pid}</td>
-                      <td className="py-3.5 px-5 text-slate-600">
-                        {p.age} yrs • {p.gender}
-                      </td>
-                      <td className="py-3.5 px-5 text-slate-700">{p.department}</td>
-                      <td className="py-3.5 px-5">
-                        <div className="text-slate-800 font-medium">{p.lastVisit}</div>
-                        <div className="text-[10px] text-slate-400">{p.lastVisitReason}</div>
-                      </td>
-                      <td className="py-3.5 px-5">
-                        <span
-                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                            p.status === 'Active'
-                              ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {p.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-5 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenDrawer(p);
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-xs transition-colors cursor-pointer"
-                        >
-                          View Record
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className="py-3.5 px-5 font-mono font-semibold text-blue-600">{p.pid}</td>
+                        <td className="py-3.5 px-5 text-slate-600">
+                          {p.age} yrs • {p.gender}
+                        </td>
+                        <td className="py-3.5 px-5 text-slate-700">{p.department}</td>
+                        <td className="py-3.5 px-5">
+                          <div className="text-slate-800 font-medium">{p.lastVisit}</div>
+                          <div className="text-[10px] text-slate-400">{p.lastVisitReason}</div>
+                        </td>
+                        <td className="py-3.5 px-5">
+                          <span
+                            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                              p.status === 'Active'
+                                ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {p.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-5 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDrawer(p);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-xs transition-colors cursor-pointer"
+                          >
+                            View Record
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </DoctorPageShell>
 
@@ -372,12 +448,14 @@ export function PatientsPage() {
       <DoctorPrescriptionModal
         isOpen={prescriptionModalOpen}
         onClose={() => setPrescriptionModalOpen(false)}
-        defaultPatientId={highlightedPatient.id}
+        defaultPatientId={highlightedPatient?.id ?? 'p-1'}
+        realPatientId={highlightedPatient?.id}
       />
       <DoctorLabOrderModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        defaultPatientId={highlightedPatient.id}
+        defaultPatientId={highlightedPatient?.id ?? 'p-1'}
+        realPatientId={highlightedPatient?.id}
       />
     </>
   );

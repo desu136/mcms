@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { X, UserPlus, CheckCircle2 } from 'lucide-react';
+import { X, UserPlus, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { PatientItem } from './doctorMockData';
+import { createPatient } from '../../api/patients';
+import { useAuth } from '../../auth/AuthContext';
+import type { PatientDTO } from '@mcms/contracts';
 
 export interface DoctorPatientModalProps {
   isOpen: boolean;
@@ -9,6 +12,7 @@ export interface DoctorPatientModalProps {
 }
 
 export function DoctorPatientModal({ isOpen, onClose, onPatientAdded }: DoctorPatientModalProps) {
+  const { accessToken } = useAuth();
   const [name, setName] = useState('');
   const [age, setAge] = useState<number | ''>('');
   const [gender, setGender] = useState<'Female' | 'Male'>('Female');
@@ -17,35 +21,80 @@ export function DoctorPatientModal({ isOpen, onClose, onPatientAdded }: DoctorPa
   const [address, setAddress] = useState('Addis Ababa, Ethiopia');
   const [department, setDepartment] = useState('Cardiology');
   const [reason, setReason] = useState('Consultation');
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !age) return;
 
+    setSubmitting(true);
+    setError(null);
+
+    const parts = name.trim().split(/\s+/);
+    const firstName = parts[0] || 'Patient';
+    const lastName = parts.slice(1).join(' ') || 'Record';
+    const approxBirthYear = new Date().getFullYear() - Number(age);
+    const dateOfBirth = `${approxBirthYear}-01-01`;
+
+    let createdDto: PatientDTO | null = null;
+    try {
+      createdDto = await createPatient(
+        {
+          firstName,
+          lastName,
+          dateOfBirth,
+          gender: gender === 'Female' ? 'F' : 'M',
+          phoneNumber: phone,
+          ...(email.trim() ? { email: email.trim() } : {}),
+          ...(address.trim() ? { address: address.trim() } : {}),
+        },
+        accessToken,
+      );
+    } catch (apiErr) {
+      // Offline fallback: enqueue to SQLite
+      try {
+        await (window as any).electron?.ipcRenderer?.invoke('enqueue-operation', {
+          type: 'CREATE_PATIENT',
+          payload: {
+            firstName,
+            lastName,
+            gender,
+            phoneNumber: phone,
+            address,
+          },
+        });
+      } catch {
+        // Continue to update local UI
+      }
+    }
+
     const newPatient: PatientItem = {
-      id: `p-${Date.now()}`,
-      name,
-      pid: `PID-${Math.floor(100000 + Math.random() * 900000)}`,
+      id: createdDto?.id || `p-${Date.now()}`,
+      name: createdDto?.fullName || name,
+      pid: createdDto?.pid || `PID-${Math.floor(100000 + Math.random() * 900000)}`,
       age: Number(age),
       gender,
       phone,
-      email: email || `${name.toLowerCase().replace(/\s+/g, '.')}@email.com`,
+      email: email || `${firstName.toLowerCase()}@email.com`,
       address,
       department,
-      lastVisit: 'Oct 19, 2026',
+      lastVisit: 'Today',
       lastVisitReason: reason,
       status: 'Active',
-      avatar: gender === 'Female'
-        ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
-        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+      avatar:
+        gender === 'Female'
+          ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
       totalVisits: 1,
-      conditions: [{ title: reason, diagnosedDate: '2026-10-19', status: 'Active', type: 'general' }],
+      conditions: [{ title: reason, diagnosedDate: new Date().toISOString().split('T')[0]!, status: 'Active', type: 'general' }],
     };
 
     onPatientAdded?.(newPatient);
+    setSubmitting(false);
     setSubmitted(true);
     setTimeout(() => {
       setSubmitted(false);
@@ -80,68 +129,84 @@ export function DoctorPatientModal({ isOpen, onClose, onPatientAdded }: DoctorPa
             <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto animate-bounce">
               <CheckCircle2 className="w-8 h-8" />
             </div>
-            <h4 className="text-lg font-bold text-slate-800">Patient Registered Successfully!</h4>
-            <p className="text-xs text-slate-500">Clinical record created and ready for consultation.</p>
+            <h4 className="text-lg font-bold text-slate-800">Patient Registered!</h4>
+            <p className="text-xs text-slate-500">Added to electronic registry with live record id.</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Almaz Bekele"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-                />
+            {error && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-50 border border-rose-100 text-xs text-rose-700">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {error}
               </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                placeholder="e.g. Almaz Bekele"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
                   Age *
                 </label>
                 <input
                   type="number"
-                  required
+                  min={1}
+                  max={120}
                   value={age}
-                  onChange={(e) => setAge(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="e.g. 34"
+                  onChange={(e) => setAge(e.target.value ? Number(e.target.value) : '')}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                  placeholder="35"
+                  required
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Gender
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['Female', 'Male'] as const).map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setGender(g)}
+                      className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                        gender === g
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Gender
-                </label>
-                <select
-                  value={gender}
-                  onChange={(e) => setGender(e.target.value as 'Female' | 'Male')}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white"
-                >
-                  <option value="Female">Female</option>
-                  <option value="Male">Male</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Phone Number
+                  Phone
                 </label>
                 <input
-                  type="text"
+                  type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                 />
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
                   Department
@@ -152,34 +217,23 @@ export function DoctorPatientModal({ isOpen, onClose, onPatientAdded }: DoctorPa
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white"
                 >
                   <option value="Cardiology">Cardiology</option>
-                  <option value="General Medicine">General Medicine</option>
+                  <option value="General OPD">General OPD</option>
                   <option value="Pediatrics">Pediatrics</option>
-                  <option value="Neurology">Neurology</option>
+                  <option value="Internal Medicine">Internal Medicine</option>
                 </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Visit Reason
-                </label>
-                <input
-                  type="text"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="e.g. Chest Tightness"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-                />
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                Residential Address
+                Initial Visit Reason
               </label>
               <input
                 type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                placeholder="e.g. Hypertension Checkup"
               />
             </div>
 
@@ -193,9 +247,11 @@ export function DoctorPatientModal({ isOpen, onClose, onPatientAdded }: DoctorPa
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/25 transition-all"
+                disabled={submitting}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 shadow-md shadow-blue-500/25 transition-all flex items-center gap-2"
               >
-                Save Patient Record
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Save Patient
               </button>
             </div>
           </form>

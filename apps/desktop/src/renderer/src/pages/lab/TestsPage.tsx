@@ -1,4 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchLabOrders, createLabOrder } from '../../api/clinical';
+import type { LabOrderDTO } from '@mcms/contracts/clinical';
 import {
   FlaskConical,
   Calendar,
@@ -28,32 +31,97 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { LabPageShell } from '../../components/lab/LabPageShell';
 import { LabStatCard } from '../../components/lab/LabStatCard';
 import {
-  EXACT_SCREENSHOT_ORDERS,
-  LAB_KPI_STATS,
-  TEST_TYPE_DISTRIBUTION,
   LABORATORY_ALERTS,
+  TEST_TYPE_DISTRIBUTION,
   LabTestOrderItem,
 } from '../../components/lab/labMockData';
+
+/** Map a backend LabOrderDTO to the UI's LabTestOrderItem shape */
+function mapOrderDTO(o: LabOrderDTO): LabTestOrderItem {
+  const firstSample = o.samples[0];
+  return {
+    id: o.id,
+    orderId: o.orderNumber,
+    patientName: o.patientName,
+    patientId: o.patientPid,
+    patientRoom: 'Outpatient',
+    patientAge: 0,
+    patientGender: 'Female',
+    patientPhone: '—',
+    patientEmail: '—',
+    patientCity: '—',
+    patientAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(o.patientName)}&background=3b82f6&color=fff&size=64`,
+    testName: o.samples[0]?.sampleType ?? 'Lab Test',
+    testCode: (o.samples[0]?.sampleType ?? 'TST').slice(0, 3).toUpperCase(),
+    sampleId: firstSample?.sampleId ?? o.orderNumber,
+    department: 'Hematology',
+    priority: (o.priority === 'HIGH' ? 'High' : o.priority === 'LOW' ? 'Low' : o.priority === 'MEDIUM' ? 'Medium' : 'Normal') as LabTestOrderItem['priority'],
+    status: (
+      o.status === 'COMPLETED' ? 'Completed' :
+      o.status === 'IN_PROGRESS' || o.status === 'PROCESSING' ? 'Processing' :
+      o.results.some((r) => r.isAbnormal) ? 'Abnormal' : 'Pending'
+    ) as LabTestOrderItem['status'],
+    orderedAt: new Date(o.orderedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    expectedResult: 'In 2 hours',
+    stages: [
+      { name: 'Ordered', status: 'completed', time: new Date(o.orderedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+      {
+        name: 'Sample Collection',
+        status: firstSample?.collectedAt ? 'completed' : o.status !== 'PENDING' ? 'in_progress' : 'pending',
+        ...(firstSample?.collectedAt
+          ? { time: new Date(firstSample.collectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+          : {}),
+      },
+      { name: 'Analyzer Run', status: o.status === 'COMPLETED' ? 'completed' : o.status === 'IN_PROGRESS' ? 'in_progress' : 'pending' },
+      { name: 'Pathologist Verification', status: o.results.some((r) => r.verifiedAt) ? 'completed' : 'pending' },
+    ],
+  };
+}
 
 type FilterTab = 'all' | 'processing' | 'completed' | 'abnormal' | 'pending';
 
 export function TestsPage() {
-  const [orders, setOrders] = useState<LabTestOrderItem[]>(EXACT_SCREENSHOT_ORDERS);
-  const [selectedOrder, setSelectedOrder] = useState<LabTestOrderItem>(EXACT_SCREENSHOT_ORDERS[0]!);
+  const { accessToken } = useAuth();
+  const [orders, setOrders] = useState<LabTestOrderItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedOrder, setSelectedOrder] = useState<LabTestOrderItem | null>(null);
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('All');
   const [selectedTestType, setSelectedTestType] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
-  const [selectedRowIds, setSelectedRowIds] = useState<string[]>(['ord-1024']);
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [calendarDate, setCalendarDate] = useState('Oct 19, 2026');
   const [newOrderModalOpen, setNewOrderModalOpen] = useState(false);
 
   // New order form state
   const [newPatientName, setNewPatientName] = useState('');
+  const [newPatientId, setNewPatientId] = useState('');
   const [newTestName, setNewTestName] = useState('Complete Blood Count (CBC)');
   const [newDepartment, setNewDepartment] = useState('Hematology');
   const [newPriority, setNewPriority] = useState<'Normal' | 'High' | 'Medium'>('Normal');
+
+  // Live data loading
+  const loadOrders = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const dtos = await fetchLabOrders(accessToken);
+      const mapped = dtos.map(mapOrderDTO);
+      setOrders(mapped);
+      if (mapped.length > 0 && !selectedOrder) {
+        setSelectedOrder(mapped[0]!);
+        setSelectedRowIds([mapped[0]!.id]);
+      }
+    } catch {
+      // keep empty — show empty state
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadOrders();
+  }, [loadOrders]);
 
   // Filtered orders logic
   const filteredOrders = useMemo(() => {
@@ -104,43 +172,33 @@ export function TestsPage() {
     }
   };
 
-  const handleCreateNewOrder = (e: React.FormEvent) => {
+  const handleCreateNewOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPatientName.trim()) return;
+    if (!newPatientName.trim() || !newPatientId.trim()) return;
 
-    const newId = `ord-${Date.now().toString().slice(-4)}`;
-    const newOrd: LabTestOrderItem = {
-      id: newId,
-      orderId: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
-      patientName: newPatientName,
-      patientId: `PID-${Math.floor(1000 + Math.random() * 9000)}`,
-      patientRoom: 'Outpatient Clinic',
-      patientAge: 29,
-      patientGender: 'Female',
-      patientPhone: '+251 911 234 567',
-      patientEmail: 'patient@example.com',
-      patientCity: 'Addis Ababa',
-      patientAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
-      testName: newTestName,
-      testCode: newTestName.slice(0, 3).toUpperCase(),
-      sampleId: `SMP-${Date.now().toString().slice(-4)}`,
-      department: newDepartment as LabTestOrderItem['department'],
-      priority: newPriority as LabTestOrderItem['priority'],
-      status: 'Pending',
-      orderedAt: 'Just now',
-      expectedResult: 'In 2 hours',
-      stages: [
-        { name: 'Ordered', status: 'completed', time: 'Just now' },
-        { name: 'Sample Collection', status: 'in_progress' },
-        { name: 'Analyzer Run', status: 'pending' },
-        { name: 'Pathologist Verification', status: 'pending' },
-      ],
-    };
-
-    setOrders([newOrd, ...orders]);
-    setSelectedOrder(newOrd);
-    setNewPatientName('');
-    setNewOrderModalOpen(false);
+    try {
+      await createLabOrder(
+        {
+          patientId: newPatientId.trim(),
+          priority: newPriority.toUpperCase(),
+          tests: [
+            {
+              testName: newTestName,
+              testCategory: newDepartment,
+              sampleType: 'Blood',
+            },
+          ],
+        },
+        accessToken,
+      );
+      setNewPatientName('');
+      setNewPatientId('');
+      setNewOrderModalOpen(false);
+      await loadOrders();
+    } catch {
+      // keep modal open — do not silently eat error
+      alert('Failed to create order. Please try again.');
+    }
   };
 
   // Header matching web
@@ -205,39 +263,39 @@ export function TestsPage() {
     <div className="grid grid-cols-5 gap-2 sm:gap-2.5 xl:gap-3">
       <LabStatCard
         title="Total Orders"
-        value={LAB_KPI_STATS.totalOrders.value}
+        value={isLoading ? '—' : orders.length}
         color="blue"
-        change={LAB_KPI_STATS.totalOrders}
       />
       <LabStatCard
         title="Processing"
-        value={LAB_KPI_STATS.processing.value}
+        value={isLoading ? '—' : orders.filter((o) => o.status === 'Processing').length}
         color="amber"
-        change={LAB_KPI_STATS.processing}
       />
       <LabStatCard
         title="Completed"
-        value={LAB_KPI_STATS.completed.value}
+        value={isLoading ? '—' : orders.filter((o) => o.status === 'Completed').length}
         color="emerald"
-        change={LAB_KPI_STATS.completed}
       />
       <LabStatCard
         title="Abnormal Results"
-        value={LAB_KPI_STATS.abnormal.value}
+        value={isLoading ? '—' : orders.filter((o) => o.status === 'Abnormal').length}
         color="rose"
-        change={LAB_KPI_STATS.abnormal}
       />
       <LabStatCard
         title="Pending"
-        value={LAB_KPI_STATS.pending.value}
+        value={isLoading ? '—' : orders.filter((o) => o.status === 'Pending').length}
         color="purple"
-        change={LAB_KPI_STATS.pending}
       />
     </div>
   );
 
   // Right Side Panel Content ("Selected Test Details")
-  const rightPanelContent = (
+  const rightPanelContent = !selectedOrder ? (
+    <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-sm font-medium gap-3">
+      <FlaskConical className="w-10 h-10 text-slate-300" />
+      <span>Select an order to view details</span>
+    </div>
+  ) : (
     <div className="space-y-4">
       {/* Panel Header */}
       <div className="flex items-center justify-between pb-1">
@@ -475,7 +533,7 @@ export function TestsPage() {
         </div>
       </div>
     </div>
-  );
+  );  /* closes ternary true-branch */
 
   return (
     <LabPageShell
@@ -648,8 +706,20 @@ export function TestsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
-              {filteredOrders.map((ord) => {
-                const isSelected = selectedOrder.id === ord.id;
+              {isLoading ? (
+                <tr>
+                  <td colSpan={9} className="py-10 text-center text-slate-400 text-sm">
+                    Loading lab orders…
+                  </td>
+                </tr>
+              ) : filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-10 text-center text-slate-400 text-sm">
+                    No lab orders found.
+                  </td>
+                </tr>
+              ) : filteredOrders.map((ord) => {
+                const isSelected = selectedOrder?.id === ord.id;
                 const isChecked = selectedRowIds.includes(ord.id);
 
                 return (
@@ -987,6 +1057,20 @@ export function TestsPage() {
                   placeholder="e.g. Almaz Tadesse"
                   value={newPatientName}
                   onChange={(e) => setNewPatientName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Patient ID *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. PID-001024"
+                  value={newPatientId}
+                  onChange={(e) => setNewPatientId(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>

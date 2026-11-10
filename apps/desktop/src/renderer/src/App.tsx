@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { SyncProvider } from './context/SyncContext';
 import { LoginPage } from './pages/auth/LoginPage';
@@ -14,7 +14,7 @@ export type Workstation = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab';
 
 /** Derive the default workstation from a user object. Checks both the primary
  *  `role` field and the `roles[]` array so we handle both correctly. */
-function userToWorkstation(user: AuthUser | null | undefined): Workstation {
+export function userToWorkstation(user: AuthUser | null | undefined): Workstation {
   if (!user) return 'receptionist';
   const primary = (user.role ?? '').toUpperCase();
   const all = (user.roles ?? []).map((r) => r.toUpperCase());
@@ -26,6 +26,35 @@ function userToWorkstation(user: AuthUser | null | undefined): Workstation {
   if (primary === 'DOCTOR' || all.includes('DOCTOR')) return 'doctor';
   if (primary === 'NURSE' || all.includes('NURSE')) return 'nurse';
   return 'receptionist';
+}
+
+/** Determine which workstations a user has permission to access based strictly on their assigned roles. */
+export function getAllowedWorkstations(user: AuthUser | null | undefined): Workstation[] {
+  if (!user) return [];
+  const primary = (user.role ?? '').toUpperCase();
+  const all = (user.roles ?? []).map((r) => r.toUpperCase());
+  const roleSet = new Set([primary, ...all]);
+
+  const allowed: Workstation[] = [];
+  if (Array.from(roleSet).some((r) => r.includes('ADMIN'))) {
+    allowed.push('admin');
+  }
+  if (roleSet.has('DOCTOR')) {
+    allowed.push('doctor');
+  }
+  if (roleSet.has('NURSE')) {
+    allowed.push('nurse');
+  }
+  if (roleSet.has('RECEPTIONIST')) {
+    allowed.push('receptionist');
+  }
+  if (Array.from(roleSet).some((r) => r.includes('LAB')) || (user.email ?? '').toLowerCase().includes('lab')) {
+    allowed.push('lab');
+  }
+  if (allowed.length === 0) {
+    allowed.push(userToWorkstation(user));
+  }
+  return allowed;
 }
 
 /** Read user from localStorage directly — used to set initial workstation
@@ -48,16 +77,21 @@ function AppRouter() {
     () => userToWorkstation(getStoredUser())
   );
 
+  const allowedWorkstations = useMemo(() => getAllowedWorkstations(user), [user]);
+
   // Track previous user id so we only auto-reset on actual user change (login/logout).
-  // This allows manual workstation switching to still work within a session.
   const prevUserIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (user?.id !== prevUserIdRef.current) {
       prevUserIdRef.current = user?.id;
-      setActiveWorkstation(userToWorkstation(user));
+      const initial = userToWorkstation(user);
+      setActiveWorkstation(initial);
+    } else if (user && allowedWorkstations.length > 0 && !allowedWorkstations.includes(activeWorkstation)) {
+      // If user is currently on an unauthorized workstation, enforce fallback to first allowed
+      setActiveWorkstation(allowedWorkstations[0]!);
     }
-  }, [user?.id, user?.role]);
+  }, [user?.id, user?.role, allowedWorkstations, activeWorkstation]);
 
   if (isLoading) {
     return (
@@ -90,19 +124,38 @@ function AppRouter() {
     return <LoginPage />;
   }
 
-  if (activeWorkstation === 'admin') {
-    return <AdminLayout onSwitchWorkstation={setActiveWorkstation} />;
+  // Only pass onSwitchWorkstation if the user actually has more than 1 allowed workstation
+  const handleSwitch = (target: Workstation) => {
+    if (allowedWorkstations.includes(target)) {
+      setActiveWorkstation(target);
+    }
+  };
+  const switchCallback = allowedWorkstations.length > 1 ? handleSwitch : undefined;
+  const switchProps = switchCallback ? { onSwitchWorkstation: switchCallback } : {};
+
+  if (activeWorkstation === 'admin' && allowedWorkstations.includes('admin')) {
+    return <AdminLayout {...switchProps} />;
   }
-  if (activeWorkstation === 'doctor') {
-    return <DoctorLayout onSwitchWorkstation={setActiveWorkstation} />;
+  if (activeWorkstation === 'doctor' && allowedWorkstations.includes('doctor')) {
+    return <DoctorLayout {...switchProps} />;
   }
-  if (activeWorkstation === 'nurse') {
-    return <NurseLayout onSwitchWorkstation={setActiveWorkstation} />;
+  if (activeWorkstation === 'nurse' && allowedWorkstations.includes('nurse')) {
+    return <NurseLayout {...switchProps} />;
   }
-  if (activeWorkstation === 'lab') {
-    return <LabLayout onSwitchWorkstation={setActiveWorkstation} />;
+  if (activeWorkstation === 'lab' && allowedWorkstations.includes('lab')) {
+    return <LabLayout {...switchProps} />;
   }
-  return <ReceptionistLayout onSwitchWorkstation={setActiveWorkstation} />;
+  if (activeWorkstation === 'receptionist' && allowedWorkstations.includes('receptionist')) {
+    return <ReceptionistLayout {...switchProps} />;
+  }
+
+  // Fallback to the first allowed workstation
+  const fallback = allowedWorkstations[0] || 'receptionist';
+  if (fallback === 'doctor') return <DoctorLayout {...switchProps} />;
+  if (fallback === 'nurse') return <NurseLayout {...switchProps} />;
+  if (fallback === 'admin') return <AdminLayout {...switchProps} />;
+  if (fallback === 'lab') return <LabLayout {...switchProps} />;
+  return <ReceptionistLayout {...switchProps} />;
 }
 
 export function App() {

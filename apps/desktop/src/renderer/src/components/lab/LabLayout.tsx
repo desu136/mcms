@@ -16,7 +16,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { useSync } from '../../context/SyncContext';
 
 export interface LabLayoutProps {
-  onSwitchWorkstation?: (w: 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab') => void;
+  onSwitchWorkstation?: ((w: 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab') => void) | undefined;
 }
 
 export function LabLayout({ onSwitchWorkstation }: LabLayoutProps) {

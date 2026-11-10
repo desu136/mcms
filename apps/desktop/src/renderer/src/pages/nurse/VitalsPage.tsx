@@ -34,6 +34,9 @@ import RecordVitalsModal from '../../components/nurse/RecordVitalsModal';
 import AdministerMedModal from '../../components/nurse/AdministerMedModal';
 import CollectLabModal from '../../components/nurse/CollectLabModal';
 import AddNoteModal from '../../components/nurse/AddNoteModal';
+import { useAuth } from '../../auth/AuthContext';
+import { recordVitals } from '../../api/clinical';
+import type { CreateVitalReadingRequest } from '@mcms/contracts';
 import {
   NURSE_PATIENTS,
   VITALS_HISTORY_DATA,
@@ -44,6 +47,7 @@ import {
 } from '../../components/nurse/nurseMockData';
 
 export function VitalsPage() {
+  const { accessToken } = useAuth();
   const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
   const [activeMetricTab, setActiveMetricTab] = useState<'temp' | 'bp' | 'hr' | 'spo2'>('temp');
   const [departmentFilter, setDepartmentFilter] = useState('All');
@@ -69,14 +73,37 @@ export function VitalsPage() {
   const [labModalOpen, setLabModalOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
 
-  const handleSaveObservation = (e: React.FormEvent) => {
+  const handleSaveObservation = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setTimeout(() => {
+
+    const payload: CreateVitalReadingRequest = {
+      patientId: selectedPatient.id,
+      temperature: tempInput ? parseFloat(tempInput) : 36.8,
+      systolicBp: systolicInput ? parseInt(systolicInput, 10) : 120,
+      diastolicBp: diastolicInput ? parseInt(diastolicInput, 10) : 80,
+      heartRate: hrInput ? parseInt(hrInput, 10) : 72,
+      spo2: spo2Input ? parseFloat(spo2Input) : 98,
+      ...(rrInput ? { respiratoryRate: parseInt(rrInput, 10) } : {}),
+      ...(notesInput.trim() ? { notes: notesInput.trim() } : {}),
+    };
+
+    try {
+      await recordVitals(payload, accessToken);
+    } catch {
+      try {
+        await (window as any).electron?.ipcRenderer?.invoke('enqueue-operation', {
+          type: 'RECORD_VITALS',
+          payload,
+        });
+      } catch {
+        // Fallback
+      }
+    } finally {
       setIsSubmitting(false);
       setShowSuccessToast(true);
       setTimeout(() => setShowSuccessToast(false), 3000);
-    }, 400);
+    }
   };
 
   const filteredPatients = NURSE_PATIENTS.filter((p) => {

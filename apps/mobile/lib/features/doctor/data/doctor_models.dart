@@ -58,6 +58,54 @@ class PatientItem {
     required this.totalVisits,
     this.conditions = const [],
   });
+
+  factory PatientItem.fromDto(Map<String, dynamic> json) {
+    final rawName = json['fullName'] as String? ??
+        '${json['firstName'] ?? ''} ${json['lastName'] ?? ''}'.trim();
+    final name = rawName.isNotEmpty ? rawName : 'Unnamed Patient';
+    final rawDob = json['dateOfBirth'] as String?;
+    int age = 30;
+    if (rawDob != null) {
+      try {
+        final dob = DateTime.parse(rawDob);
+        age = DateTime.now().year - dob.year;
+      } catch (_) {}
+    }
+    final rawId = json['id'] as String? ?? '';
+    final pid = json['pid'] as String? ??
+        (rawId.isNotEmpty ? 'PID-${rawId.substring(0, rawId.length > 6 ? 6 : rawId.length)}' : 'PID-000000');
+    final gender = (json['gender'] as String? ?? 'Other').toUpperCase() == 'MALE'
+        ? 'Male'
+        : (json['gender'] as String? ?? 'Other').toUpperCase() == 'FEMALE'
+            ? 'Female'
+            : 'Other';
+
+    return PatientItem(
+      id: rawId,
+      name: name,
+      pid: pid,
+      age: age,
+      gender: gender,
+      phone: json['phoneNumber'] as String? ?? '—',
+      email: json['email'] as String? ?? '—',
+      address: json['address'] as String? ?? 'Addis Ababa, Ethiopia',
+      department: json['department'] as String? ?? 'General OPD',
+      lastVisit: json['createdAt'] != null
+          ? (json['createdAt'] as String).split('T').first
+          : 'Today',
+      lastVisitReason: 'Clinical Consultation',
+      status: (json['status'] as String? ?? 'Active').toUpperCase() == 'INACTIVE'
+          ? 'Inactive'
+          : 'Active',
+      avatar:
+          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(name)}&size=150&background=dbeafe&color=1e40af',
+      totalVisits: (json['totalVisits'] as num?)?.toInt() ?? 1,
+      conditions: (json['conditions'] as List<dynamic>?)
+              ?.map((c) => c.toString())
+              .toList() ??
+          const [],
+    );
+  }
 }
 
 enum AppointmentStatus { completed, inProgress, upcoming, cancelled }
@@ -88,6 +136,37 @@ class AppointmentItem {
     required this.status,
     required this.avatar,
   });
+
+  factory AppointmentItem.fromDto(Map<String, dynamic> json) {
+    final rawStatus = (json['status'] as String? ?? 'UPCOMING').toUpperCase();
+    AppointmentStatus status = AppointmentStatus.upcoming;
+    if (rawStatus == 'COMPLETED') {
+      status = AppointmentStatus.completed;
+    } else if (rawStatus == 'IN_PROGRESS' || rawStatus == 'CHECKED_IN') {
+      status = AppointmentStatus.inProgress;
+    } else if (rawStatus == 'CANCELLED') {
+      status = AppointmentStatus.cancelled;
+    }
+
+    final pName = json['patientName'] as String? ?? 'Patient';
+    final timeStr = json['startTime'] as String? ?? json['time'] as String? ?? '09:00 AM';
+    final dateStr = json['appointmentDate'] as String? ?? json['date'] as String? ?? 'Today';
+
+    return AppointmentItem(
+      id: json['id'] as String? ?? '',
+      time: timeStr,
+      date: dateStr,
+      patientName: pName,
+      patientId: json['patientId'] as String? ?? '',
+      age: (json['patientAge'] as num?)?.toInt() ?? 30,
+      gender: json['patientGender'] as String? ?? 'Female',
+      reason: json['reason'] as String? ?? json['type'] as String? ?? 'Consultation',
+      department: json['branchName'] as String? ?? json['department'] as String? ?? 'General OPD',
+      status: status,
+      avatar:
+          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(pName)}&size=150&background=dbeafe&color=1e40af',
+    );
+  }
 
   String get statusLabel {
     switch (status) {
@@ -129,6 +208,37 @@ class PrescriptionItem {
     required this.status,
     required this.department,
   });
+
+  factory PrescriptionItem.fromDto(Map<String, dynamic> json) {
+    final pName = json['patientName'] as String? ?? 'Patient';
+    final rawMed = json['medication'] as String?;
+    String medication = rawMed ?? '';
+    if (medication.isEmpty && json['medications'] is List && (json['medications'] as List).isNotEmpty) {
+      final firstMed = (json['medications'] as List).first;
+      if (firstMed is Map) {
+        medication = firstMed['name'] as String? ?? 'Medication';
+      }
+    }
+    if (medication.isEmpty) medication = 'Prescribed Medication';
+
+    return PrescriptionItem(
+      id: json['id'] as String? ?? '',
+      prescriptionId: json['prescriptionNumber'] as String? ??
+          (json['id'] != null ? 'RX-${json['id'].toString().substring(0, 6)}' : 'RX-000000'),
+      patientName: pName,
+      patientId: json['patientId'] as String? ?? '',
+      patientAvatar:
+          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(pName)}&size=150&background=dbeafe&color=1e40af',
+      medication: medication,
+      dosage: json['dosage'] as String? ?? '1 tablet daily',
+      duration: json['duration'] as String? ?? '7 days',
+      prescribedDate: json['createdAt'] != null
+          ? (json['createdAt'] as String).split('T').first
+          : 'Today',
+      status: json['status'] as String? ?? 'Active',
+      department: json['department'] as String? ?? 'Cardiology',
+    );
+  }
 }
 
 class LabResultItem {
@@ -155,6 +265,37 @@ class LabResultItem {
     required this.status,
     required this.date,
   });
+
+  factory LabResultItem.fromDto(Map<String, dynamic> json) {
+    final pName = json['patientName'] as String? ?? 'Patient';
+    final rawTest = json['testName'] as String?;
+    String test = rawTest ?? '';
+    if (test.isEmpty && json['tests'] is List && (json['tests'] as List).isNotEmpty) {
+      final first = (json['tests'] as List).first;
+      if (first is Map) {
+        test = first['testName'] as String? ?? 'Lab Test';
+      } else {
+        test = first.toString();
+      }
+    }
+    if (test.isEmpty) test = 'General Lab Order';
+
+    return LabResultItem(
+      id: json['id'] as String? ?? '',
+      patientName: pName,
+      patientId: json['patientId'] as String? ?? '',
+      avatar:
+          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(pName)}&size=150&background=dbeafe&color=1e40af',
+      testName: test,
+      department: json['department'] as String? ?? 'Laboratory',
+      result: json['result'] as String? ?? 'Pending evaluation',
+      referenceRange: json['referenceRange'] as String? ?? 'Normal',
+      status: (json['status'] as String? ?? 'Pending'),
+      date: json['createdAt'] != null
+          ? (json['createdAt'] as String).split('T').first
+          : 'Today',
+    );
+  }
 }
 
 class MedicalRecordItem {

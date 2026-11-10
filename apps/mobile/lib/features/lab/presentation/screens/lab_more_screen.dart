@@ -4,6 +4,7 @@ import '../../../../core/auth/auth_provider.dart';
 import '../../../../core/storage/sqlite_database.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/lab_repository.dart';
+import '../../data/lab_models.dart';
 import 'lab_profile_screen.dart';
 import 'lab_messages_screen.dart';
 import 'lab_qc_screen.dart';
@@ -373,7 +374,7 @@ class LabMoreScreen extends ConsumerWidget {
     );
   }
 
-  void _showReagentsModal(BuildContext context, List inventory) {
+  void _showReagentsModal(BuildContext context, List<LabInventoryItem> inventory) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,

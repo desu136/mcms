@@ -13,7 +13,7 @@ import {
   ChevronRight,
   HeartPulse,
 } from 'lucide-react';
-import { CURRENT_LAB_TECH } from './labMockData';
+import { useAuth } from '../../auth/AuthContext';
 
 export type LabTab =
   | 'dashboard'
@@ -58,6 +58,12 @@ export function LabSidebar({
   pendingSyncOps = 0,
   isOnline = true,
 }: LabSidebarProps) {
+  const { user } = useAuth();
+  const displayName = user?.displayName || user?.email || 'Lab Technician';
+  const jobTitle =
+    user?.staffProfile?.jobTitle ||
+    (user?.role?.toUpperCase().includes('LAB') ? 'Lab Technician' : 'Lab Staff');
+
   return (
     <aside
       className={`fixed top-0 left-0 h-screen h-[100dvh] z-40 flex flex-col transition-all duration-300 ease-in-out
@@ -138,7 +144,7 @@ export function LabSidebar({
           className={`flex items-center gap-3 p-2.5 rounded-xl bg-slate-800/70 border border-slate-700/60 shadow-inner hover:border-slate-600 transition-colors cursor-pointer ${
             isCollapsed ? 'justify-center' : ''
           }`}
-          title={isCollapsed ? CURRENT_LAB_TECH.name : undefined}
+          title={isCollapsed ? displayName : undefined}
         >
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-500 flex items-center justify-center text-white shrink-0 shadow-md shadow-blue-500/20 ring-1 ring-white/10">
             <FlaskConical className="w-4.5 h-4.5" />
@@ -146,10 +152,10 @@ export function LabSidebar({
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
               <div className="text-xs font-extrabold text-white truncate tracking-tight">
-                {CURRENT_LAB_TECH.name}
+                {displayName}
               </div>
               <div className="text-[10px] text-slate-400 truncate font-medium">
-                {CURRENT_LAB_TECH.role}
+                {jobTitle}
               </div>
               <div className="flex items-center justify-between gap-1.5 mt-0.5">
                 <div className="flex items-center gap-1.5">

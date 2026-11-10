@@ -17,7 +17,7 @@ import {
   CloudOff,
   Cloud,
 } from 'lucide-react';
-import { CURRENT_RECEPTIONIST } from './receptionistMockData';
+import { useAuth } from '../../auth/AuthContext';
 
 export type ReceptionistTab =
   | 'dashboard'
@@ -67,6 +67,10 @@ export function ReceptionistSidebar({
   pendingSyncOps = 0,
   isOnline = true,
 }: ReceptionistSidebarProps) {
+  const { user } = useAuth();
+  const receptionistName = user?.displayName || user?.email || 'Receptionist';
+  const receptionistRole = user?.staffProfile?.jobTitle || (user?.role === 'RECEPTIONIST' ? 'Front Desk Officer' : (user?.role || 'Receptionist'));
+  const initial = receptionistName.replace(/^Dr\.\s*/i, '').charAt(0).toUpperCase() || 'R';
   return (
     <aside
       className={`h-screen h-[100dvh] flex flex-col justify-between bg-[#0B132B] text-slate-300 border-r border-slate-800 transition-all duration-200 select-none shrink-0 z-30 ${
@@ -204,16 +208,16 @@ export function ReceptionistSidebar({
         {/* User Card */}
         <div className="flex items-center justify-between p-1.5 rounded-xl hover:bg-slate-800/60 transition-colors">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
-              {CURRENT_RECEPTIONIST.name.charAt(0)}
+            <div className="w-7 h-7 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+              {initial}
             </div>
             {!isCollapsed && (
               <div className="min-w-0">
                 <div className="text-xs font-bold text-white truncate">
-                  {CURRENT_RECEPTIONIST.name}
+                  {receptionistName}
                 </div>
                 <div className="text-[10px] text-slate-400 truncate">
-                  {CURRENT_RECEPTIONIST.role}
+                  {receptionistRole}
                 </div>
               </div>
             )}

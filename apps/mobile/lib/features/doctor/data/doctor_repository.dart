@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/auth/auth_provider.dart';
+import '../../../../core/api/api_client.dart';
 import 'doctor_models.dart';
 
 class DoctorRepository {
@@ -479,6 +481,74 @@ class DoctorNotifier extends StateNotifier<DoctorState> {
           ),
         );
 
+  /// Load live data from the central API for patients, appointments, prescriptions, and lab results
+  Future<void> loadFromApi(MobileApiClient client) async {
+    try {
+      final patientsRes = await client.getPatients(limit: 50);
+      final rawList = patientsRes['data'] as List<dynamic>? ?? [];
+      final mappedPatients = rawList
+          .map((p) => PatientItem.fromDto(p as Map<String, dynamic>))
+          .toList();
+      if (mappedPatients.isNotEmpty) {
+        state = state.copyWith(patients: mappedPatients);
+      }
+    } catch (_) {}
+
+    try {
+      final apptsRes = await client.getAppointments();
+      final mappedAppts = apptsRes
+          .map((a) => AppointmentItem.fromDto(a as Map<String, dynamic>))
+          .toList();
+      if (mappedAppts.isNotEmpty) {
+        state = state.copyWith(appointments: mappedAppts);
+      }
+    } catch (_) {}
+
+    try {
+      final rxRes = await client.getPrescriptions();
+      final mappedRx = rxRes
+          .map((r) => PrescriptionItem.fromDto(r as Map<String, dynamic>))
+          .toList();
+      if (mappedRx.isNotEmpty) {
+        state = state.copyWith(prescriptions: mappedRx);
+      }
+    } catch (_) {}
+
+    try {
+      final labsRes = await client.getLabOrders();
+      final mappedLabs = labsRes
+          .map((l) => LabResultItem.fromDto(l as Map<String, dynamic>))
+          .toList();
+      if (mappedLabs.isNotEmpty) {
+        state = state.copyWith(labResults: mappedLabs);
+      }
+    } catch (_) {}
+  }
+
+  Future<bool> createPrescriptionViaApi(
+      MobileApiClient client, Map<String, dynamic> data) async {
+    try {
+      final created = await client.createPrescription(data);
+      final rxItem = PrescriptionItem.fromDto(created);
+      state = state.copyWith(prescriptions: [rxItem, ...state.prescriptions]);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> createLabOrderViaApi(
+      MobileApiClient client, Map<String, dynamic> data) async {
+    try {
+      final created = await client.createLabOrder(data);
+      final labItem = LabResultItem.fromDto(created);
+      state = state.copyWith(labResults: [labItem, ...state.labResults]);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void addPrescription(PrescriptionItem item) {
     state = state.copyWith(prescriptions: [item, ...state.prescriptions]);
   }
@@ -517,6 +587,28 @@ class DoctorNotifier extends StateNotifier<DoctorState> {
     state = state.copyWith(conversations: updated);
   }
 }
+
+final doctorProfileProvider = Provider<DoctorProfile>((ref) {
+  final user = ref.watch(authProvider).user;
+  if (user != null) {
+    final name = user.displayName.isNotEmpty
+        ? (user.displayName.startsWith('Dr.') ? user.displayName : 'Dr. ${user.displayName}')
+        : (user.email.startsWith('dr') ? user.email : 'Dr. ${user.email}');
+    return DoctorProfile(
+      name: name,
+      role: 'Physician / Specialist',
+      department: 'Cardiology & OPD',
+      avatar:
+          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(name)}&size=150&background=dbeafe&color=1e40af',
+      email: user.email,
+      phone: '+251 911 234 567',
+      hospital: 'Tikur Anbessa Specialized Hospital',
+      unreadNotifications: 2,
+      unreadMessages: 1,
+    );
+  }
+  return DoctorRepository.currentDoctor;
+});
 
 final doctorProvider =
     StateNotifierProvider<DoctorNotifier, DoctorState>((ref) {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   UserPlus,
   Search,
@@ -14,11 +14,15 @@ import {
   Phone,
   Mail,
   MapPin,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import ReceptionistBanner from '../../components/receptionist/ReceptionistBanner';
 import ReceptionistPageShell from '../../components/receptionist/ReceptionistPageShell';
 import { REGISTRATION_RECENT_PATIENTS } from '../../components/receptionist/receptionistMockData';
 import { useSync } from '../../context/SyncContext';
+import { useAuth } from '../../auth/AuthContext';
+import { createPatient, fetchPatients } from '../../api';
 import { ReceptionistTab } from '../../components/receptionist/ReceptionistSidebar';
 
 interface RegistrationPageProps {
@@ -27,9 +31,12 @@ interface RegistrationPageProps {
 
 export function RegistrationPage({ onNavigateTab }: RegistrationPageProps) {
   const { enqueueOperation, isOnline } = useSync();
+  const { accessToken } = useAuth();
   const [activeTab, setActiveTab] = useState<'new' | 'search'>('new');
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [recentPatients, setRecentPatients] = useState(REGISTRATION_RECENT_PATIENTS);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
+  const [recentPatients, setRecentPatients] = useState<any[]>(REGISTRATION_RECENT_PATIENTS);
 
   // Form State
   const [fullName, setFullName] = useState('');
@@ -40,18 +47,87 @@ export function RegistrationPage({ onNavigateTab }: RegistrationPageProps) {
   const [nationalId, setNationalId] = useState('ET-ID-88412');
   const [regType, setRegType] = useState('Walk-in');
   const [city, setCity] = useState('Addis Ababa');
+  const [address, setAddress] = useState('Bole Subcity, Woreda 03');
+  const [bloodType, setBloodType] = useState('O+');
+  const [allergies, setAllergies] = useState('');
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('+251 ');
   const [registeredPid, setRegisteredPid] = useState<string | null>(null);
+
+  const loadRecent = useCallback(async () => {
+    setIsLoadingRecent(true);
+    try {
+      const res = await fetchPatients(accessToken, { limit: 10 });
+      if (res && res.data && res.data.length > 0) {
+        setRecentPatients(
+          res.data.map((p) => {
+            const age = p.dateOfBirth
+              ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
+              : 30;
+            return {
+              pid: p.pid,
+              name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+              time: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today',
+              type: 'Walk-in',
+              gender: p.gender || 'Unknown',
+              age,
+            };
+          }),
+        );
+      }
+    } catch (err) {
+      console.warn('Could not load live patients, falling back to mock:', err);
+    } finally {
+      setIsLoadingRecent(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadRecent();
+  }, [loadRecent]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim()) return;
 
-    const newPid = `P-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newPatient = {
-      id: `patient-${Date.now()}`,
-      pid: newPid,
+    setIsSubmitting(true);
+    const parts = fullName.trim().split(/\s+/);
+    const firstName = parts[0] || 'Patient';
+    const lastName = parts.slice(1).join(' ') || 'User';
+
+    let savedPatientId = `patient-${Date.now()}`;
+    let finalPid = `P-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    try {
+      const liveRes = await createPatient(
+        {
+          firstName,
+          lastName,
+          ...(dob ? { dateOfBirth: dob } : {}),
+          ...(gender ? { gender } : {}),
+          ...(phone.trim() ? { phoneNumber: phone.trim() } : {}),
+          ...(email.trim() ? { email: email.trim() } : {}),
+          ...(address.trim() ? { address: address.trim() } : {}),
+          ...(city.trim() ? { city: city.trim() } : {}),
+          ...(bloodType ? { bloodType } : {}),
+          ...(allergies.trim() ? { allergies: allergies.trim() } : {}),
+          ...(emergencyName.trim() ? { emergencyContactName: emergencyName.trim() } : {}),
+          ...(emergencyPhone.trim() ? { emergencyContactPhone: emergencyPhone.trim() } : {}),
+        },
+        accessToken,
+      );
+
+      if (liveRes && liveRes.id) {
+        savedPatientId = liveRes.id;
+        finalPid = liveRes.pid;
+      }
+    } catch (err) {
+      console.warn('Live patient creation failed, falling back to local SQLite enqueue:', err);
+    }
+
+    const newPatientLocal = {
+      id: savedPatientId,
+      pid: finalPid,
       name: fullName,
       gender,
       dob,
@@ -66,23 +142,24 @@ export function RegistrationPage({ onNavigateTab }: RegistrationPageProps) {
     };
 
     // Enqueue operation into local SQLite sync queue
-    await enqueueOperation('patient', newPatient.id, 'CREATE', newPatient);
+    await enqueueOperation('patient', savedPatientId, 'CREATE', newPatientLocal);
 
     // Update local recent list
     setRecentPatients((prev: any) => [
       {
-        pid: newPid,
+        pid: finalPid,
         name: fullName,
         time: 'Just now',
         type: regType,
         gender,
-        age: 32,
+        age: dob ? Math.max(0, new Date().getFullYear() - new Date(dob).getFullYear()) : 30,
       },
       ...prev,
     ]);
 
-    setRegisteredPid(newPid);
+    setRegisteredPid(finalPid);
     setSaveSuccess(true);
+    setIsSubmitting(false);
   };
 
   const handleReset = () => {
@@ -297,6 +374,56 @@ export function RegistrationPage({ onNavigateTab }: RegistrationPageProps) {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
               <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">City / Town</label>
+                <input
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 mb-1">Residential Address</label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Subcity, Woreda, House No..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Blood Type</label>
+                <select
+                  value={bloodType}
+                  onChange={(e) => setBloodType(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                >
+                  <option value="A+">A+</option>
+                  <option value="A-">A-</option>
+                  <option value="B+">B+</option>
+                  <option value="B-">B-</option>
+                  <option value="AB+">AB+</option>
+                  <option value="AB-">AB-</option>
+                  <option value="O+">O+</option>
+                  <option value="O-">O-</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 mb-1">Known Allergies / Warnings</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Penicillin, Peanuts (leave blank if None)"
+                  value={allergies}
+                  onChange={(e) => setAllergies(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                />
+              </div>
+
+              <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Intake Type</label>
                 <select
                   value={regType}
@@ -348,9 +475,11 @@ export function RegistrationPage({ onNavigateTab }: RegistrationPageProps) {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-md shadow-blue-500/25 transition-all cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-md shadow-blue-500/25 transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
                 >
-                  Complete Registration
+                  {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isSubmitting ? 'Registering…' : 'Complete Registration'}</span>
                 </button>
               </div>
             </div>

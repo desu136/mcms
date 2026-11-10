@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/app_theme.dart';
 import '../../data/lab_models.dart';
 
 class ActiveStatSpecimenCard extends StatelessWidget {

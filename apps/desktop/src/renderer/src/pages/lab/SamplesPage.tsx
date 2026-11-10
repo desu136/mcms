@@ -1,4 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchLabOrders, collectSample } from '../../api/clinical';
+import type { LabOrderDTO } from '@mcms/contracts/clinical';
 import {
   FlaskConical,
   TestTube2,
@@ -31,24 +34,63 @@ import { LabPageShell } from '../../components/lab/LabPageShell';
 import { LabStatCard } from '../../components/lab/LabStatCard';
 import {
   SampleItem,
-  SAMPLE_KPI_STATS,
-  EXACT_SAMPLE_ROWS,
   SAMPLE_STATUS_DISTRIBUTION,
   RECENT_SAMPLE_ACTIVITIES,
   HANDOVER_TRACKING_STEPS,
 } from '../../components/lab/sampleMockData';
 
+/** Map LabOrderDTO → SampleItem for the Samples page UI */
+function mapOrderToSample(o: LabOrderDTO): SampleItem {
+  const s = o.samples[0];
+  const rawType = (s?.sampleType ?? 'Blood') as string;
+  const sampleType = (['Blood', 'Urine', 'Stool', 'Swab', 'Tissue', 'Other'].includes(rawType)
+    ? rawType
+    : 'Other') as SampleItem['sampleType'];
+
+  const backendStatus = s?.status ?? o.status;
+  const status: SampleItem['status'] =
+    backendStatus === 'COLLECTED' ? 'Collected' :
+    backendStatus === 'REJECTED' ? 'Rejected' :
+    o.status === 'COMPLETED' ? 'Completed' :
+    o.status === 'IN_PROGRESS' || o.status === 'PROCESSING' ? 'In Processing' :
+    'Pending';
+
+  return {
+    id: o.id,
+    sampleId: s?.sampleId ?? o.orderNumber,
+    patientName: o.patientName,
+    patientId: o.patientPid,
+    patientRoom: 'Outpatient',
+    patientAge: 0,
+    patientGender: 'Female',
+    patientPhone: '—',
+    patientEmail: '—',
+    patientCity: '—',
+    patientAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(o.patientName)}&background=3b82f6&color=fff&size=64`,
+    testName: s?.sampleType ?? 'Lab Test',
+    testCode: (s?.sampleType ?? 'TST').slice(0, 3).toUpperCase(),
+    sampleType,
+    department: 'Hematology',
+    collectionTime: s?.collectedAt
+      ? new Date(s.collectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '—',
+    status,
+  };
+}
+
 type FilterTab = 'all' | 'collected' | 'processing' | 'completed' | 'rejected';
 
 export function SamplesPage() {
-  const [samples, setSamples] = useState<SampleItem[]>(EXACT_SAMPLE_ROWS);
-  const [selectedSample, setSelectedSample] = useState<SampleItem>(EXACT_SAMPLE_ROWS[0]!);
+  const { accessToken } = useAuth();
+  const [samples, setSamples] = useState<SampleItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedSample, setSelectedSample] = useState<SampleItem | null>(null);
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('All');
   const [selectedSampleType, setSelectedSampleType] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
-  const [selectedRowIds, setSelectedRowIds] = useState<string[]>(['smp-0018']);
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [calendarDate, setCalendarDate] = useState('Oct 19, 2026');
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
 
@@ -57,6 +99,28 @@ export function SamplesPage() {
   const [newTestName, setNewTestName] = useState('Complete Blood Count (CBC)');
   const [newSampleType, setNewSampleType] = useState('Blood');
   const [newDepartment, setNewDepartment] = useState('Hematology');
+
+  // Live data loading
+  const loadSamples = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const dtos = await fetchLabOrders(accessToken);
+      const mapped = dtos.map(mapOrderToSample);
+      setSamples(mapped);
+      if (mapped.length > 0 && !selectedSample) {
+        setSelectedSample(mapped[0]!);
+        setSelectedRowIds([mapped[0]!.id]);
+      }
+    } catch {
+      // keep empty — show empty state
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadSamples();
+  }, [loadSamples]);
 
   // Filtered samples logic
   const filteredSamples = useMemo(() => {
@@ -107,35 +171,14 @@ export function SamplesPage() {
     }
   };
 
-  const handleRegisterSample = (e: React.FormEvent) => {
+  const handleRegisterSample = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPatientName.trim()) return;
-
-    const newId = `smp-${Date.now().toString().slice(-4)}`;
-    const newSample: SampleItem = {
-      id: newId,
-      sampleId: `SMP-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      patientName: newPatientName,
-      patientId: `PID-${Math.floor(1000 + Math.random() * 9000)}`,
-      patientRoom: 'Room 204',
-      patientAge: 35,
-      patientGender: 'Female',
-      patientPhone: '+251 911 234 567',
-      patientEmail: 'patient@example.com',
-      patientCity: 'Addis Ababa',
-      patientAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
-      testName: newTestName,
-      testCode: newTestName.slice(0, 3).toUpperCase(),
-      sampleType: newSampleType as SampleItem['sampleType'],
-      department: newDepartment as SampleItem['department'],
-      collectionTime: 'Just now',
-      status: 'Collected',
-    };
-
-    setSamples([newSample, ...samples]);
-    setSelectedSample(newSample);
-    setNewPatientName('');
+    // Collect sample is wired to an existing order's sample.
+    // For a "register" flow, we just reload data to reflect any new orders.
     setRegisterModalOpen(false);
+    setNewPatientName('');
+    await loadSamples();
   };
 
   // Top Header Row matching web
@@ -200,39 +243,39 @@ export function SamplesPage() {
     <div className="grid grid-cols-5 gap-2 sm:gap-2.5 xl:gap-3">
       <LabStatCard
         title="Total Samples"
-        value={SAMPLE_KPI_STATS.totalSamples.value}
+        value={isLoading ? '—' : samples.length}
         color="blue"
-        change={SAMPLE_KPI_STATS.totalSamples}
       />
       <LabStatCard
         title="Collected"
-        value={SAMPLE_KPI_STATS.collected.value}
+        value={isLoading ? '—' : samples.filter((s) => s.status === 'Collected').length}
         color="emerald"
-        change={SAMPLE_KPI_STATS.collected}
       />
       <LabStatCard
         title="In Processing"
-        value={SAMPLE_KPI_STATS.inProcessing.value}
+        value={isLoading ? '—' : samples.filter((s) => s.status === 'In Processing').length}
         color="amber"
-        change={SAMPLE_KPI_STATS.inProcessing}
       />
       <LabStatCard
         title="Completed"
-        value={SAMPLE_KPI_STATS.completed.value}
+        value={isLoading ? '—' : samples.filter((s) => s.status === 'Completed').length}
         color="emerald"
-        change={SAMPLE_KPI_STATS.completed}
       />
       <LabStatCard
         title="Rejected"
-        value={SAMPLE_KPI_STATS.rejected.value}
+        value={isLoading ? '—' : samples.filter((s) => s.status === 'Rejected').length}
         color="rose"
-        change={SAMPLE_KPI_STATS.rejected}
       />
     </div>
   );
 
   // Right Panel Content
-  const rightPanelContent = (
+  const rightPanelContent = !selectedSample ? (
+    <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-sm font-medium gap-3">
+      <TestTube2 className="w-10 h-10 text-slate-300" />
+      <span>Select a sample to view details</span>
+    </div>
+  ) : (
     <div className="space-y-4">
       {/* 1. Header & Patient Profile Card */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs">
@@ -700,9 +743,22 @@ export function SamplesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
-              {filteredSamples.map((smp) => {
-                const isSelected = selectedSample.id === smp.id;
-                const isChecked = selectedRowIds.includes(smp.id);
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="py-10 text-center text-slate-400 text-sm">
+                    Loading samples…
+                  </td>
+                </tr>
+              ) : filteredSamples.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-10 text-center text-slate-400 text-sm">
+                    No samples found.
+                  </td>
+                </tr>
+              ) : (
+                filteredSamples.map((smp) => {
+                  const isSelected = selectedSample?.id === smp.id;
+                  const isChecked = selectedRowIds.includes(smp.id);
 
                 return (
                   <tr
@@ -792,7 +848,7 @@ export function SamplesPage() {
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>
