@@ -10,6 +10,18 @@ class ApiEndpoints {
   static Uri get syncPush => Uri.parse('${AppEnv.apiBaseUrl}/sync/push');
   static Uri get syncPull => Uri.parse('${AppEnv.apiBaseUrl}/sync/pull');
 
+  // ─── Clinic Admin & Management endpoints ───────────────────────────────────
+  static Uri get clinicAdminDashboard =>
+      Uri.parse('${AppEnv.apiBaseUrl}/clinic-admin/dashboard');
+  static Uri get clinicAdminDepartments =>
+      Uri.parse('${AppEnv.apiBaseUrl}/clinic-admin/departments');
+  static Uri get clinicAdminDoctors =>
+      Uri.parse('${AppEnv.apiBaseUrl}/clinic-admin/doctors');
+  static Uri get clinicAdminRooms =>
+      Uri.parse('${AppEnv.apiBaseUrl}/clinic-admin/rooms');
+  static Uri get branches => Uri.parse('${AppEnv.apiBaseUrl}/branches');
+  static Uri get users => Uri.parse('${AppEnv.apiBaseUrl}/users');
+
   // ─── Patients ─────────────────────────────────────────────────────────────
   static Uri patients([Map<String, String>? queryParams]) {
     final base = Uri.parse('${AppEnv.apiBaseUrl}/patients');
