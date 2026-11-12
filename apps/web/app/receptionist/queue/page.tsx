@@ -17,6 +17,9 @@ import {
   Tag,
   Loader2,
   RefreshCw,
+  ArrowRightLeft,
+  AlertTriangle,
+  XCircle,
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import dynamic from 'next/dynamic';
@@ -27,8 +30,12 @@ import ReceptionistPageShell from '../../../components/receptionist/Receptionist
 import { useAuth } from '../../../lib/auth/auth-context';
 import { fetchQueue, updateQueueEntry, fetchDoctors, fetchDepartments } from '../../../lib/api';
 import type { QueueEntryDTO, DoctorDTO, ClinicDepartmentDTO } from '@mcms/contracts';
+import type { QueueTransferTarget } from '../../../components/receptionist/TransferQueueModal';
+import type { TicketPrintData } from '../../../components/receptionist/QueueTicketModal';
 
 const CheckInModal = dynamic(() => import('../../../components/receptionist/CheckInModal'), { ssr: false });
+const TransferQueueModal = dynamic(() => import('../../../components/receptionist/TransferQueueModal'), { ssr: false });
+const QueueTicketModal = dynamic(() => import('../../../components/receptionist/QueueTicketModal'), { ssr: false });
 
 export interface DisplayQueuePatient {
   id: string;
@@ -39,11 +46,15 @@ export interface DisplayQueuePatient {
   gender: string;
   visitType: string;
   department: string;
+  departmentId?: string | null | undefined;
   doctor: string;
+  assignedDoctorId?: string | null | undefined;
+  roomId?: string | null | undefined;
   waitingTime: string;
   checkInTime: string;
   status: 'Waiting' | 'In Consultation' | 'Completed';
   rawStatus: string;
+  priority: string;
 }
 
 function formatTime(isoString: string): string {
@@ -82,8 +93,11 @@ export default function CheckInQueuePage() {
   const [filterTab, setFilterTab] = useState<'All' | 'Waiting' | 'In Consultation' | 'Completed'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [checkInModalOpen, setCheckInModalOpen] = useState(false);
+  const [transferTarget, setTransferTarget] = useState<QueueTransferTarget | null>(null);
+  const [ticketPrintData, setTicketPrintData] = useState<TicketPrintData | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const [rawQueue, setRawQueue] = useState<QueueEntryDTO[]>([]);
   const [doctors, setDoctors] = useState<DoctorDTO[]>([]);
@@ -133,13 +147,17 @@ export default function CheckInQueuePage() {
         pid: item.patientPid,
         age: '32',
         gender: 'Adult',
-        visitType: item.priority === 'HIGH' ? 'Emergency' : 'Walk-in',
+        visitType: item.priority === 'EMERGENCY' || item.priority === 'HIGH' ? 'Emergency' : item.priority === 'URGENT' ? 'Urgent' : 'Walk-in',
         department: departmentName,
+        departmentId: item.departmentId,
         doctor: doctorName,
+        assignedDoctorId: item.assignedDoctorId,
+        roomId: item.roomId,
         waitingTime: getWaitingTime(item.checkInTime),
         checkInTime: formatTime(item.checkInTime),
         status,
         rawStatus: item.status,
+        priority: item.priority || 'NORMAL',
       };
     });
   }, [rawQueue, doctors, departments]);
@@ -168,14 +186,20 @@ export default function CheckInQueuePage() {
   }, [patients, filterTab, searchQuery]);
 
   // Actions
+  const showFeedback = (msg: string) => {
+    setActionFeedback(msg);
+    setTimeout(() => setActionFeedback(null), 3000);
+  };
+
   const handleCallPatient = async (id: string) => {
     if (!accessToken) return;
     setUpdatingId(id);
     try {
       await updateQueueEntry(id, { status: 'IN_CONSULTATION' }, accessToken);
+      showFeedback('Patient marked as In Consultation');
       await loadData();
-    } catch {
-      // Ignore
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to call patient.');
     } finally {
       setUpdatingId(null);
     }
@@ -186,12 +210,54 @@ export default function CheckInQueuePage() {
     setUpdatingId(id);
     try {
       await updateQueueEntry(id, { status: 'COMPLETED' }, accessToken);
+      showFeedback('Visit marked as Completed');
       await loadData();
-    } catch {
-      // Ignore
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to complete visit.');
     } finally {
       setUpdatingId(null);
     }
+  };
+
+  const handleCancelTicket = async (id: string, patientName: string) => {
+    if (!accessToken) return;
+    if (!window.confirm(`Are you sure you want to cancel the queue ticket for ${patientName}?`)) return;
+    setUpdatingId(id);
+    try {
+      await updateQueueEntry(id, { status: 'CANCELLED' }, accessToken);
+      showFeedback('Ticket cancelled successfully');
+      await loadData();
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to cancel ticket.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleUpdatePriority = async (id: string, newPriority: string) => {
+    if (!accessToken) return;
+    setUpdatingId(id);
+    try {
+      await updateQueueEntry(id, { priority: newPriority }, accessToken);
+      showFeedback(`Priority updated to ${newPriority}`);
+      await loadData();
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to update priority.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleOpenPrintSlip = (p: DisplayQueuePatient) => {
+    setTicketPrintData({
+      ticketNumber: p.queueNo,
+      patientName: p.patientName,
+      patientPid: p.pid,
+      departmentName: p.department,
+      doctorName: p.doctor,
+      checkInTime: p.checkInTime,
+      priority: p.priority,
+    });
   };
 
   // KPIs
@@ -359,6 +425,34 @@ export default function CheckInQueuePage() {
                   <span className="text-blue-700 font-semibold">Waiting Time:</span>
                   <span className="font-black text-blue-900">{selectedPatient.waitingTime}</span>
                 </div>
+
+                {/* Priority Quick Picker */}
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Priority</div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { label: 'Normal', val: 'NORMAL' },
+                      { label: 'Urgent', val: 'URGENT' },
+                      { label: 'Emergency', val: 'EMERGENCY' },
+                    ].map((p) => {
+                      const isCurrent = selectedPatient.priority === p.val;
+                      return (
+                        <button
+                          key={p.val}
+                          type="button"
+                          onClick={() => void handleUpdatePriority(selectedPatient.id, p.val)}
+                          className={`py-1 px-2 rounded-lg text-[10px] font-bold border transition-all ${
+                            isCurrent
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="bg-white rounded-xl sm:rounded-2xl p-6 border border-slate-200/80 shadow-2xs text-center text-slate-400 text-xs">
@@ -385,13 +479,53 @@ export default function CheckInQueuePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
-                  className="flex items-center gap-2 p-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-left"
+                  disabled={!selectedPatient}
+                  onClick={() => {
+                    if (selectedPatient) {
+                      setTransferTarget({
+                        id: selectedPatient.id,
+                        ticketNumber: selectedPatient.queueNo,
+                        patientName: selectedPatient.patientName,
+                        patientPid: selectedPatient.pid,
+                        departmentId: selectedPatient.departmentId,
+                        assignedDoctorId: selectedPatient.assignedDoctorId,
+                        roomId: selectedPatient.roomId,
+                        priority: selectedPatient.priority,
+                      });
+                    }
+                  }}
+                  className="flex items-center gap-2 p-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 disabled:opacity-40 transition-all text-left"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-700">Transfer</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedPatient}
+                  onClick={() => {
+                    if (selectedPatient) handleOpenPrintSlip(selectedPatient);
+                  }}
+                  className="flex items-center gap-2 p-2 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 disabled:opacity-40 transition-all text-left"
                 >
                   <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <Printer className="w-3.5 h-3.5" />
                   </div>
                   <span className="text-[11px] font-bold text-slate-700">Print Ticket</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedPatient}
+                  onClick={() => {
+                    if (selectedPatient) void handleCancelTicket(selectedPatient.id, selectedPatient.patientName);
+                  }}
+                  className="flex items-center gap-2 p-2 rounded-xl border border-slate-200 hover:border-rose-400 hover:bg-rose-50/50 disabled:opacity-40 transition-all text-left"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                    <XCircle className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[11px] font-bold text-rose-700">Cancel Ticket</span>
                 </button>
               </div>
             </div>
@@ -544,12 +678,41 @@ export default function CheckInQueuePage() {
                               )}
                               <button
                                 type="button"
+                                title="Transfer patient to doctor or room"
+                                onClick={() =>
+                                  setTransferTarget({
+                                    id: patient.id,
+                                    ticketNumber: patient.queueNo,
+                                    patientName: patient.patientName,
+                                    patientPid: patient.pid,
+                                    departmentId: patient.departmentId,
+                                    assignedDoctorId: patient.assignedDoctorId,
+                                    roomId: patient.roomId,
+                                    priority: patient.priority,
+                                  })
+                                }
+                                className="p-1 hover:text-purple-700 hover:bg-purple-50 rounded text-purple-600 transition"
+                              >
+                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
                                 title="Print queue ticket"
-                                onClick={() => window.print()}
-                                className="p-1 hover:text-slate-600 hover:bg-slate-100 rounded text-slate-400"
+                                onClick={() => handleOpenPrintSlip(patient)}
+                                className="p-1 hover:text-blue-700 hover:bg-blue-50 rounded text-slate-400 transition"
                               >
                                 <Printer className="w-3.5 h-3.5" />
                               </button>
+                              {patient.status !== 'Completed' && (
+                                <button
+                                  type="button"
+                                  title="Cancel ticket"
+                                  onClick={() => void handleCancelTicket(patient.id, patient.patientName)}
+                                  className="p-1 hover:text-rose-700 hover:bg-rose-50 rounded text-slate-300 transition"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -651,11 +814,34 @@ export default function CheckInQueuePage() {
         </div>
       </ReceptionistPageShell>
 
+      {/* Floating Action Feedback Toast */}
+      {actionFeedback && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-3 duration-200 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          {actionFeedback}
+        </div>
+      )}
+
       {checkInModalOpen && (
         <CheckInModal
           isOpen={checkInModalOpen}
           onClose={() => setCheckInModalOpen(false)}
           onSuccess={() => void loadData()}
+        />
+      )}
+      {transferTarget && (
+        <TransferQueueModal
+          isOpen={Boolean(transferTarget)}
+          target={transferTarget}
+          onClose={() => setTransferTarget(null)}
+          onSuccess={() => void loadData()}
+        />
+      )}
+      {ticketPrintData && (
+        <QueueTicketModal
+          isOpen={Boolean(ticketPrintData)}
+          ticket={ticketPrintData}
+          onClose={() => setTicketPrintData(null)}
         />
       )}
     </>

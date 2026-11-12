@@ -7,8 +7,9 @@ class AppEnv {
   /// 'http://192.168.137.51:3001/api/v1'
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.137.51:3001/api/v1',
+    defaultValue: 'http://192.168.137.1:3001/api/v1',
   );
+
 
   static const String appVersion = '0.0.1';
   static const String appTitle = 'MCMS Mobile Clinical';

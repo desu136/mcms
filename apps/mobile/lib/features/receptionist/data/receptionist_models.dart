@@ -105,7 +105,7 @@ class RegistrationPatient {
 
 // ─── Appointment ──────────────────────────────────────────────────────────────
 
-enum ReceptionistAppointmentStatus { confirmed, pending, cancelled, completed, inProgress }
+enum ReceptionistAppointmentStatus { confirmed, pending, checkedIn, cancelled, completed, inProgress }
 
 class ReceptionistAppointment {
   final String id;
@@ -113,7 +113,9 @@ class ReceptionistAppointment {
   final String patientId;
   final String pid;
   final String doctorName;
+  final String? doctorId;
   final String department;
+  final String? departmentId;
   final String date;
   final String time;
   final String reason;
@@ -126,7 +128,9 @@ class ReceptionistAppointment {
     required this.patientId,
     required this.pid,
     required this.doctorName,
+    this.doctorId,
     required this.department,
+    this.departmentId,
     required this.date,
     required this.time,
     required this.reason,
@@ -154,6 +158,8 @@ class ReceptionistAppointment {
       status = ReceptionistAppointmentStatus.cancelled;
     } else if (rawStatus == 'COMPLETED') {
       status = ReceptionistAppointmentStatus.completed;
+    } else if (rawStatus == 'CHECKED_IN') {
+      status = ReceptionistAppointmentStatus.checkedIn;
     } else if (rawStatus == 'IN_PROGRESS' || rawStatus == 'IN_CONSULTATION') {
       status = ReceptionistAppointmentStatus.inProgress;
     } else if (rawStatus == 'PENDING' || rawStatus == 'SCHEDULED') {
@@ -166,7 +172,9 @@ class ReceptionistAppointment {
       patientId: json['patientId'] as String? ?? '',
       pid: json['patientPid'] as String? ?? '',
       doctorName: json['doctorName'] as String? ?? 'Attending Doctor',
+      doctorId: json['doctorId'] as String?,
       department: json['departmentName'] as String? ?? 'General Practice',
+      departmentId: json['departmentId'] as String?,
       date: dateStr,
       time: timeStr,
       reason: json['reason'] as String? ?? 'Consultation',
@@ -181,6 +189,8 @@ class ReceptionistAppointment {
         return 'Confirmed';
       case ReceptionistAppointmentStatus.pending:
         return 'Pending';
+      case ReceptionistAppointmentStatus.checkedIn:
+        return 'Checked In';
       case ReceptionistAppointmentStatus.cancelled:
         return 'Cancelled';
       case ReceptionistAppointmentStatus.completed:
@@ -379,3 +389,81 @@ class ReceptionistKpis {
     required this.newRegistrations,
   });
 }
+
+// ─── Doctor & Department Items ────────────────────────────────────────────────
+
+class DoctorItem {
+  final String id;
+  final String name;
+  final String specialization;
+  final String departmentId;
+  final String departmentName;
+
+  const DoctorItem({
+    required this.id,
+    required this.name,
+    required this.specialization,
+    required this.departmentId,
+    required this.departmentName,
+  });
+
+  factory DoctorItem.fromDto(Map<String, dynamic> json) {
+    final name = json['fullName'] as String? ??
+        '${json['firstName'] ?? ''} ${json['lastName'] ?? ''}'.trim();
+    return DoctorItem(
+      id: json['id'] as String? ?? '',
+      name: name.isNotEmpty ? name : 'Dr. Attending',
+      specialization: json['specialization'] as String? ?? 'General Practice',
+      departmentId: json['departmentId'] as String? ?? '',
+      departmentName: json['department'] as String? ??
+          json['departmentName'] as String? ??
+          'General Clinic',
+    );
+  }
+}
+
+class DepartmentItem {
+  final String id;
+  final String name;
+  final String? description;
+
+  const DepartmentItem({
+    required this.id,
+    required this.name,
+    this.description,
+  });
+
+  factory DepartmentItem.fromDto(Map<String, dynamic> json) {
+    return DepartmentItem(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? 'General Clinic',
+      description: json['description'] as String?,
+    );
+  }
+}
+
+// ─── Preset Billing Services ──────────────────────────────────────────────────
+
+class PresetBillingService {
+  final String name;
+  final String category;
+  final double price;
+
+  const PresetBillingService({
+    required this.name,
+    required this.category,
+    required this.price,
+  });
+}
+
+const presetServices = [
+  PresetBillingService(name: 'General Consultation', category: 'Consultation', price: 250.0),
+  PresetBillingService(name: 'Specialist Consultation', category: 'Consultation', price: 450.0),
+  PresetBillingService(name: 'Complete Blood Count (CBC)', category: 'Laboratory', price: 180.0),
+  PresetBillingService(name: 'Urinalysis', category: 'Laboratory', price: 120.0),
+  PresetBillingService(name: 'Chest X-Ray', category: 'Radiology', price: 350.0),
+  PresetBillingService(name: 'Abdominal Ultrasound', category: 'Radiology', price: 600.0),
+  PresetBillingService(name: 'Standard Wound Dressing', category: 'Nursing', price: 150.0),
+  PresetBillingService(name: 'Emergency Observation (2h)', category: 'Emergency', price: 500.0),
+];
+

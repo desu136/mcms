@@ -11,13 +11,16 @@ import {
   Loader2,
   RefreshCw,
 } from 'lucide-react';
-import { INITIAL_PATIENTS, PatientItem } from '../../components/doctor/doctorMockData';
+import { PatientItem } from '../../components/doctor/doctorMockData';
 import { DoctorPrescriptionModal } from '../../components/doctor/DoctorPrescriptionModal';
+import { DoctorLabOrderModal } from '../../components/doctor/DoctorLabOrderModal';
+import { DoctorReferralModal } from '../../components/doctor/DoctorReferralModal';
 import { DoctorPatientDrawer } from '../../components/doctor/DoctorPatientDrawer';
 import { DoctorPageShell } from '../../components/doctor/DoctorPageShell';
 import { DoctorStatCard } from '../../components/doctor/DoctorStatCard';
 import { useAuth } from '../../auth/AuthContext';
 import { fetchPrescriptions, updatePrescription } from '../../api/clinical';
+import { fetchPatients } from '../../api/patients';
 import type { PrescriptionDTO } from '@mcms/contracts';
 
 type PrescriptionStatus = 'Active' | 'Completed' | 'Pending Refill' | 'Cancelled';
@@ -89,6 +92,8 @@ export function PrescriptionsPage() {
 
   // Modals & Drawers
   const [modalOpen, setModalOpen] = useState(false);
+  const [labModalOpen, setLabModalOpen] = useState(false);
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerPatient, setDrawerPatient] = useState<PatientItem | null>(null);
 
@@ -142,9 +147,36 @@ export function PrescriptionsPage() {
     }
   };
 
-  const handleOpenPatientProfile = (patientName: string) => {
-    const match = INITIAL_PATIENTS.find((p) => p.name === patientName) || INITIAL_PATIENTS[0]!;
-    setDrawerPatient(match);
+  const handleOpenPatientProfile = async (patientId: string, patientName: string) => {
+    try {
+      const res = await fetchPatients(accessToken, { search: patientName, limit: 1 });
+      const p = res?.data?.[0];
+      if (p) {
+        const isFemale = (p.gender || '').toLowerCase().startsWith('f');
+        const age = p.dateOfBirth ? Math.max(1, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear()) : 35;
+        setDrawerPatient({
+          id: p.id,
+          name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+          pid: p.pid,
+          age,
+          gender: isFemale ? 'Female' : 'Male',
+          phone: p.phoneNumber || '—',
+          email: p.email || '—',
+          address: p.address || 'Addis Ababa, Ethiopia',
+          department: 'General OPD',
+          lastVisit: new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          lastVisitReason: 'Prescription Consultation',
+          status: p.status === 'INACTIVE' ? 'Inactive' : 'Active',
+          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName || p.firstName)}&size=150&background=dbeafe&color=1e40af`,
+          totalVisits: 1,
+          conditions: [],
+        });
+      } else {
+        setDrawerPatient(null);
+      }
+    } catch {
+      setDrawerPatient(null);
+    }
     setDrawerOpen(true);
   };
 
@@ -269,7 +301,7 @@ export function PrescriptionsPage() {
 
         <div className="pt-2 space-y-2">
           <button
-            onClick={() => handleOpenPatientProfile(selectedRx.patient.name)}
+            onClick={() => void handleOpenPatientProfile(selectedRx.patientId, selectedRx.patient.name)}
             className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Eye className="w-3.5 h-3.5" /> View Patient Record
@@ -421,7 +453,7 @@ export function PrescriptionsPage() {
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedRx(rx);
-                              handleOpenPatientProfile(rx.patient.name);
+                              void handleOpenPatientProfile(rx.patientId, rx.patient.name);
                             }}
                             className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-xs transition-colors cursor-pointer"
                           >
@@ -443,11 +475,26 @@ export function PrescriptionsPage() {
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onOpenPrescriptionModal={() => setModalOpen(true)}
+        onOpenLabModal={() => setLabModalOpen(true)}
+        onOpenReferralModal={() => setReferralModalOpen(true)}
       />
       <DoctorPrescriptionModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        defaultPatientId="p-1"
+        defaultPatientId={selectedRx?.patientId}
+        onSuccess={() => void loadPrescriptions()}
+      />
+      <DoctorLabOrderModal
+        isOpen={labModalOpen}
+        onClose={() => setLabModalOpen(false)}
+        defaultPatientId={selectedRx?.patientId}
+        onSuccess={() => void loadPrescriptions()}
+      />
+      <DoctorReferralModal
+        isOpen={referralModalOpen}
+        onClose={() => setReferralModalOpen(false)}
+        patientId={selectedRx?.patientId}
+        patientName={selectedRx?.patient.name}
         onSuccess={() => void loadPrescriptions()}
       />
     </>

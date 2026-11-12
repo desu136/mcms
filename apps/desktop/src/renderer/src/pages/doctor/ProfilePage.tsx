@@ -23,17 +23,21 @@ import {
   Info,
   Check,
 } from 'lucide-react';
-import { CURRENT_DOCTOR } from '../../components/doctor/doctorMockData';
 import { DoctorPageShell } from '../../components/doctor/DoctorPageShell';
+import { useAuth } from '../../auth/AuthContext';
 
 export function ProfilePage() {
+  const { user } = useAuth();
+  const doctorName = user?.displayName || user?.email?.split('@')[0] || 'Doctor';
+  const doctorAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(doctorName)}&size=150&background=dbeafe&color=1e40af`;
+
   const [activeTab, setActiveTab] = useState<
     'Profile' | 'Professional Details' | 'Availability' | 'Account Settings' | 'Security'
   >('Profile');
 
   // Form State
-  const [fullName, setFullName] = useState(CURRENT_DOCTOR.name);
-  const [email, setEmail] = useState('fitsum.alemu@email.com');
+  const [fullName, setFullName] = useState(doctorName);
+  const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState('+251 912 345 678');
   const [dob, setDob] = useState('1988-06-15');
   const [gender, setGender] = useState('Male');
@@ -143,8 +147,8 @@ export function ProfilePage() {
             <div className="pt-4 text-center">
               <div className="relative inline-block mx-auto mb-3">
                 <img
-                  src={CURRENT_DOCTOR.avatar}
-                  alt={CURRENT_DOCTOR.name}
+                  src={doctorAvatarUrl}
+                  alt={doctorName}
                   className="w-24 h-24 rounded-full object-cover ring-4 ring-blue-50 shadow-md mx-auto"
                 />
                 <button
@@ -156,8 +160,8 @@ export function ProfilePage() {
                 </button>
               </div>
 
-              <h3 className="text-base font-black text-slate-900">{CURRENT_DOCTOR.name}</h3>
-              <p className="text-xs font-bold text-slate-500 mt-0.5">{CURRENT_DOCTOR.role}</p>
+              <h3 className="text-base font-black text-slate-900">{doctorName}</h3>
+              <p className="text-xs font-bold text-slate-500 mt-0.5">{user?.role || 'Physician'}</p>
 
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200 mt-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -369,8 +373,8 @@ export function ProfilePage() {
             <div className="mt-4 flex flex-col sm:flex-row items-center gap-4">
               <div className="relative shrink-0">
                 <img
-                  src={CURRENT_DOCTOR.avatar}
-                  alt={CURRENT_DOCTOR.name}
+                  src={doctorAvatarUrl}
+                  alt={doctorName}
                   className="w-16 h-16 rounded-full object-cover ring-2 ring-slate-100 shadow-2xs"
                 />
               </div>

@@ -19,29 +19,41 @@ import {
   CheckCircle2,
   Loader2,
   RefreshCw,
+  UserCheck,
+  CalendarClock,
+  Filter,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 import ReceptionistBanner from '../../../components/receptionist/ReceptionistBanner';
 import ReceptionistPageShell from '../../../components/receptionist/ReceptionistPageShell';
 import { useAuth } from '../../../lib/auth/auth-context';
-import { fetchAppointments, updateAppointment, fetchDoctors } from '../../../lib/api';
-import type { AppointmentDTO, DoctorDTO } from '@mcms/contracts';
+import { fetchAppointments, updateAppointment, fetchDoctors, fetchDepartments, addToQueue } from '../../../lib/api';
+import type { AppointmentDTO, DoctorDTO, ClinicDepartmentDTO } from '@mcms/contracts';
+import type { TicketPrintData } from '../../../components/receptionist/QueueTicketModal';
 
 const NewAppointmentModal = dynamic(() => import('../../../components/receptionist/NewAppointmentModal'), { ssr: false });
+const RescheduleAppointmentModal = dynamic(() => import('../../../components/receptionist/RescheduleAppointmentModal'), { ssr: false });
+const QueueTicketModal = dynamic(() => import('../../../components/receptionist/QueueTicketModal'), { ssr: false });
 
 export default function AppointmentsPage() {
   const { accessToken } = useAuth();
 
   const [filterTab, setFilterTab] = useState<'All' | 'Upcoming' | 'Today' | 'This Week' | 'This Month'>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDoctorFilter, setSelectedDoctorFilter] = useState<string>('ALL');
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'Day' | 'Week' | 'Month'>('Week');
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
+  const [rescheduleTarget, setRescheduleTarget] = useState<AppointmentDTO | null>(null);
+  const [ticketPrintData, setTicketPrintData] = useState<TicketPrintData | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   const [appointments, setAppointments] = useState<AppointmentDTO[]>([]);
   const [doctors, setDoctors] = useState<DoctorDTO[]>([]);
+  const [departments, setDepartments] = useState<ClinicDepartmentDTO[]>([]);
 
   // Selected date defaults to today
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0] ?? '', []);
@@ -51,12 +63,14 @@ export default function AppointmentsPage() {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [apptsData, docsData] = await Promise.all([
+      const [apptsData, docsData, deptsData] = await Promise.all([
         fetchAppointments(accessToken),
         fetchDoctors(accessToken),
+        fetchDepartments(accessToken),
       ]);
       setAppointments(apptsData);
       setDoctors(docsData);
+      setDepartments(deptsData);
     } catch {
       // Ignore
     } finally {
@@ -87,15 +101,70 @@ export default function AppointmentsPage() {
     return list;
   }, [todayStr]);
 
+  const showFeedback = (msg: string) => {
+    setFeedback(msg);
+    setTimeout(() => setFeedback(null), 3000);
+  };
+
   // Status updates
   const handleUpdateStatus = async (id: string, newStatus: string) => {
     if (!accessToken) return;
     setUpdatingId(id);
     try {
       await updateAppointment(id, { status: newStatus }, accessToken);
+      showFeedback(`Appointment status updated to ${newStatus}`);
       await loadData();
-    } catch {
-      // Ignore
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to update status.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // 1-Click Check In to Queue
+  const handleCheckInToQueue = async (apt: AppointmentDTO) => {
+    if (!accessToken) return;
+    setUpdatingId(apt.id);
+    try {
+      const qRes = await addToQueue(
+        {
+          patientId: apt.patientId,
+          assignedDoctorId: apt.doctorId || undefined,
+          departmentId: apt.departmentId || undefined,
+          priority: 'NORMAL',
+        },
+        accessToken,
+      );
+      await updateAppointment(apt.id, { status: 'CHECKED_IN' }, accessToken);
+      showFeedback(`Checked in! Ticket #${qRes.ticketNumber} issued for ${apt.patientName}`);
+      setTicketPrintData({
+        ticketNumber: qRes.ticketNumber,
+        patientName: apt.patientName,
+        patientPid: apt.patientPid,
+        departmentName: departments.find((d) => d.id === apt.departmentId)?.name || 'General Clinic',
+        doctorName: apt.doctorName,
+        checkInTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        priority: 'Normal',
+      });
+      await loadData();
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to check in appointment.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Cancel Appointment
+  const handleCancelAppointment = async (apt: AppointmentDTO) => {
+    if (!accessToken) return;
+    if (!window.confirm(`Are you sure you want to cancel the appointment for ${apt.patientName}?`)) return;
+    setUpdatingId(apt.id);
+    try {
+      await updateAppointment(apt.id, { status: 'CANCELLED' }, accessToken);
+      showFeedback('Appointment cancelled');
+      await loadData();
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to cancel appointment.');
     } finally {
       setUpdatingId(null);
     }
@@ -114,6 +183,12 @@ export default function AppointmentsPage() {
         matchesTab = aptDate >= todayStr;
       }
 
+      // Doctor filter
+      const matchesDoc = selectedDoctorFilter === 'ALL' || apt.doctorId === selectedDoctorFilter;
+
+      // Department filter
+      const matchesDept = selectedDeptFilter === 'ALL' || apt.departmentId === selectedDeptFilter;
+
       // Search filter
       const q = searchQuery.toLowerCase();
       const matchesSearch =
@@ -123,9 +198,9 @@ export default function AppointmentsPage() {
         (apt.doctorName ?? '').toLowerCase().includes(q) ||
         apt.type.toLowerCase().includes(q);
 
-      return matchesTab && matchesSearch;
+      return matchesTab && matchesDoc && matchesDept && matchesSearch;
     });
-  }, [appointments, filterTab, searchQuery, todayStr]);
+  }, [appointments, filterTab, searchQuery, selectedDoctorFilter, selectedDeptFilter, todayStr]);
 
   // Today's appointments list
   const todayAppointments = useMemo(() => {
@@ -203,9 +278,33 @@ export default function AppointmentsPage() {
               })}
             </div>
 
-            {/* Search */}
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 sm:w-80">
+            {/* Filters & Search */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={selectedDoctorFilter}
+                onChange={(e) => setSelectedDoctorFilter(e.target.value)}
+                className="text-xs rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-medium text-slate-700 focus:outline-hidden focus:border-blue-500"
+              >
+                <option value="ALL">All Doctors</option>
+                {doctors.map((d) => (
+                  <option key={d.id} value={d.id}>{d.displayName}</option>
+                ))}
+              </select>
+
+              {departments.length > 0 && (
+                <select
+                  value={selectedDeptFilter}
+                  onChange={(e) => setSelectedDeptFilter(e.target.value)}
+                  className="text-xs rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-medium text-slate-700 focus:outline-hidden focus:border-blue-500"
+                >
+                  <option value="ALL">All Departments</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>{dept.name}</option>
+                  ))}
+                </select>
+              )}
+
+              <div className="relative flex-1 sm:w-64">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
@@ -406,12 +505,30 @@ export default function AppointmentsPage() {
                           </td>
                           <td className="py-2.5 text-center whitespace-nowrap">
                             <div className="flex items-center justify-center gap-1.5">
-                              {apt.status !== 'CONFIRMED' && apt.status !== 'CANCELLED' && (
+                              {apt.status !== 'CHECKED_IN' && apt.status !== 'CANCELLED' && (
+                                <button
+                                  type="button"
+                                  disabled={isUpdating}
+                                  onClick={() => void handleCheckInToQueue(apt)}
+                                  title="Check in and issue queue ticket"
+                                  className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] transition disabled:opacity-50 flex items-center gap-1 shadow-2xs"
+                                >
+                                  <UserCheck className="w-3 h-3" />
+                                  Check In
+                                </button>
+                              )}
+                              {apt.status === 'CHECKED_IN' && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  In Queue
+                                </span>
+                              )}
+                              {apt.status === 'SCHEDULED' && (
                                 <button
                                   type="button"
                                   disabled={isUpdating}
                                   onClick={() => void handleUpdateStatus(apt.id, 'CONFIRMED')}
-                                  className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[10px] transition disabled:opacity-50"
+                                  className="px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[10px] transition disabled:opacity-50"
                                 >
                                   Confirm
                                 </button>
@@ -420,8 +537,20 @@ export default function AppointmentsPage() {
                                 <button
                                   type="button"
                                   disabled={isUpdating}
-                                  onClick={() => void handleUpdateStatus(apt.id, 'CANCELLED')}
-                                  className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-[10px] transition disabled:opacity-50"
+                                  onClick={() => setRescheduleTarget(apt)}
+                                  title="Reschedule appointment time or doctor"
+                                  className="px-2 py-1 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-[10px] transition disabled:opacity-50 flex items-center gap-0.5"
+                                >
+                                  <CalendarClock className="w-3 h-3" />
+                                  Reschedule
+                                </button>
+                              )}
+                              {apt.status !== 'CANCELLED' && apt.status !== 'CHECKED_IN' && (
+                                <button
+                                  type="button"
+                                  disabled={isUpdating}
+                                  onClick={() => void handleCancelAppointment(apt)}
+                                  className="px-2 py-1 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-[10px] transition disabled:opacity-50"
                                 >
                                   Cancel
                                 </button>
@@ -446,6 +575,34 @@ export default function AppointmentsPage() {
           onClose={() => setAppointmentModalOpen(false)}
           onSuccess={() => void loadData()}
         />
+      )}
+
+      {/* Reschedule Appointment Modal */}
+      {rescheduleTarget && (
+        <RescheduleAppointmentModal
+          isOpen={!!rescheduleTarget}
+          appointment={rescheduleTarget}
+          doctors={doctors}
+          onClose={() => setRescheduleTarget(null)}
+          onSuccess={() => void loadData()}
+        />
+      )}
+
+      {/* Queue Ticket Print Modal */}
+      {ticketPrintData && (
+        <QueueTicketModal
+          isOpen={!!ticketPrintData}
+          ticket={ticketPrintData}
+          onClose={() => setTicketPrintData(null)}
+        />
+      )}
+
+      {/* Floating Action Feedback Toast */}
+      {feedback && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 border border-slate-700 animate-in fade-in slide-in-from-bottom-2">
+          <Activity className="w-4 h-4 text-emerald-400" />
+          <span>{feedback}</span>
+        </div>
       )}
     </>
   );

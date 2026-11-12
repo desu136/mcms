@@ -169,13 +169,26 @@ class _ReceptionistHomeBody extends ConsumerWidget {
     final appointments = ref.watch(receptionistAppointmentsProvider);
     final queue = ref.watch(receptionistQueueProvider);
 
+    final now = DateTime.now();
+    final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final dateDisplay = '${days[now.weekday - 1]}, ${months[now.month - 1]} ${now.day}, ${now.year}';
+
     // Today's appointments (first 3)
     final todayAppts = appointments
         .where((a) =>
-            a.date == 'Oct 27, 2026' &&
+            (a.date == todayStr || a.date == 'Today' || a.date.contains('${months[now.month - 1]} ${now.day}')) &&
             a.status != ReceptionistAppointmentStatus.cancelled)
         .take(3)
         .toList();
+
+    final displayAppts = todayAppts.isNotEmpty
+        ? todayAppts
+        : appointments
+            .where((a) => a.status != ReceptionistAppointmentStatus.cancelled)
+            .take(3)
+            .toList();
 
     // Active queue (first 3)
     final activeQueue = queue
@@ -204,9 +217,9 @@ class _ReceptionistHomeBody extends ConsumerWidget {
                     color: AppTheme.primaryLight,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text(
-                    'Monday, Oct 27, 2026',
-                    style: TextStyle(
+                  child: Text(
+                    dateDisplay,
+                    style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: AppTheme.primary,
@@ -252,7 +265,7 @@ class _ReceptionistHomeBody extends ConsumerWidget {
                 icon: Icons.people_alt_rounded,
                 iconColor: AppTheme.primary,
                 iconBg: AppTheme.primaryLight,
-                trend: '+6',
+                trend: '+${kpis.todayPatients}',
               ),
               ReceptionistKpiCard(
                 label: 'Pending Queue',
@@ -270,11 +283,10 @@ class _ReceptionistHomeBody extends ConsumerWidget {
               ),
               ReceptionistKpiCard(
                 label: 'Collected Today',
-                value: 'ETB ${(kpis.collectedToday / 1000).toStringAsFixed(1)}k',
+                value: 'ETB ${kpis.collectedToday.toStringAsFixed(0)}',
                 icon: Icons.payments_rounded,
                 iconColor: AppTheme.success,
                 iconBg: AppTheme.successLight,
-                trend: '+12%',
               ),
             ]),
           ),
@@ -367,15 +379,41 @@ class _ReceptionistHomeBody extends ConsumerWidget {
             ),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, i) => AppointmentCard(appt: todayAppts[i]),
-              childCount: todayAppts.length,
-            ),
-          ),
-        ),
+        displayAppts.isEmpty
+            ? SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.event_available_outlined,
+                            color: AppTheme.textMuted, size: 22),
+                        SizedBox(width: 12),
+                        Text(
+                          'No appointments scheduled for today',
+                          style: TextStyle(
+                              color: AppTheme.textMuted, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            : SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) => AppointmentCard(appt: displayAppts[i]),
+                    childCount: displayAppts.length,
+                  ),
+                ),
+              ),
 
         // ─── Active Queue ─────────────────────────────────────────────────
         SliverToBoxAdapter(
@@ -408,15 +446,41 @@ class _ReceptionistHomeBody extends ConsumerWidget {
             ),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, i) => QueueEntryCard(entry: activeQueue[i]),
-              childCount: activeQueue.length,
-            ),
-          ),
-        ),
+        activeQueue.isEmpty
+            ? SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.check_circle_outline,
+                            color: AppTheme.success, size: 22),
+                        SizedBox(width: 12),
+                        Text(
+                          'Queue is clear · No waiting patients',
+                          style: TextStyle(
+                              color: AppTheme.textMuted, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            : SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) => QueueEntryCard(entry: activeQueue[i]),
+                    childCount: activeQueue.length,
+                  ),
+                ),
+              ),
       ],
     ),
     );

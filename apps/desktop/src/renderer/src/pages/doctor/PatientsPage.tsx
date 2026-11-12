@@ -18,13 +18,13 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import {
-  INITIAL_PATIENTS,
   PatientItem,
 } from '../../components/doctor/doctorMockData';
 import { DoctorPatientDrawer } from '../../components/doctor/DoctorPatientDrawer';
 import { DoctorPatientModal } from '../../components/doctor/DoctorPatientModal';
 import { DoctorPrescriptionModal } from '../../components/doctor/DoctorPrescriptionModal';
 import { DoctorLabOrderModal } from '../../components/doctor/DoctorLabOrderModal';
+import { DoctorReferralModal } from '../../components/doctor/DoctorReferralModal';
 import { DoctorPageShell } from '../../components/doctor/DoctorPageShell';
 import { DoctorStatCard } from '../../components/doctor/DoctorStatCard';
 import { useAuth } from '../../auth/AuthContext';
@@ -74,6 +74,7 @@ export function PatientsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
 
   const loadPatients = useCallback(async () => {
     setLoading(true);
@@ -87,14 +88,12 @@ export function PatientsPage() {
           setHighlightedPatient(liveItems[0]!);
         }
       } else {
-        // Fallback to initial seed patients
-        setPatientsList(INITIAL_PATIENTS);
-        if (!highlightedPatient) setHighlightedPatient(INITIAL_PATIENTS[0]!);
+        // No patients returned from API
+        setPatientsList([]);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch patients');
-      setPatientsList(INITIAL_PATIENTS);
-      if (!highlightedPatient) setHighlightedPatient(INITIAL_PATIENTS[0]!);
+      setPatientsList([]);
     } finally {
       setLoading(false);
     }
@@ -436,6 +435,7 @@ export function PatientsPage() {
         onClose={() => setDrawerOpen(false)}
         onOpenPrescriptionModal={() => setPrescriptionModalOpen(true)}
         onOpenLabModal={() => setLabModalOpen(true)}
+        onOpenReferralModal={() => setReferralModalOpen(true)}
       />
       <DoctorPatientModal
         isOpen={addPatientModalOpen}
@@ -448,14 +448,21 @@ export function PatientsPage() {
       <DoctorPrescriptionModal
         isOpen={prescriptionModalOpen}
         onClose={() => setPrescriptionModalOpen(false)}
-        defaultPatientId={highlightedPatient?.id ?? 'p-1'}
+        defaultPatientId={highlightedPatient?.id}
         realPatientId={highlightedPatient?.id}
       />
       <DoctorLabOrderModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        defaultPatientId={highlightedPatient?.id ?? 'p-1'}
+        defaultPatientId={highlightedPatient?.id}
         realPatientId={highlightedPatient?.id}
+      />
+      <DoctorReferralModal
+        isOpen={referralModalOpen}
+        onClose={() => setReferralModalOpen(false)}
+        patientId={highlightedPatient?.id}
+        patientName={highlightedPatient?.name}
+        onSuccess={() => void loadPatients()}
       />
     </>
   );

@@ -123,4 +123,19 @@ class ApiEndpoints {
 
   static Uri dischargeAdmission(String id) => Uri.parse(
       '${AppEnv.apiBaseUrl}/admissions/${Uri.encodeComponent(id)}/discharge');
+
+  // ─── Clinic Admin: Staff & Departments ────────────────────────────────────
+  static Uri doctors([Map<String, String>? queryParams]) {
+    final base = Uri.parse('${AppEnv.apiBaseUrl}/clinic-admin/doctors');
+    return queryParams != null && queryParams.isNotEmpty
+        ? base.replace(queryParameters: queryParams)
+        : base;
+  }
+
+  static Uri departments([Map<String, String>? queryParams]) {
+    final base = Uri.parse('${AppEnv.apiBaseUrl}/clinic-admin/departments');
+    return queryParams != null && queryParams.isNotEmpty
+        ? base.replace(queryParameters: queryParams)
+        : base;
+  }
 }

@@ -57,12 +57,14 @@ Color _priorityBg(String priority) {
 /// Single queue row card with number, patient info, status, and priority.
 class QueueEntryCard extends StatelessWidget {
   final QueueEntry entry;
+  final VoidCallback? onTap;
   final VoidCallback? onCallNext;
   final VoidCallback? onMarkDone;
 
   const QueueEntryCard({
     super.key,
     required this.entry,
+    this.onTap,
     this.onCallNext,
     this.onMarkDone,
   });
@@ -72,7 +74,9 @@ class QueueEntryCard extends StatelessWidget {
     final statusColor = _queueStatusColor(entry.status);
     final statusBg = _queueStatusBg(entry.status);
 
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -259,6 +263,7 @@ class QueueEntryCard extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }

@@ -31,7 +31,7 @@ import {
   Clock,
   Printer,
 } from 'lucide-react';
-import { INITIAL_PATIENTS, PatientItem } from '../../../components/doctor/doctorMockData';
+import { PatientItem } from '../../../components/doctor/doctorMockData';
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
 import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescriptionModal';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
@@ -151,7 +151,23 @@ export default function DoctorMedicalRecordsPage() {
         totalVisits: appointments.length,
         conditions: [],
       }
-    : INITIAL_PATIENTS[0]!;
+    : {
+        id: '',
+        name: 'No Patient Selected',
+        pid: '—',
+        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=placeholder',
+        age: 0,
+        gender: 'Male',
+        phone: '—',
+        email: '—',
+        address: '—',
+        status: 'Inactive',
+        lastVisit: '—',
+        lastVisitReason: '—',
+        department: '—',
+        totalVisits: 0,
+        conditions: [],
+      };
 
   // Extract diagnoses from appointments notes and prescriptions
   const extractedDiagnoses = useMemo(() => {

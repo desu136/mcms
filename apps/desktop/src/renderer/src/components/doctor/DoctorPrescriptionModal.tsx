@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Pill, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
-import { INITIAL_PATIENTS } from './doctorMockData';
 import { createPrescription } from '../../api/clinical';
+import { fetchPatients } from '../../api/patients';
 import { useAuth } from '../../auth/AuthContext';
+import type { PatientDTO } from '@mcms/contracts';
 
 export interface DoctorPrescriptionModalProps {
   isOpen: boolean;
@@ -16,12 +17,13 @@ export interface DoctorPrescriptionModalProps {
 export function DoctorPrescriptionModal({
   isOpen,
   onClose,
-  defaultPatientId = 'p-1',
+  defaultPatientId,
   realPatientId,
   onSuccess,
 }: DoctorPrescriptionModalProps) {
   const { accessToken } = useAuth();
-  const [selectedPatientId, setSelectedPatientId] = useState(defaultPatientId);
+  const [patients, setPatients] = useState<PatientDTO[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState(realPatientId || defaultPatientId || '');
   const [medication, setMedication] = useState('Amlodipine 5mg');
   const [dosage, setDosage] = useState('1 Tablet Daily');
   const [duration, setDuration] = useState('30 Days');
@@ -29,6 +31,26 @@ export function DoctorPrescriptionModal({
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (realPatientId || defaultPatientId) {
+      setSelectedPatientId(realPatientId || defaultPatientId || '');
+    }
+  }, [realPatientId, defaultPatientId]);
+
+  useEffect(() => {
+    if (!isOpen || !accessToken || realPatientId) return;
+    fetchPatients(accessToken, { limit: 100 })
+      .then((res) => {
+        if (res?.data && res.data.length > 0) {
+          setPatients(res.data);
+          if (!selectedPatientId) {
+            setSelectedPatientId(res.data[0]!.id);
+          }
+        }
+      })
+      .catch((err) => console.error('Failed to load patients for prescription:', err));
+  }, [isOpen, accessToken, realPatientId, selectedPatientId]);
 
   if (!isOpen) return null;
 
@@ -138,11 +160,15 @@ export function DoctorPrescriptionModal({
                   onChange={(e) => setSelectedPatientId(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white"
                 >
-                  {INITIAL_PATIENTS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.pid}) — {p.age} yrs, {p.gender}
-                    </option>
-                  ))}
+                  {patients.length === 0 ? (
+                    <option value="">No patients available</option>
+                  ) : (
+                    patients.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.fullName} ({p.pid}) — {p.gender === 'FEMALE' ? 'Female' : 'Male'}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
             )}

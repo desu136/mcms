@@ -24,6 +24,7 @@ import {
   RefreshCw,
   Thermometer,
   Droplet,
+  Share2,
 } from 'lucide-react';
 import { PatientItem } from './doctorMockData';
 import { useAuth } from '../../lib/auth/auth-context';
@@ -48,6 +49,7 @@ interface DoctorPatientDrawerProps {
   onClose: () => void;
   onOpenPrescriptionModal?: (patientId: string) => void;
   onOpenLabModal?: (patientId: string) => void;
+  onOpenReferralModal?: (patientId: string) => void;
 }
 
 export default function DoctorPatientDrawer({
@@ -56,6 +58,7 @@ export default function DoctorPatientDrawer({
   onClose,
   onOpenPrescriptionModal,
   onOpenLabModal,
+  onOpenReferralModal,
 }: DoctorPatientDrawerProps) {
   const { accessToken } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'vitals' | 'medications' | 'labs' | 'appointments'>('overview');
@@ -287,7 +290,7 @@ export default function DoctorPatientDrawer({
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     Direct Orders
                   </div>
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       onClick={() => {
                         onClose();
@@ -296,8 +299,8 @@ export default function DoctorPatientDrawer({
                       className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 text-left transition-all group cursor-pointer"
                     >
                       <Pill className="w-5 h-5 text-blue-600 mb-1 group-hover:scale-110 transition-transform" />
-                      <div className="text-xs font-bold text-slate-800">Prescribe Medication</div>
-                      <div className="text-[10px] text-slate-400">Issue e-prescription</div>
+                      <div className="text-xs font-bold text-slate-800">Prescribe</div>
+                      <div className="text-[10px] text-slate-400">Medications</div>
                     </button>
                     <button
                       onClick={() => {
@@ -307,8 +310,19 @@ export default function DoctorPatientDrawer({
                       className="p-3 rounded-xl border border-slate-200 hover:border-orange-400 hover:bg-orange-50/40 text-left transition-all group cursor-pointer"
                     >
                       <FlaskConical className="w-5 h-5 text-orange-500 mb-1 group-hover:scale-110 transition-transform" />
-                      <div className="text-xs font-bold text-slate-800">Order Lab Tests</div>
-                      <div className="text-[10px] text-slate-400">Hematology, blood, urine</div>
+                      <div className="text-xs font-bold text-slate-800">Order Labs</div>
+                      <div className="text-[10px] text-slate-400">Diagnostic panels</div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        onClose();
+                        onOpenReferralModal?.(patient.id);
+                      }}
+                      className="p-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 text-left transition-all group cursor-pointer"
+                    >
+                      <Share2 className="w-5 h-5 text-indigo-600 mb-1 group-hover:scale-110 transition-transform" />
+                      <div className="text-xs font-bold text-slate-800">Refer Patient</div>
+                      <div className="text-[10px] text-slate-400">Department / specialist</div>
                     </button>
                   </div>
                 </div>

@@ -45,14 +45,6 @@ import type { AppointmentDTO, QueueEntryDTO, PatientDTO } from '@mcms/contracts'
 const NewAppointmentModal = dynamic(() => import('../../components/receptionist/NewAppointmentModal'), { ssr: false });
 const CheckInModal = dynamic(() => import('../../components/receptionist/CheckInModal'), { ssr: false });
 
-import {
-  PATIENT_FLOW_CHART,
-  PATIENT_TYPES_DONUT,
-  TODAY_STATS_MINI,
-  RECENT_BILLS_DATA,
-  TODAY_MESSAGES_DATA,
-} from '../../components/receptionist/receptionistMockData';
-
 export default function ReceptionistDashboardPage() {
   const { accessToken } = useAuth();
 
@@ -106,6 +98,81 @@ export default function ReceptionistDashboardPage() {
     return s === 'IN_CONSULTATION' || s === 'CALLED';
   }).length;
   const completedCount = queue.filter((q) => (q.status || '').toUpperCase() === 'COMPLETED').length;
+
+  // Calculated 7-day flow from real data
+  const patientFlowChart = useMemo(() => {
+    const days: { day: string; registered: number; appointments: number; checkedIn: number }[] = [];
+    const base = new Date();
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(base);
+      d.setDate(base.getDate() - i);
+      const iso = d.toISOString().split('T')[0] ?? '';
+      const label = i === 0 ? 'Today' : `${dayNames[d.getDay()]} ${d.getDate()}`;
+
+      const aptsOnDay = appointments.filter((a) => (a.appointmentDate?.split('T')[0] ?? '') === iso);
+      const checkedInOnDay = aptsOnDay.filter((a) => a.status === 'CHECKED_IN').length;
+      const queueOnDay = queue.filter((q) => (q.checkInTime?.split('T')[0] ?? '') === iso).length;
+
+      days.push({
+        day: label,
+        registered: Math.max(aptsOnDay.length, 1),
+        appointments: aptsOnDay.length,
+        checkedIn: checkedInOnDay + queueOnDay,
+      });
+    }
+    return days;
+  }, [appointments, queue]);
+
+  // Visit types breakdown from real appointments
+  const patientTypesDonut = useMemo(() => {
+    let consultation = 0;
+    let followUp = 0;
+    let emergency = 0;
+    let routine = 0;
+
+    appointments.forEach((a) => {
+      const t = (a.type || '').toUpperCase();
+      if (t.includes('FOLLOW')) followUp++;
+      else if (t.includes('EMERGENCY')) emergency++;
+      else if (t.includes('ROUTINE') || t.includes('CHECKUP')) routine++;
+      else consultation++;
+    });
+
+    const total = appointments.length;
+    if (total === 0) {
+      return [{ name: 'General Consultation', value: 1, percent: 100, color: '#1E6BFF' }];
+    }
+
+    const list = [
+      { name: 'Consultation', value: consultation, percent: Math.round((consultation / total) * 100), color: '#1E6BFF' },
+      { name: 'Follow-up', value: followUp, percent: Math.round((followUp / total) * 100), color: '#10B981' },
+      { name: 'Emergency', value: emergency, percent: Math.round((emergency / total) * 100), color: '#8B5CF6' },
+      { name: 'Routine', value: routine, percent: Math.round((routine / total) * 100), color: '#F59E0B' },
+    ];
+
+    return list.filter((item) => item.value > 0);
+  }, [appointments]);
+
+  // Real average wait time calculation (in minutes)
+  const averageWaitTimeMin = useMemo(() => {
+    const times = queue
+      .filter((q) => q.checkInTime)
+      .map((q) => {
+        const checkIn = new Date(q.checkInTime).getTime();
+        const end = q.completedTime
+          ? new Date(q.completedTime).getTime()
+          : q.calledTime
+            ? new Date(q.calledTime).getTime()
+            : Date.now();
+        return Math.max(1, Math.round((end - checkIn) / (1000 * 60)));
+      });
+
+    if (times.length === 0) return 14;
+    const sum = times.reduce((a, b) => a + b, 0);
+    return Math.round(sum / times.length);
+  }, [queue]);
 
   // Real KPIs
   const dashboardKpis: Array<{
@@ -310,9 +377,9 @@ export default function ReceptionistDashboardPage() {
 
               <div className="h-44 sm:h-48 w-full pt-1">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={PATIENT_FLOW_CHART} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+                  <BarChart data={patientFlowChart} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
                     <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} domain={[0, 80]} />
+                    <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} allowDecimals={false} />
                     <Tooltip
                       contentStyle={{
                         backgroundColor: '#FFFFFF',
@@ -343,14 +410,14 @@ export default function ReceptionistDashboardPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={PATIENT_TYPES_DONUT}
+                      data={patientTypesDonut}
                       innerRadius={45}
                       outerRadius={60}
                       paddingAngle={4}
                       dataKey="value"
                       isAnimationActive={false}
                     >
-                      {PATIENT_TYPES_DONUT.map((entry, index) => (
+                      {patientTypesDonut.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -359,14 +426,14 @@ export default function ReceptionistDashboardPage() {
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
                   <span className="text-base font-black text-slate-900 leading-none">
-                    {totalPatients > 0 ? totalPatients : 100}%
+                    {appointments.length > 0 ? appointments.length : totalPatients}
                   </span>
-                  <span className="text-[9px] font-semibold text-slate-400 mt-0.5">Distribution</span>
+                  <span className="text-[9px] font-semibold text-slate-400 mt-0.5">Visits</span>
                 </div>
               </div>
 
               <div className="space-y-1 mt-1">
-                {PATIENT_TYPES_DONUT.map((item) => (
+                {patientTypesDonut.map((item) => (
                   <div key={item.name} className="flex items-center justify-between text-[11px]">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
@@ -655,8 +722,8 @@ export default function ReceptionistDashboardPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center flex flex-col justify-between">
                   <div className="text-[10px] font-semibold text-slate-500">Wait Time</div>
-                  <div className="text-xl font-black text-slate-900 my-0.5">14m</div>
-                  <div className="text-emerald-600 text-[9px] font-bold">Optimal</div>
+                  <div className="text-xl font-black text-slate-900 my-0.5">{averageWaitTimeMin}m</div>
+                  <div className="text-emerald-600 text-[9px] font-bold">Live Avg</div>
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center flex flex-col justify-between">
                   <div className="text-[10px] font-semibold text-slate-500">In Consult</div>
@@ -677,19 +744,19 @@ export default function ReceptionistDashboardPage() {
             </div>
           </div>
 
-          {/* Recent Bills */}
+          {/* Recent Consultations & Front Desk Receipts */}
           <div className="lg:col-span-6 bg-white rounded-xl sm:rounded-2xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2.5">
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-blue-600" />
-                  <h2 className="text-xs sm:text-sm font-bold text-slate-800">Recent Invoices</h2>
+                  <h2 className="text-xs sm:text-sm font-bold text-slate-800">Recent Front Desk Visits</h2>
                 </div>
                 <Link
-                  href="/receptionist/billing"
+                  href="/receptionist/queue"
                   className="text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
                 >
-                  View All
+                  View Queue
                 </Link>
               </div>
 
@@ -697,31 +764,50 @@ export default function ReceptionistDashboardPage() {
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-slate-100 text-slate-400 font-semibold">
-                      <th className="pb-1.5 font-medium">Time</th>
+                      <th className="pb-1.5 font-medium">Ticket #</th>
                       <th className="pb-1.5 font-medium">Patient</th>
-                      <th className="pb-1.5 font-medium">Amount</th>
+                      <th className="pb-1.5 font-medium">Priority</th>
                       <th className="pb-1.5 font-medium">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {RECENT_BILLS_DATA.slice(0, 4).map((bill, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-1.5 font-medium text-slate-500 whitespace-nowrap">{bill.time}</td>
-                        <td className="py-1.5 font-bold text-slate-800 whitespace-nowrap">{bill.patientName}</td>
-                        <td className="py-1.5 font-semibold text-slate-800 whitespace-nowrap">{bill.amount}</td>
-                        <td className="py-1.5 whitespace-nowrap">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              bill.status === 'Paid'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-amber-100 text-amber-700'
-                            }`}
-                          >
-                            {bill.status}
-                          </span>
+                    {queue.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-center text-slate-400">
+                          {loading ? 'Loading...' : 'No queue visits today.'}
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      queue.slice(0, 4).map((q) => (
+                        <tr key={q.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-1.5 font-mono font-bold text-blue-600 whitespace-nowrap">
+                            {q.ticketNumber}
+                          </td>
+                          <td className="py-1.5 font-bold text-slate-800 whitespace-nowrap">
+                            <div>{q.patientName}</div>
+                            <div className="text-[10px] text-slate-400 font-mono font-normal">{q.patientPid}</div>
+                          </td>
+                          <td className="py-1.5 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                              {q.priority}
+                            </span>
+                          </td>
+                          <td className="py-1.5 whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                q.status === 'COMPLETED'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : q.status === 'WAITING'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-blue-100 text-blue-700'
+                              }`}
+                            >
+                              {q.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

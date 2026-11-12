@@ -35,6 +35,7 @@ import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer'
 import DoctorPatientModal from '../../../components/doctor/DoctorPatientModal';
 import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescriptionModal';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
+import DoctorReferralModal from '../../../components/doctor/DoctorReferralModal';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 import DoctorStatCard from '../../../components/doctor/DoctorStatCard';
 import { useAuth } from '../../../lib/auth/auth-context';
@@ -61,6 +62,7 @@ export default function DoctorPatientsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
 
   const now = new Date();
   const dateLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -809,6 +811,7 @@ export default function DoctorPatientsPage() {
         onClose={() => setDrawerOpen(false)}
         onOpenPrescriptionModal={() => setPrescriptionModalOpen(true)}
         onOpenLabModal={() => setLabModalOpen(true)}
+        onOpenReferralModal={() => setReferralModalOpen(true)}
       />
 
       {/* Modals */}
@@ -830,6 +833,14 @@ export default function DoctorPatientsPage() {
         onClose={() => setLabModalOpen(false)}
         patientId={highlightedPatient?.id}
         patientName={highlightedPatient?.name}
+      />
+
+      <DoctorReferralModal
+        isOpen={referralModalOpen}
+        onClose={() => setReferralModalOpen(false)}
+        patientId={highlightedPatient?.id}
+        patientName={highlightedPatient?.name}
+        onSuccess={() => void loadPatients()}
       />
     </>
   );
