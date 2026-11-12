@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Search, X, User, Calendar, FileText, Pill, ArrowRight } from 'lucide-react';
-import { INITIAL_PATIENTS, TODAY_SCHEDULE } from './doctorMockData';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, X, User, Calendar, ArrowRight, Loader2 } from 'lucide-react';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchPatients } from '../../api/patients';
+import { fetchAppointments } from '../../api/appointments';
+import type { PatientDTO, AppointmentDTO } from '@mcms/contracts';
 
 export interface DoctorSearchModalProps {
   isOpen: boolean;
@@ -17,7 +20,11 @@ export function DoctorSearchModal({
   onSelectAppointment,
   onNavigateTab,
 }: DoctorSearchModalProps) {
+  const { accessToken } = useAuth();
   const [query, setQuery] = useState('');
+  const [patients, setPatients] = useState<PatientDTO[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentDTO[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -33,27 +40,53 @@ export function DoctorSearchModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  const loadData = useCallback(async () => {
+    if (!isOpen || !accessToken) return;
+    setIsLoading(true);
+    try {
+      const [patRes, apptRes] = await Promise.allSettled([
+        fetchPatients(accessToken, { limit: 50 }),
+        fetchAppointments(accessToken),
+      ]);
+      if (patRes.status === 'fulfilled' && patRes.value?.data) {
+        setPatients(patRes.value.data);
+      }
+      if (apptRes.status === 'fulfilled' && Array.isArray(apptRes.value)) {
+        setAppointments(apptRes.value);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isOpen, accessToken]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
   if (!isOpen) return null;
 
-  const filteredPatients = query.trim()
-    ? INITIAL_PATIENTS.filter(
-        (p) =>
-          p.name.toLowerCase().includes(query.toLowerCase()) ||
-          p.pid.toLowerCase().includes(query.toLowerCase()) ||
-          p.phone.includes(query)
-      )
-    : INITIAL_PATIENTS.slice(0, 3);
+  const q = query.trim().toLowerCase();
 
-  const filteredAppointments = query.trim()
-    ? TODAY_SCHEDULE.filter(
-        (a) =>
-          a.patientName.toLowerCase().includes(query.toLowerCase()) ||
-          a.reason.toLowerCase().includes(query.toLowerCase())
+  const filteredPatients = q
+    ? patients.filter(
+        (p) =>
+          p.fullName.toLowerCase().includes(q) ||
+          p.pid.toLowerCase().includes(q) ||
+          (p.phoneNumber && p.phoneNumber.includes(q))
       )
-    : TODAY_SCHEDULE.slice(0, 3);
+    : patients.slice(0, 4);
+
+  const filteredAppointments = q
+    ? appointments.filter(
+        (a) =>
+          a.patientName.toLowerCase().includes(q) ||
+          (a.reason && a.reason.toLowerCase().includes(q)) ||
+          a.status.toLowerCase().includes(q)
+      )
+    : appointments.slice(0, 4);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div
         className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden flex flex-col max-h-[80vh]"
         onClick={(e) => e.stopPropagation()}
@@ -66,142 +99,162 @@ export function DoctorSearchModal({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search patients, medical records, appointments, prescriptions..."
-            className="flex-1 bg-transparent border-none text-slate-800 placeholder-slate-400 text-sm focus:outline-none"
+            placeholder="Search patients by name, PID, or appointments..."
+            className="flex-1 text-slate-800 placeholder-slate-400 text-sm focus:outline-none bg-transparent"
           />
-          <kbd className="px-2 py-0.5 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded-md">
+          {isLoading && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          <kbd className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 rounded">
             ESC
           </kbd>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
-        {/* Search Results Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Quick Categories */}
+        {/* Results Body */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          {/* Patients Section */}
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-2">
-              Patients ({filteredPatients.length})
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 px-2 mb-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-blue-500" />
+                Patients Directory
+              </span>
+              <span className="text-[11px] font-normal lowercase">{filteredPatients.length} found</span>
             </div>
             <div className="space-y-1">
-              {filteredPatients.map((patient) => (
-                <div
-                  key={patient.id}
-                  onClick={() => {
-                    onSelectPatient?.(patient.id);
-                    onClose();
-                  }}
-                  className="flex items-center justify-between p-2.5 rounded-xl hover:bg-blue-50/50 cursor-pointer transition-colors group"
-                >
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={patient.avatar}
-                      alt={patient.name}
-                      className="w-9 h-9 rounded-full object-cover ring-1 ring-slate-200"
-                    />
-                    <div>
-                      <div className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
-                        {patient.name}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {patient.pid} • {patient.age} yrs • {patient.gender} • {patient.department}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-400 group-hover:text-blue-600 flex items-center gap-1">
-                    Open <ArrowRight className="w-3.5 h-3.5" />
-                  </span>
+              {filteredPatients.length === 0 ? (
+                <div className="p-3 text-center text-xs text-slate-400">
+                  {isLoading ? 'Loading patient records...' : 'No matching patient records found.'}
                 </div>
-              ))}
+              ) : (
+                filteredPatients.map((patient) => {
+                  const age = patient.dateOfBirth
+                    ? Math.max(0, new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear())
+                    : null;
+                  return (
+                    <div
+                      key={patient.id}
+                      onClick={() => {
+                        onSelectPatient?.(patient.id);
+                        onClose();
+                      }}
+                      className="flex items-center justify-between p-2.5 rounded-xl hover:bg-blue-50/60 cursor-pointer transition-colors group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-xs shrink-0">
+                          {patient.fullName.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">
+                            {patient.fullName}
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {patient.pid} {age ? `• ${age} yrs` : ''} • {patient.gender === 'FEMALE' ? 'Female' : 'Male'} • {patient.phoneNumber || '—'}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectPatient?.(patient.id);
+                          onNavigateTab?.('medical-records');
+                          onClose();
+                        }}
+                        className="text-xs text-blue-600 font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        Chart <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
-          {/* Appointments */}
+          {/* Appointments Section */}
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-2">
-              Today&apos;s Appointments ({filteredAppointments.length})
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 px-2 mb-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-emerald-500" />
+                Scheduled Consultations
+              </span>
+              <span className="text-[11px] font-normal lowercase">{filteredAppointments.length} found</span>
             </div>
             <div className="space-y-1">
-              {filteredAppointments.map((apt) => (
-                <div
-                  key={apt.id}
-                  onClick={() => {
-                    onSelectAppointment?.(apt.id);
-                    onNavigateTab?.('appointments');
-                    onClose();
-                  }}
-                  className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
-                      <Calendar className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-bold text-slate-800">{apt.patientName}</div>
-                      <div className="text-xs text-slate-400">
-                        {apt.time} • {apt.reason} • {apt.status}
+              {filteredAppointments.length === 0 ? (
+                <div className="p-3 text-center text-xs text-slate-400">
+                  {isLoading ? 'Loading appointments...' : 'No appointments matching search.'}
+                </div>
+              ) : (
+                filteredAppointments.map((apt) => (
+                  <div
+                    key={apt.id}
+                    onClick={() => {
+                      onSelectAppointment?.(apt.id);
+                      onNavigateTab?.('appointments');
+                      onClose();
+                    }}
+                    className="flex items-center justify-between p-2.5 rounded-xl hover:bg-emerald-50/60 cursor-pointer transition-colors group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-semibold text-xs shrink-0">
+                        {apt.startTime || '09:00'}
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800 group-hover:text-emerald-700 transition-colors">
+                          {apt.patientName}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {apt.reason || apt.type} • {apt.appointmentDate.split('T')[0]}
+                        </div>
                       </div>
                     </div>
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-slate-100 text-slate-600">
+                      {apt.status.replace(/_/g, ' ')}
+                    </span>
                   </div>
-                  <span className="text-xs font-semibold text-slate-400 group-hover:text-blue-600 flex items-center gap-1">
-                    View <ArrowRight className="w-3.5 h-3.5" />
-                  </span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
           {/* Quick Shortcuts */}
-          <div className="pt-2 border-t border-slate-100">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-2">
-              Quick Shortcuts
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="border-t border-slate-100 pt-3 flex items-center justify-between text-xs text-slate-400 px-2">
+            <div className="flex items-center gap-4">
               <button
-                onClick={() => {
-                  onNavigateTab?.('patients');
-                  onClose();
-                }}
-                className="p-2.5 rounded-xl border border-slate-200/80 hover:border-blue-300 hover:bg-blue-50/30 flex items-center gap-2 text-slate-700 font-semibold text-left"
-              >
-                <User className="w-4 h-4 text-blue-600" /> Patients Registry
-              </button>
-              <button
+                type="button"
                 onClick={() => {
                   onNavigateTab?.('appointments');
                   onClose();
                 }}
-                className="p-2.5 rounded-xl border border-slate-200/80 hover:border-blue-300 hover:bg-blue-50/30 flex items-center gap-2 text-slate-700 font-semibold text-left"
+                className="hover:text-blue-600 flex items-center gap-1 cursor-pointer"
               >
-                <Calendar className="w-4 h-4 text-blue-600" /> Today&apos;s Appointments
+                <Calendar className="w-3.5 h-3.5" /> My Appointments
               </button>
               <button
+                type="button"
                 onClick={() => {
-                  onNavigateTab?.('prescriptions');
+                  onNavigateTab?.('patients');
                   onClose();
                 }}
-                className="p-2.5 rounded-xl border border-slate-200/80 hover:border-blue-300 hover:bg-blue-50/30 flex items-center gap-2 text-slate-700 font-semibold text-left"
+                className="hover:text-blue-600 flex items-center gap-1 cursor-pointer"
               >
-                <Pill className="w-4 h-4 text-blue-600" /> Prescriptions Queue
-              </button>
-              <button
-                onClick={() => {
-                  onNavigateTab?.('medical-records');
-                  onClose();
-                }}
-                className="p-2.5 rounded-xl border border-slate-200/80 hover:border-blue-300 hover:bg-blue-50/30 flex items-center gap-2 text-slate-700 font-semibold text-left"
-              >
-                <FileText className="w-4 h-4 text-blue-600" /> Medical Records
+                <User className="w-3.5 h-3.5" /> Patients Directory
               </button>
             </div>
+            <span>Press Esc to exit</span>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
 export default DoctorSearchModal;

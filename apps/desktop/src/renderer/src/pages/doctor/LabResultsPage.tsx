@@ -11,13 +11,16 @@ import {
   Loader2,
   RefreshCw,
 } from 'lucide-react';
-import { INITIAL_PATIENTS, PatientItem } from '../../components/doctor/doctorMockData';
+import { PatientItem } from '../../components/doctor/doctorMockData';
 import { DoctorLabOrderModal } from '../../components/doctor/DoctorLabOrderModal';
+import { DoctorPrescriptionModal } from '../../components/doctor/DoctorPrescriptionModal';
+import { DoctorReferralModal } from '../../components/doctor/DoctorReferralModal';
 import { DoctorPatientDrawer } from '../../components/doctor/DoctorPatientDrawer';
 import { DoctorPageShell } from '../../components/doctor/DoctorPageShell';
 import { DoctorStatCard } from '../../components/doctor/DoctorStatCard';
 import { useAuth } from '../../auth/AuthContext';
 import { fetchLabOrders } from '../../api/clinical';
+import { fetchPatients } from '../../api/patients';
 import type { LabOrderDTO } from '@mcms/contracts';
 
 type LabStatus = 'Completed' | 'Pending' | 'Abnormal';
@@ -91,6 +94,8 @@ export function LabResultsPage() {
 
   // Modals & Drawers
   const [labModalOpen, setLabModalOpen] = useState(false);
+  const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerPatient, setDrawerPatient] = useState<PatientItem | null>(null);
 
@@ -133,9 +138,36 @@ export function LabResultsPage() {
     return true;
   });
 
-  const handleOpenPatientProfile = (patientName: string) => {
-    const match = INITIAL_PATIENTS.find((p) => p.name === patientName) || INITIAL_PATIENTS[0]!;
-    setDrawerPatient(match);
+  const handleOpenPatientProfile = async (patientId: string, patientName: string) => {
+    try {
+      const res = await fetchPatients(accessToken, { search: patientName, limit: 1 });
+      const p = res?.data?.[0];
+      if (p) {
+        const isFemale = (p.gender || '').toLowerCase().startsWith('f');
+        const age = p.dateOfBirth ? Math.max(1, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear()) : 35;
+        setDrawerPatient({
+          id: p.id,
+          name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+          pid: p.pid,
+          age,
+          gender: isFemale ? 'Female' : 'Male',
+          phone: p.phoneNumber || '—',
+          email: p.email || '—',
+          address: p.address || 'Addis Ababa, Ethiopia',
+          department: 'Laboratory',
+          lastVisit: new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          lastVisitReason: 'Diagnostic Lab',
+          status: p.status === 'INACTIVE' ? 'Inactive' : 'Active',
+          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName || p.firstName)}&size=150&background=dbeafe&color=1e40af`,
+          totalVisits: 1,
+          conditions: [],
+        });
+      } else {
+        setDrawerPatient(null);
+      }
+    } catch {
+      setDrawerPatient(null);
+    }
     setDrawerOpen(true);
   };
 
@@ -268,7 +300,7 @@ export function LabResultsPage() {
 
             <div className="pt-2">
               <button
-                onClick={() => handleOpenPatientProfile(selectedDisplay.patient)}
+                onClick={() => void handleOpenPatientProfile(selectedDisplay.patientId, selectedDisplay.patient)}
                 className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Eye className="w-3.5 h-3.5" /> View Patient Record
@@ -420,7 +452,7 @@ export function LabResultsPage() {
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedLab(row);
-                              handleOpenPatientProfile(row.patient);
+                              void handleOpenPatientProfile(row.patientId, row.patient);
                             }}
                             className="px-2.5 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-600 font-bold text-xs transition-colors cursor-pointer"
                           >
@@ -442,11 +474,26 @@ export function LabResultsPage() {
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onOpenLabModal={() => setLabModalOpen(true)}
+        onOpenPrescriptionModal={() => setPrescriptionModalOpen(true)}
+        onOpenReferralModal={() => setReferralModalOpen(true)}
       />
       <DoctorLabOrderModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        defaultPatientId="p-1"
+        defaultPatientId={selectedLab?.patientId}
+        onSuccess={() => void loadLabOrders()}
+      />
+      <DoctorPrescriptionModal
+        isOpen={prescriptionModalOpen}
+        onClose={() => setPrescriptionModalOpen(false)}
+        defaultPatientId={selectedLab?.patientId}
+        onSuccess={() => void loadLabOrders()}
+      />
+      <DoctorReferralModal
+        isOpen={referralModalOpen}
+        onClose={() => setReferralModalOpen(false)}
+        patientId={selectedLab?.patientId}
+        patientName={selectedLab?.patient}
         onSuccess={() => void loadLabOrders()}
       />
     </>

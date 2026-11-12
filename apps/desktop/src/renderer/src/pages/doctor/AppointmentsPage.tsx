@@ -15,17 +15,18 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import {
-  INITIAL_PATIENTS,
   AppointmentItem,
   PatientItem,
 } from '../../components/doctor/doctorMockData';
 import { DoctorPatientDrawer } from '../../components/doctor/DoctorPatientDrawer';
 import { DoctorPrescriptionModal } from '../../components/doctor/DoctorPrescriptionModal';
 import { DoctorLabOrderModal } from '../../components/doctor/DoctorLabOrderModal';
+import { DoctorReferralModal } from '../../components/doctor/DoctorReferralModal';
 import { DoctorPageShell } from '../../components/doctor/DoctorPageShell';
 import { DoctorStatCard } from '../../components/doctor/DoctorStatCard';
 import { useAuth } from '../../auth/AuthContext';
 import { fetchAppointments, updateAppointment } from '../../api/appointments';
+import { fetchPatients } from '../../api/patients';
 import type { AppointmentDTO } from '@mcms/contracts';
 
 function mapDtoToAppointmentItem(dto: AppointmentDTO): AppointmentItem {
@@ -69,6 +70,7 @@ export function AppointmentsPage() {
   const [drawerPatient, setDrawerPatient] = useState<PatientItem | null>(null);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
 
   const loadAppointments = useCallback(async () => {
     setLoading(true);
@@ -121,10 +123,37 @@ export function AppointmentsPage() {
     }
   };
 
-  const handleOpenPatientProfile = () => {
+  const handleOpenPatientProfile = async () => {
     if (!selectedAppointment) return;
-    const match = INITIAL_PATIENTS.find((p) => p.name === selectedAppointment.patientName) || INITIAL_PATIENTS[0]!;
-    setDrawerPatient(match);
+    try {
+      const res = await fetchPatients(accessToken, { search: selectedAppointment.patientName, limit: 1 });
+      const p = res?.data?.[0];
+      if (p) {
+        const isFemale = (p.gender || '').toLowerCase().startsWith('f');
+        const age = p.dateOfBirth ? Math.max(1, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear()) : 35;
+        setDrawerPatient({
+          id: p.id,
+          name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+          pid: p.pid,
+          age,
+          gender: isFemale ? 'Female' : 'Male',
+          phone: p.phoneNumber || '—',
+          email: p.email || '—',
+          address: p.address || 'Addis Ababa, Ethiopia',
+          department: 'General OPD',
+          lastVisit: new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          lastVisitReason: selectedAppointment.reason || 'Consultation',
+          status: p.status === 'INACTIVE' ? 'Inactive' : 'Active',
+          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(p.fullName || p.firstName)}&size=150&background=dbeafe&color=1e40af`,
+          totalVisits: 1,
+          conditions: [],
+        });
+      } else {
+        setDrawerPatient(null);
+      }
+    } catch {
+      setDrawerPatient(null);
+    }
     setDrawerOpen(true);
   };
 
@@ -453,16 +482,26 @@ export function AppointmentsPage() {
         onClose={() => setDrawerOpen(false)}
         onOpenPrescriptionModal={() => setPrescriptionModalOpen(true)}
         onOpenLabModal={() => setLabModalOpen(true)}
+        onOpenReferralModal={() => setReferralModalOpen(true)}
       />
       <DoctorPrescriptionModal
         isOpen={prescriptionModalOpen}
         onClose={() => setPrescriptionModalOpen(false)}
-        defaultPatientId="p-1"
+        defaultPatientId={drawerPatient?.id || selectedAppointment?.patientId}
+        onSuccess={() => void loadAppointments()}
       />
       <DoctorLabOrderModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        defaultPatientId="p-1"
+        defaultPatientId={drawerPatient?.id || selectedAppointment?.patientId}
+        onSuccess={() => void loadAppointments()}
+      />
+      <DoctorReferralModal
+        isOpen={referralModalOpen}
+        onClose={() => setReferralModalOpen(false)}
+        patientId={drawerPatient?.id || selectedAppointment?.patientId}
+        patientName={drawerPatient?.name || selectedAppointment?.patientName}
+        onSuccess={() => void loadAppointments()}
       />
     </>
   );

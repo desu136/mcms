@@ -14,7 +14,6 @@ import {
   AlertCircle,
   FileText,
 } from 'lucide-react';
-import { CURRENT_DOCTOR } from './doctorMockData';
 import { useAuth } from '../../lib/auth/auth-context';
 import Link from 'next/link';
 

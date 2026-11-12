@@ -10,6 +10,8 @@ Color _appointmentStatusColor(ReceptionistAppointmentStatus s) {
       return AppTheme.primary;
     case ReceptionistAppointmentStatus.pending:
       return AppTheme.warning;
+    case ReceptionistAppointmentStatus.checkedIn:
+      return AppTheme.cyan;
     case ReceptionistAppointmentStatus.cancelled:
       return AppTheme.danger;
     case ReceptionistAppointmentStatus.completed:
@@ -25,6 +27,8 @@ Color _appointmentStatusBg(ReceptionistAppointmentStatus s) {
       return AppTheme.primaryLight;
     case ReceptionistAppointmentStatus.pending:
       return AppTheme.warningLight;
+    case ReceptionistAppointmentStatus.checkedIn:
+      return AppTheme.cyanLight;
     case ReceptionistAppointmentStatus.cancelled:
       return AppTheme.dangerLight;
     case ReceptionistAppointmentStatus.completed:

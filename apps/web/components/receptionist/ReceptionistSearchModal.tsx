@@ -1,63 +1,109 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Search, X, User, Calendar, CreditCard, Clock, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, X, User, Calendar, ArrowRight, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '../../lib/auth/auth-context';
+import { fetchPatients, fetchAppointments } from '../../lib/api';
+import type { PatientDTO, AppointmentDTO } from '@mcms/contracts';
 
 interface ReceptionistSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const SEARCH_MOCK_RESULTS = [
-  {
-    type: 'patient',
-    title: 'Aster Mulu',
-    subtitle: 'PID: P-2026-001245 • +251 912 345 678 • General',
-    href: '/receptionist/queue',
-    tag: 'In Consultation',
-    tagColor: 'bg-blue-100 text-blue-700',
-  },
-  {
-    type: 'patient',
-    title: 'Tesfaye Worku',
-    subtitle: 'PID: P-2026-001244 • +251 911 222 333 • Internal Medicine',
-    href: '/receptionist/queue',
-    tag: 'In Consultation',
-    tagColor: 'bg-blue-100 text-blue-700',
-  },
-  {
-    type: 'appointment',
-    title: 'Lidya Kebede - 09:00 AM',
-    subtitle: 'Dr. Mekonnen • Gynecology • Consultation',
-    href: '/receptionist/appointments',
-    tag: 'Waiting',
-    tagColor: 'bg-amber-100 text-amber-700',
-  },
-  {
-    type: 'invoice',
-    title: 'INV-2026-1087 - Aster Mulu',
-    subtitle: 'ETB 1,420.00 • Paid • Oct 19, 2026',
-    href: '/receptionist/billing',
-    tag: 'Paid',
-    tagColor: 'bg-emerald-100 text-emerald-700',
-  },
-];
+interface SearchResultItem {
+  id: string;
+  type: 'patient' | 'appointment';
+  title: string;
+  subtitle: string;
+  href: string;
+  tag: string;
+  tagColor: string;
+}
 
 function ReceptionistSearchModal({
   isOpen,
   onClose,
 }: ReceptionistSearchModalProps) {
   const router = useRouter();
+  const { accessToken } = useAuth();
   const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [patients, setPatients] = useState<PatientDTO[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentDTO[]>([]);
+
+  useEffect(() => {
+    if (!isOpen || !accessToken) return;
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setPatients([]);
+      setAppointments([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const [patRes, apts] = await Promise.all([
+          fetchPatients(accessToken, { search: trimmed, limit: 5 }).catch(() => ({ data: [] })),
+          fetchAppointments(accessToken).catch(() => []),
+        ]);
+
+        setPatients(patRes.data || []);
+        const aptLower = trimmed.toLowerCase();
+        const matchedApts = (apts || []).filter(
+          (a) =>
+            a.patientName.toLowerCase().includes(aptLower) ||
+            a.patientPid.toLowerCase().includes(aptLower) ||
+            (a.doctorName ?? '').toLowerCase().includes(aptLower),
+        ).slice(0, 5);
+        setAppointments(matchedApts);
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, accessToken, query]);
+
+  const results: SearchResultItem[] = useMemo(() => {
+    const list: SearchResultItem[] = [];
+
+    patients.forEach((p) => {
+      list.push({
+        id: `pat-${p.id}`,
+        type: 'patient',
+        title: p.fullName,
+        subtitle: `PID: ${p.pid} • ${p.phoneNumber ?? 'No phone'} • ${p.city ?? 'Addis Ababa'}`,
+        href: '/receptionist/patients',
+        tag: p.status,
+        tagColor: 'bg-blue-100 text-blue-700',
+      });
+    });
+
+    appointments.forEach((a) => {
+      list.push({
+        id: `apt-${a.id}`,
+        type: 'appointment',
+        title: `${a.patientName} - ${a.startTime}`,
+        subtitle: `${a.doctorName ?? 'Doctor'} • ${a.type}`,
+        href: '/receptionist/appointments',
+        tag: a.status,
+        tagColor:
+          a.status === 'CONFIRMED' || a.status === 'CHECKED_IN'
+            ? 'bg-emerald-100 text-emerald-700'
+            : a.status === 'CANCELLED'
+              ? 'bg-rose-100 text-rose-700'
+              : 'bg-amber-100 text-amber-700',
+      });
+    });
+
+    return list;
+  }, [patients, appointments]);
 
   if (!isOpen) return null;
-
-  const filtered = SEARCH_MOCK_RESULTS.filter(
-    (item) =>
-      item.title.toLowerCase().includes(query.toLowerCase()) ||
-      item.subtitle.toLowerCase().includes(query.toLowerCase()),
-  );
 
   const handleSelect = (href: string) => {
     onClose();
@@ -76,12 +122,16 @@ function ReceptionistSearchModal({
       <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150">
         {/* Search Input Bar */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-100">
-          <Search className="w-5 h-5 text-blue-600 shrink-0" />
+          {loading ? (
+            <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0" />
+          ) : (
+            <Search className="w-5 h-5 text-blue-600 shrink-0" />
+          )}
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search patients, appointments, invoices, or MRN..."
+            placeholder="Search patients by name, PID, phone, or appointments..."
             className="flex-1 bg-transparent border-0 focus:outline-hidden text-sm text-slate-800 placeholder:text-slate-400 font-medium"
             autoFocus
           />
@@ -95,10 +145,14 @@ function ReceptionistSearchModal({
 
         {/* Results */}
         <div className="max-h-80 overflow-y-auto p-2 divide-y divide-slate-100">
-          {filtered.length > 0 ? (
-            filtered.map((item, idx) => (
+          {!query.trim() ? (
+            <div className="py-8 text-center text-xs text-slate-400">
+              Type a patient name, phone number, PID, or doctor to search...
+            </div>
+          ) : results.length > 0 ? (
+            results.map((item) => (
               <div
-                key={idx}
+                key={item.id}
                 onClick={() => handleSelect(item.href)}
                 className="flex items-center justify-between p-3 rounded-xl hover:bg-blue-50/60 cursor-pointer transition-colors group"
               >
@@ -106,7 +160,6 @@ function ReceptionistSearchModal({
                   <div className="w-8 h-8 rounded-lg bg-blue-100/70 text-blue-600 flex items-center justify-center shrink-0">
                     {item.type === 'patient' && <User className="w-4 h-4" />}
                     {item.type === 'appointment' && <Calendar className="w-4 h-4" />}
-                    {item.type === 'invoice' && <CreditCard className="w-4 h-4" />}
                   </div>
                   <div className="truncate">
                     <div className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-blue-600 truncate">
@@ -130,15 +183,15 @@ function ReceptionistSearchModal({
             ))
           ) : (
             <div className="py-8 text-center text-xs text-slate-400">
-              No matching results found for &ldquo;{query}&rdquo;
+              {loading ? 'Searching live database...' : `No matching records found for "${query}"`}
             </div>
           )}
         </div>
 
         {/* Footer shortcuts */}
         <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-medium">
-          <span>Use ESC to close</span>
-          <span>Press Enter to select</span>
+          <span>Live backend search</span>
+          <span>Press ESC to close</span>
         </div>
       </div>
     </div>

@@ -7,15 +7,8 @@ import {
   UserCheck,
   FileText,
   CreditCard,
-  Printer,
   BarChart2,
-  TrendingUp,
-  TrendingDown,
   ArrowRight,
-  Stethoscope,
-  FlaskConical,
-  Pill,
-  HeartPulse,
   Database,
   RefreshCw,
   Loader2,
@@ -37,19 +30,11 @@ import ReceptionistStatCard from '../../components/receptionist/ReceptionistStat
 import ReceptionistPageShell from '../../components/receptionist/ReceptionistPageShell';
 import NewAppointmentModal from '../../components/receptionist/NewAppointmentModal';
 import CheckInModal from '../../components/receptionist/CheckInModal';
-import {
-  DASHBOARD_KPIS,
-  TODAY_DASHBOARD_APPOINTMENTS,
-  PATIENT_FLOW_CHART,
-  PATIENT_TYPES_DONUT,
-  RECENT_REGISTRATIONS_DATA,
-  CURRENT_QUEUE_ITEMS,
-} from '../../components/receptionist/receptionistMockData';
 import { useSync } from '../../context/SyncContext';
 import { useAuth } from '../../auth/AuthContext';
 import { fetchQueue, fetchAppointments, fetchPatients } from '../../api';
 import { ReceptionistTab } from '../../components/receptionist/ReceptionistSidebar';
-import type { QueueEntryDTO, AppointmentDTO } from '@mcms/contracts';
+import type { QueueEntryDTO, AppointmentDTO, PatientDTO } from '@mcms/contracts';
 
 interface DashboardPageProps {
   onNavigateTab: (tab: ReceptionistTab) => void;
@@ -71,7 +56,7 @@ interface DashboardQueueItem {
 }
 
 export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
-  const { syncStatus, isOnline, triggerSync, isSyncing } = useSync();
+  const { syncStatus, isOnline } = useSync();
   const { accessToken } = useAuth();
 
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
@@ -79,29 +64,12 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   // Live state
-  const [todayAppointments, setTodayAppointments] = useState<DashboardAppointmentItem[]>(
-    TODAY_DASHBOARD_APPOINTMENTS.map((a) => ({
-      id: a.id,
-      time: a.time,
-      patientName: a.patientName,
-      doctor: a.doctor,
-      status: a.status,
-    })),
-  );
+  const [appointments, setAppointments] = useState<AppointmentDTO[]>([]);
+  const [queue, setQueue] = useState<QueueEntryDTO[]>([]);
+  const [patients, setPatients] = useState<PatientDTO[]>([]);
+  const [totalPatientsCount, setTotalPatientsCount] = useState<number>(0);
 
-  const [liveQueueItems, setLiveQueueItems] = useState<DashboardQueueItem[]>(
-    CURRENT_QUEUE_ITEMS.map((q) => ({
-      queueNumber: q.queueNumber,
-      patientName: q.patientName,
-      type: q.type,
-      status: q.status,
-    })),
-  );
-
-  const [totalPatientsCount, setTotalPatientsCount] = useState<number>(248);
-  const [waitingCount, setWaitingCount] = useState<number>(8);
-  const [inConsultationCount, setInConsultationCount] = useState<number>(3);
-  const [todayAptCount, setTodayAptCount] = useState<number>(35);
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0] ?? '', []);
 
   const loadDashboardData = useCallback(async () => {
     setIsLoading(true);
@@ -112,99 +80,173 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         fetchPatients(accessToken, { page: 1, limit: 10 }),
       ]);
 
-      // 1. Process Queue Data
-      if (queueRes.status === 'fulfilled' && queueRes.value && queueRes.value.length > 0) {
-        const qEntries: QueueEntryDTO[] = queueRes.value;
-        const waiting = qEntries.filter((q) => {
-          const s = (q.status || '').toUpperCase();
-          return s === 'WAITING' || s === 'PENDING' || s === '';
-        }).length;
-        const inConsult = qEntries.filter((q) => {
-          const s = (q.status || '').toUpperCase();
-          return s === 'IN_PROGRESS' || s === 'CALLED' || s === 'IN_CONSULTATION';
-        }).length;
-
-        setWaitingCount(waiting);
-        setInConsultationCount(inConsult);
-
-        const mappedQueue: DashboardQueueItem[] = qEntries.slice(0, 5).map((q) => {
-          let statusText = 'Waiting';
-          const s = (q.status || '').toUpperCase();
-          if (s === 'IN_PROGRESS' || s === 'CALLED') statusText = 'In Consultation';
-          else if (s === 'COMPLETED') statusText = 'Completed';
-
-          return {
-            queueNumber: q.ticketNumber || `Q-${q.id.slice(0, 4)}`,
-            patientName: q.patientName || 'Patient',
-            type: q.priority || 'Standard',
-            status: statusText,
-          };
-        });
-        setLiveQueueItems(mappedQueue);
+      if (queueRes.status === 'fulfilled' && queueRes.value) {
+        setQueue(queueRes.value);
       }
 
-      // 2. Process Appointments Data
-      if (aptRes.status === 'fulfilled' && aptRes.value && aptRes.value.length > 0) {
-        const apts: AppointmentDTO[] = aptRes.value;
-        setTodayAptCount(apts.length);
-        const mappedApts: DashboardAppointmentItem[] = apts.slice(0, 5).map((a) => {
-          let status = 'Scheduled';
-          const s = (a.status || '').toUpperCase();
-          if (s === 'CONFIRMED') status = 'Confirmed';
-          else if (s === 'CHECKED_IN') status = 'Checked In';
-          else if (s === 'COMPLETED') status = 'Completed';
-
-          return {
-            id: a.id,
-            time: a.startTime || '09:00',
-            patientName: a.patientName || 'Patient',
-            doctor: a.doctorName || 'Assigned Doctor',
-            status,
-          };
-        });
-        setTodayAppointments(mappedApts);
+      if (aptRes.status === 'fulfilled' && aptRes.value) {
+        setAppointments(aptRes.value);
       }
 
-      // 3. Process Patients Directory Count
       if (patientsRes.status === 'fulfilled' && patientsRes.value) {
-        setTotalPatientsCount(patientsRes.value.total || patientsRes.value.data?.length || 248);
+        setPatients(patientsRes.value.data || []);
+        setTotalPatientsCount(patientsRes.value.total || 0);
       }
     } catch (err) {
-      console.warn('Dashboard data fetch fallback:', err);
+      console.warn('Dashboard data fetch error:', err);
     } finally {
       setIsLoading(false);
     }
   }, [accessToken]);
 
   useEffect(() => {
-    loadDashboardData();
+    void loadDashboardData();
   }, [loadDashboardData]);
+
+  // Today's appointments
+  const todayAppointments = useMemo(() => {
+    return appointments.filter((a) => {
+      const d = a.appointmentDate ? a.appointmentDate.split('T')[0] : '';
+      return d === todayStr;
+    });
+  }, [appointments, todayStr]);
+
+  // Queue counts
+  const waitingCount = useMemo(() => {
+    return queue.filter((q) => {
+      const s = (q.status || '').toUpperCase();
+      return s === 'WAITING' || s === 'PENDING' || s === '';
+    }).length;
+  }, [queue]);
+
+  const inConsultCount = useMemo(() => {
+    return queue.filter((q) => {
+      const s = (q.status || '').toUpperCase();
+      return s === 'IN_PROGRESS' || s === 'CALLED' || s === 'IN_CONSULTATION';
+    }).length;
+  }, [queue]);
+
+  const completedCount = useMemo(() => {
+    return queue.filter((q) => (q.status || '').toUpperCase() === 'COMPLETED').length;
+  }, [queue]);
+
+  // 7-day patient flow calculated dynamically
+  const patientFlowChart = useMemo(() => {
+    const days: { day: string; registered: number; appointments: number; checkedIn: number }[] = [];
+    const base = new Date();
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(base);
+      d.setDate(base.getDate() - i);
+      const iso = d.toISOString().split('T')[0] ?? '';
+      const label = i === 0 ? 'Today' : `${dayNames[d.getDay()]} ${d.getDate()}`;
+
+      const aptsOnDay = appointments.filter((a) => (a.appointmentDate?.split('T')[0] ?? '') === iso);
+      const checkedInOnDay = aptsOnDay.filter((a) => (a.status || '').toUpperCase() === 'CHECKED_IN').length;
+      const queueOnDay = queue.filter((q) => (q.checkInTime ? q.checkInTime.split('T')[0] : '') === iso).length;
+
+      days.push({
+        day: label,
+        registered: Math.max(aptsOnDay.length, queueOnDay, 0),
+        appointments: aptsOnDay.length,
+        checkedIn: checkedInOnDay + queueOnDay,
+      });
+    }
+    return days;
+  }, [appointments, queue]);
+
+  // Visit types breakdown from real appointments
+  const patientTypesDonut = useMemo(() => {
+    let consultation = 0;
+    let followUp = 0;
+    let emergency = 0;
+    let routine = 0;
+
+    appointments.forEach((a) => {
+      const t = (a.type || '').toUpperCase();
+      if (t.includes('FOLLOW')) followUp++;
+      else if (t.includes('EMERGENCY')) emergency++;
+      else if (t.includes('ROUTINE') || t.includes('CHECKUP')) routine++;
+      else consultation++;
+    });
+
+    const total = appointments.length;
+    if (total === 0) {
+      return [{ name: 'General Consultation', value: 1, percent: 100, color: '#1E6BFF' }];
+    }
+
+    const list = [
+      { name: 'Consultation', value: consultation, percent: Math.round((consultation / total) * 100), color: '#1E6BFF' },
+      { name: 'Follow-up', value: followUp, percent: Math.round((followUp / total) * 100), color: '#10B981' },
+      { name: 'Emergency', value: emergency, percent: Math.round((emergency / total) * 100), color: '#8B5CF6' },
+      { name: 'Routine', value: routine, percent: Math.round((routine / total) * 100), color: '#F59E0B' },
+    ];
+
+    return list.filter((item) => item.value > 0);
+  }, [appointments]);
+
+  // Map top appointments for display
+  const topAppointments: DashboardAppointmentItem[] = useMemo(() => {
+    return appointments.slice(0, 5).map((a) => {
+      let status = 'Scheduled';
+      const s = (a.status || '').toUpperCase();
+      if (s === 'CONFIRMED') status = 'Confirmed';
+      else if (s === 'CHECKED_IN') status = 'Checked In';
+      else if (s === 'COMPLETED') status = 'Completed';
+
+      return {
+        id: a.id,
+        time: a.startTime || '09:00',
+        patientName: a.patientName || 'Patient',
+        doctor: a.doctorName || 'Assigned Doctor',
+        status,
+      };
+    });
+  }, [appointments]);
+
+  // Map top queue entries for display
+  const topQueueItems: DashboardQueueItem[] = useMemo(() => {
+    return queue.slice(0, 5).map((q) => {
+      let statusText = 'Waiting';
+      const s = (q.status || '').toUpperCase();
+      if (s === 'IN_PROGRESS' || s === 'CALLED' || s === 'IN_CONSULTATION') statusText = 'In Consultation';
+      else if (s === 'COMPLETED') statusText = 'Completed';
+
+      return {
+        queueNumber: q.ticketNumber || `Q-${q.id.slice(0, 4)}`,
+        patientName: q.patientName || 'Patient',
+        type: q.priority || 'Standard',
+        status: statusText,
+      };
+    });
+  }, [queue]);
 
   // Dynamic KPIs
   const liveKPIs = useMemo(() => {
     return [
       {
+        title: "Today's Appointments",
+        value: String(todayAppointments.length),
+        change: 'Scheduled today',
+        trend: 'up' as const,
+        trendLabel: '',
+        iconName: 'calendar' as const,
+        color: 'blue' as const,
+      },
+      {
         title: 'Patients Waiting',
         value: String(waitingCount),
-        change: `${inConsultationCount} in consultation`,
+        change: `${inConsultCount} in consultation`,
         trend: 'up' as const,
         trendLabel: 'live triage queue',
         iconName: 'clock' as const,
         color: 'amber' as const,
       },
       {
-        title: "Today's Appointments",
-        value: String(todayAptCount),
-        change: 'Scheduled today',
-        trend: 'up' as const,
-        trendLabel: 'across 4 depts',
-        iconName: 'calendar' as const,
-        color: 'blue' as const,
-      },
-      {
         title: 'Active Patients',
         value: String(totalPatientsCount),
-        change: '+12% this month',
+        change: 'in clinic database',
         trend: 'up' as const,
         trendLabel: 'registered dossiers',
         iconName: 'users' as const,
@@ -221,15 +263,15 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
       },
       {
         title: 'Consultations Done',
-        value: '28',
-        change: '+6 from morning',
+        value: String(completedCount),
+        change: 'Completed visits',
         trend: 'up' as const,
-        trendLabel: 'target: 35',
+        trendLabel: 'today',
         iconName: 'check-circle' as const,
         color: 'purple' as const,
       },
     ];
-  }, [waitingCount, inConsultationCount, todayAptCount, totalPatientsCount, syncStatus, isOnline]);
+  }, [todayAppointments.length, waitingCount, inConsultCount, totalPatientsCount, syncStatus, isOnline, completedCount]);
 
   return (
     <>
@@ -365,9 +407,9 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
 
             <div className="h-44 sm:h-48 w-full pt-1">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={PATIENT_FLOW_CHART} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+                <BarChart data={patientFlowChart} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
                   <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} domain={[0, 80]} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} allowDecimals={false} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: '#FFFFFF',
@@ -390,21 +432,21 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
             <div>
               <div className="flex items-center gap-2 mb-2.5">
                 <FileText className="w-4 h-4 text-blue-600" />
-                <h2 className="text-xs sm:text-sm font-bold text-slate-800">Patient Types</h2>
+                <h2 className="text-xs sm:text-sm font-bold text-slate-800">Visit Types</h2>
               </div>
 
               <div className="relative h-36 flex items-center justify-center">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={PATIENT_TYPES_DONUT}
+                      data={patientTypesDonut}
                       innerRadius={45}
                       outerRadius={62}
                       paddingAngle={3}
                       dataKey="value"
                       isAnimationActive={false}
                     >
-                      {PATIENT_TYPES_DONUT.map((entry, index) => (
+                      {patientTypesDonut.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -415,20 +457,20 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <span className="text-[10px] font-semibold text-slate-400">Total</span>
                   <span className="text-lg font-black text-slate-900 leading-none">
-                    {totalPatientsCount}
+                    {appointments.length}
                   </span>
                 </div>
               </div>
             </div>
 
             <div className="space-y-1.5 pt-2 border-t border-slate-100">
-              {PATIENT_TYPES_DONUT.map((item) => (
+              {patientTypesDonut.map((item) => (
                 <div key={item.name} className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
                     <span className="font-medium text-slate-600">{item.name}</span>
                   </div>
-                  <span className="font-bold text-slate-800">{item.value}%</span>
+                  <span className="font-bold text-slate-800">{item.percent}%</span>
                 </div>
               ))}
             </div>
@@ -450,7 +492,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                 onClick={() => onNavigateTab('appointments')}
                 className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
               >
-                <span>View All ({todayAptCount})</span>
+                <span>View All ({todayAppointments.length})</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -466,26 +508,34 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {todayAppointments.slice(0, 5).map((apt) => (
-                    <tr key={apt.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-2 font-mono font-bold text-slate-700">{apt.time}</td>
-                      <td className="py-2 font-bold text-slate-900">{apt.patientName}</td>
-                      <td className="py-2 text-slate-600">{apt.doctor}</td>
-                      <td className="py-2">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            apt.status === 'Checked In'
-                              ? 'bg-blue-100 text-blue-700'
-                              : apt.status === 'Confirmed'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {apt.status}
-                        </span>
+                  {topAppointments.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-slate-400">
+                        No appointments scheduled yet.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    topAppointments.map((apt) => (
+                      <tr key={apt.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-2 font-mono font-bold text-slate-700">{apt.time}</td>
+                        <td className="py-2 font-bold text-slate-900">{apt.patientName}</td>
+                        <td className="py-2 text-slate-600">{apt.doctor}</td>
+                        <td className="py-2">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              apt.status === 'Checked In'
+                                ? 'bg-blue-100 text-blue-700'
+                                : apt.status === 'Confirmed'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {apt.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -510,34 +560,40 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
             </div>
 
             <div className="space-y-2">
-              {liveQueueItems.slice(0, 4).map((q) => (
-                <div
-                  key={q.queueNumber}
-                  className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-black px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-100">
-                      {q.queueNumber}
-                    </span>
-                    <div>
-                      <div className="text-xs font-bold text-slate-900">{q.patientName}</div>
-                      <div className="text-[10px] text-slate-400">
-                        {q.type}
+              {topQueueItems.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No patients in queue currently.
+                </div>
+              ) : (
+                topQueueItems.map((q) => (
+                  <div
+                    key={q.queueNumber}
+                    className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-black px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-100">
+                        {q.queueNumber}
+                      </span>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">{q.patientName}</div>
+                        <div className="text-[10px] text-slate-400">
+                          {q.type}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="text-right">
-                    <span
-                      className={`text-[11px] font-bold ${
-                        q.status === 'In Consultation' ? 'text-purple-600' : 'text-blue-600'
-                      }`}
-                    >
-                      {q.status}
-                    </span>
+                    <div className="text-right">
+                      <span
+                        className={`text-[11px] font-bold ${
+                          q.status === 'In Consultation' ? 'text-purple-600' : 'text-blue-600'
+                        }`}
+                      >
+                        {q.status}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -549,7 +605,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
           isOpen={appointmentModalOpen}
           onClose={() => setAppointmentModalOpen(false)}
           onAppointmentBooked={() => {
-            loadDashboardData();
+            void loadDashboardData();
             setAppointmentModalOpen(false);
           }}
         />
@@ -559,7 +615,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
           isOpen={checkInModalOpen}
           onClose={() => setCheckInModalOpen(false)}
           onCheckInComplete={() => {
-            loadDashboardData();
+            void loadDashboardData();
             setCheckInModalOpen(false);
           }}
         />

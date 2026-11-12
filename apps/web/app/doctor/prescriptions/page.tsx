@@ -29,7 +29,7 @@ import {
   Ban,
 } from 'lucide-react';
 import type { PrescriptionDTO, PatientDTO } from '@mcms/contracts';
-import { INITIAL_PATIENTS, PatientItem } from '../../../components/doctor/doctorMockData';
+import { PatientItem } from '../../../components/doctor/doctorMockData';
 import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescriptionModal';
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
@@ -196,7 +196,24 @@ export default function DoctorPrescriptionsPage() {
         conditions: [],
       });
     } else {
-      setSelectedPatientForDrawer(INITIAL_PATIENTS[0] ?? null);
+      const rx = prescriptions.find((p) => p.patientId === patientId);
+      setSelectedPatientForDrawer({
+        id: patientId,
+        name: rx?.patientName || 'Patient',
+        pid: rx?.patientPid || patientId.slice(0, 8),
+        age: 30,
+        gender: 'Female',
+        phone: '—',
+        email: '—',
+        address: 'Addis Ababa, Ethiopia',
+        department: 'General Medicine',
+        lastVisit: 'Recent',
+        lastVisitReason: 'Prescription Requisition',
+        status: 'Active',
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(rx?.patientName || patientId)}`,
+        totalVisits: 1,
+        conditions: [],
+      });
     }
   };
 

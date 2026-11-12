@@ -8,31 +8,81 @@ import {
   Printer,
   FileText,
   UserCheck,
-  MoreVertical,
   Stethoscope,
   Database,
   ArrowRight,
   RefreshCw,
   Loader2,
+  ArrowRightLeft,
+  XCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import ReceptionistBanner from '../../components/receptionist/ReceptionistBanner';
 import ReceptionistPageShell from '../../components/receptionist/ReceptionistPageShell';
 import CheckInModal from '../../components/receptionist/CheckInModal';
-import {
-  QUEUE_KPIS,
-  QUEUE_PATIENTS_LIST,
-  QueuePatient,
-  QUEUE_SUMMARY_DONUT,
-} from '../../components/receptionist/receptionistMockData';
+import TransferQueueModal, { QueueTransferTarget } from '../../components/receptionist/TransferQueueModal';
+import QueueTicketModal, { TicketPrintData } from '../../components/receptionist/QueueTicketModal';
 import { useSync } from '../../context/SyncContext';
 import { useAuth } from '../../auth/AuthContext';
-import { fetchQueue, updateQueueEntry } from '../../api';
+import { fetchQueue, updateQueueEntry, fetchDoctors, fetchDepartments } from '../../api';
 import { ReceptionistTab } from '../../components/receptionist/ReceptionistSidebar';
-import type { QueueEntryDTO } from '@mcms/contracts';
+import type { QueueEntryDTO, DoctorDTO, ClinicDepartmentDTO } from '@mcms/contracts';
 
 interface QueuePageProps {
   onNavigateTab: (tab: ReceptionistTab) => void;
+}
+
+export interface DisplayQueuePatient {
+  id: string;
+  queueNo: string;
+  patientName: string;
+  pid: string;
+  age: string;
+  gender: string;
+  visitType: string;
+  department: string;
+  departmentId?: string | null | undefined;
+  doctor: string;
+  assignedDoctorId?: string | null | undefined;
+  roomId?: string | null | undefined;
+  waitingTime: string;
+  checkInTime: string;
+  status: 'Waiting' | 'In Consultation' | 'Completed';
+  rawStatus: string;
+  priority: string;
+}
+
+function formatTime(isoString?: string | null): string {
+  if (!isoString) return '08:00 AM';
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '08:00 AM';
+  }
+}
+
+function getWaitingTime(isoString?: string | null): string {
+  if (!isoString) return '5 mins';
+  try {
+    const d = new Date(isoString);
+    const diffMs = Math.max(0, Date.now() - d.getTime());
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins} mins`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs}h ${mins % 60}m`;
+  } catch {
+    return '10 mins';
+  }
+}
+
+function normalizeStatus(status?: string | null): 'Waiting' | 'In Consultation' | 'Completed' {
+  const upper = (status || '').toUpperCase();
+  if (upper === 'COMPLETED' || upper === 'DONE') return 'Completed';
+  if (upper === 'IN_CONSULTATION' || upper === 'CALLED' || upper === 'IN_PROGRESS') return 'In Consultation';
+  return 'Waiting';
 }
 
 export function QueuePage({ onNavigateTab }: QueuePageProps) {
@@ -41,79 +91,89 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
 
   const [filterTab, setFilterTab] = useState<'All' | 'Waiting' | 'In Consultation' | 'Completed'>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [patients, setPatients] = useState<QueuePatient[]>(QUEUE_PATIENTS_LIST);
-  const [rawQueueEntries, setRawQueueEntries] = useState<QueueEntryDTO[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [checkInModalOpen, setCheckInModalOpen] = useState(false);
-  const [calledQueueNo, setCalledQueueNo] = useState<string | null>(null);
+  const [transferTarget, setTransferTarget] = useState<QueueTransferTarget | null>(null);
+  const [ticketPrintData, setTicketPrintData] = useState<TicketPrintData | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
+  const [rawQueue, setRawQueue] = useState<QueueEntryDTO[]>([]);
+  const [doctors, setDoctors] = useState<DoctorDTO[]>([]);
+  const [departments, setDepartments] = useState<ClinicDepartmentDTO[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+
+  const showFeedback = (msg: string) => {
+    setActionFeedback(msg);
+    setTimeout(() => setActionFeedback(null), 3000);
+  };
 
   const loadQueue = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await fetchQueue(accessToken);
-      if (data && data.length > 0) {
-        setRawQueueEntries(data);
-        const mapped: QueuePatient[] = data.map((dto) => {
-          let status: 'Waiting' | 'In Consultation' | 'Completed' = 'Waiting';
-          const s = (dto.status || '').toUpperCase();
-          if (s === 'IN_PROGRESS' || s === 'IN_CONSULTATION' || s === 'CALLED') {
-            status = 'In Consultation';
-          } else if (s === 'COMPLETED') {
-            status = 'Completed';
-          }
-
-          let waitingTime = '5 min';
-          if (dto.checkInTime) {
-            const mins = Math.max(0, Math.floor((Date.now() - new Date(dto.checkInTime).getTime()) / 60000));
-            waitingTime = mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
-          }
-
-          return {
-            queueNo: dto.ticketNumber,
-            patientName: dto.patientName,
-            pid: dto.patientPid,
-            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(dto.patientName)}`,
-            age: 30,
-            gender: 'F',
-            doctor: (dto as any).assignedDoctorName || (dto.assignedDoctorId ? 'Assigned Doctor' : 'Dr. Tadesse'),
-            department: (dto as any).departmentName || (dto.departmentId ? 'OPD Department' : 'General OPD'),
-            checkInTime: dto.checkInTime
-              ? new Date(dto.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : 'Today',
-            waitingTime,
-            status,
-            visitType: dto.priority || 'Standard',
-          };
-        });
-        setPatients(mapped);
+      const [queueData, docsData, deptsData] = await Promise.all([
+        fetchQueue(accessToken),
+        fetchDoctors(accessToken),
+        fetchDepartments(accessToken),
+      ]);
+      setRawQueue(queueData || []);
+      setDoctors(docsData || []);
+      setDepartments(deptsData || []);
+      if (queueData && queueData.length > 0 && !selectedPatientId) {
+        setSelectedPatientId(queueData[0]?.id ?? null);
       }
     } catch (err) {
-      console.warn('Failed to load live queue, falling back to mock:', err);
+      console.warn('Failed to load live queue:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, selectedPatientId]);
 
   useEffect(() => {
     void loadQueue();
   }, [loadQueue]);
 
-  const filtered = useMemo(() => {
-    return patients.filter((p) => {
-      const matchesFilter = filterTab === 'All' || p.status === filterTab;
-      const matchesSearch =
-        p.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.queueNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.pid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.doctor.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesFilter && matchesSearch;
-    });
-  }, [patients, filterTab, searchQuery]);
+  // Build mapped queue entries
+  const patients: DisplayQueuePatient[] = useMemo(() => {
+    const docMap = new Map(doctors.map((d) => [d.id, d.displayName]));
+    const deptMap = new Map(departments.map((d) => [d.id, d.name]));
 
-  // Dynamic breakdown
+    return rawQueue.map((item) => {
+      const doctorName = item.assignedDoctorId ? docMap.get(item.assignedDoctorId) ?? 'Assigned Doctor' : 'General Duty';
+      const departmentName = item.departmentId ? deptMap.get(item.departmentId) ?? 'General' : 'General';
+      const status = normalizeStatus(item.status);
+
+      return {
+        id: item.id,
+        queueNo: item.ticketNumber,
+        patientName: item.patientName,
+        pid: item.patientPid,
+        age: '32',
+        gender: 'Adult',
+        visitType: item.priority === 'EMERGENCY' || item.priority === 'HIGH' ? 'Emergency' : item.priority === 'URGENT' ? 'Urgent' : 'Walk-in',
+        department: departmentName,
+        departmentId: item.departmentId,
+        doctor: doctorName,
+        assignedDoctorId: item.assignedDoctorId,
+        roomId: item.roomId,
+        waitingTime: getWaitingTime(item.checkInTime),
+        checkInTime: formatTime(item.checkInTime),
+        status,
+        rawStatus: item.status,
+        priority: item.priority || 'NORMAL',
+      };
+    });
+  }, [rawQueue, doctors, departments]);
+
+  const selectedPatient = useMemo(() => {
+    return patients.find((p) => p.id === selectedPatientId) ?? patients[0] ?? null;
+  }, [patients, selectedPatientId]);
+
+  // Tab counts
   const waitingCount = patients.filter((p) => p.status === 'Waiting').length;
   const inConsultCount = patients.filter((p) => p.status === 'In Consultation').length;
   const completedCount = patients.filter((p) => p.status === 'Completed').length;
+  const totalCount = patients.length;
 
   const donutData = useMemo(() => [
     { name: 'Waiting', value: waitingCount, color: '#f59e0b' },
@@ -121,38 +181,76 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
     { name: 'Completed', value: completedCount, color: '#10b981' },
   ], [waitingCount, inConsultCount, completedCount]);
 
-  const handlePatientCheckedIn = (_newEntry: any) => {
-    void loadQueue();
+  const filtered = useMemo(() => {
+    return patients.filter((p) => {
+      const matchesFilter = filterTab === 'All' || p.status === filterTab;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        p.patientName.toLowerCase().includes(q) ||
+        p.queueNo.toLowerCase().includes(q) ||
+        p.pid.toLowerCase().includes(q) ||
+        p.doctor.toLowerCase().includes(q);
+      return matchesFilter && matchesSearch;
+    });
+  }, [patients, filterTab, searchQuery]);
+
+  // Actions
+  const handleCallPatient = async (id: string) => {
+    setUpdatingId(id);
+    try {
+      await updateQueueEntry(id, { status: 'IN_CONSULTATION' }, accessToken);
+      await enqueueOperation('queue_entry', id, 'UPDATE', { status: 'IN_CONSULTATION' });
+      showFeedback('Patient marked as In Consultation');
+      await loadQueue();
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to call patient.');
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
-  const handleCallPatient = async (queueNo: string) => {
-    setCalledQueueNo(queueNo);
-    const target = rawQueueEntries.find((r) => r.ticketNumber === queueNo);
-    if (target && target.id) {
-      try {
-        await updateQueueEntry(target.id, { status: 'IN_PROGRESS' }, accessToken);
-      } catch (err) {
-        console.warn('Failed to update live queue entry status:', err);
-      }
+  const handleCompletePatient = async (id: string) => {
+    setUpdatingId(id);
+    try {
+      await updateQueueEntry(id, { status: 'COMPLETED' }, accessToken);
+      await enqueueOperation('queue_entry', id, 'UPDATE', { status: 'COMPLETED' });
+      showFeedback('Visit marked as Completed');
+      await loadQueue();
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to complete visit.');
+    } finally {
+      setUpdatingId(null);
     }
-    setPatients((prev) =>
-      prev.map((p) => (p.queueNo === queueNo ? { ...p, status: 'In Consultation' as const } : p)),
-    );
-    setTimeout(() => setCalledQueueNo(null), 3000);
   };
 
-  const handleCompletePatient = async (queueNo: string) => {
-    const target = rawQueueEntries.find((r) => r.ticketNumber === queueNo);
-    if (target && target.id) {
-      try {
-        await updateQueueEntry(target.id, { status: 'COMPLETED' }, accessToken);
-      } catch (err) {
-        console.warn('Failed to complete queue entry in API:', err);
-      }
+  const handleCancelTicket = async (id: string, patientName: string) => {
+    if (!window.confirm(`Are you sure you want to cancel the queue ticket for ${patientName}?`)) return;
+    setUpdatingId(id);
+    try {
+      await updateQueueEntry(id, { status: 'CANCELLED' }, accessToken);
+      await enqueueOperation('queue_entry', id, 'UPDATE', { status: 'CANCELLED' });
+      showFeedback('Ticket cancelled successfully');
+      await loadQueue();
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to cancel ticket.');
+    } finally {
+      setUpdatingId(null);
     }
-    setPatients((prev) =>
-      prev.map((p) => (p.queueNo === queueNo ? { ...p, status: 'Completed' as const } : p)),
-    );
+  };
+
+  const handleUpdatePriority = async (id: string, newPriority: string) => {
+    setUpdatingId(id);
+    try {
+      await updateQueueEntry(id, { priority: newPriority }, accessToken);
+      await enqueueOperation('queue_entry', id, 'UPDATE', { priority: newPriority });
+      showFeedback(`Priority updated to ${newPriority}`);
+      await loadQueue();
+    } catch (err) {
+      showFeedback(err instanceof Error ? err.message : 'Failed to update priority.');
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   return (
@@ -161,7 +259,7 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
         banner={
           <ReceptionistBanner
             title="Live Patient Queue Management"
-            subtitle="Monitor waiting times, doctor assignments, and patient flow with offline SQLite queue tokens."
+            subtitle="Monitor waiting times, doctor assignments, transfers and patient flow with offline SQLite queue tokens."
             icon={Clock}
             actionElement={
               <div className="flex items-center gap-2">
@@ -192,7 +290,7 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
             {/* Filter Tabs */}
             <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
               {[
-                { key: 'All', label: 'All', count: patients.length },
+                { key: 'All', label: 'All', count: totalCount },
                 { key: 'Waiting', label: 'Waiting', count: waitingCount },
                 { key: 'In Consultation', label: 'In Consultation', count: inConsultCount },
                 { key: 'Completed', label: 'Completed', count: completedCount },
@@ -253,7 +351,7 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
                   <span className="text-lg font-black text-slate-900 leading-none">
-                    {patients.length}
+                    {totalCount}
                   </span>
                   <span className="text-[10px] font-semibold text-slate-400 mt-0.5">Total</span>
                 </div>
@@ -271,16 +369,88 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
               </div>
             </div>
 
+            {/* Selected Patient Dossier */}
+            {selectedPatient && (
+              <div className="bg-white rounded-xl sm:rounded-2xl p-4 border border-slate-200/80 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Selected Ticket</div>
+                  <span className="text-xs font-mono font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                    {selectedPatient.queueNo}
+                  </span>
+                </div>
+                <div className="text-sm font-black text-slate-900">{selectedPatient.patientName}</div>
+                <div className="text-xs text-slate-500 font-mono">PID: {selectedPatient.pid}</div>
+
+                <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Department:</span>
+                    <span className="font-bold text-slate-800">{selectedPatient.department}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Doctor:</span>
+                    <span className="font-bold text-slate-800">{selectedPatient.doctor}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Check-in:</span>
+                    <span className="font-bold text-slate-800">{selectedPatient.checkInTime}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Waiting Time:</span>
+                    <span className="font-bold text-amber-600">{selectedPatient.waitingTime}</span>
+                  </div>
+                </div>
+
+                {/* Quick actions for selected patient */}
+                <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTicketPrintData({
+                        ticketNumber: selectedPatient.queueNo,
+                        patientName: selectedPatient.patientName,
+                        patientPid: selectedPatient.pid,
+                        departmentName: selectedPatient.department,
+                        doctorName: selectedPatient.doctor,
+                        checkInTime: selectedPatient.checkInTime,
+                        priority: selectedPatient.priority,
+                      });
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Print Queue Ticket</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTransferTarget({
+                        id: selectedPatient.id,
+                        ticketNumber: selectedPatient.queueNo,
+                        patientName: selectedPatient.patientName,
+                        patientPid: selectedPatient.pid,
+                        departmentId: selectedPatient.departmentId,
+                        assignedDoctorId: selectedPatient.assignedDoctorId,
+                        roomId: selectedPatient.roomId,
+                        priority: selectedPatient.priority,
+                      });
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    <span>Transfer Patient</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Calling Alert Banner */}
-            {calledQueueNo && (
-              <div className="p-3.5 rounded-xl bg-cyan-600 text-white shadow-md animate-in fade-in space-y-1">
-                <div className="text-xs font-bold uppercase tracking-wider text-cyan-200">
-                  Calling Patient
+            {actionFeedback && (
+              <div className="p-3.5 rounded-xl bg-emerald-600 text-white shadow-md animate-in fade-in space-y-1">
+                <div className="text-xs font-bold uppercase tracking-wider text-emerald-200">
+                  Notification
                 </div>
-                <div className="text-lg font-black font-mono">{calledQueueNo}</div>
-                <div className="text-[11px] text-cyan-100">
-                  Notification broadcasted to waiting room display.
-                </div>
+                <div className="text-xs font-bold">{actionFeedback}</div>
               </div>
             )}
           </div>
@@ -303,70 +473,137 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((item) => (
-                  <tr key={item.queueNo} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-2.5">
-                      <span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 font-black font-mono text-xs border border-blue-200/60">
-                        {item.queueNo}
-                      </span>
-                    </td>
-                    <td className="py-2.5">
-                      <div className="font-bold text-slate-900">{item.patientName}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">{item.pid}</div>
-                    </td>
-                    <td className="py-2.5">
-                      <div className="font-medium text-slate-800">{item.doctor}</div>
-                      <div className="text-[10px] text-slate-400">{item.department}</div>
-                    </td>
-                    <td className="py-2.5 font-mono text-slate-600">{item.checkInTime}</td>
-                    <td className="py-2.5 font-bold text-amber-600">{item.waitingTime}</td>
-                    <td className="py-2.5">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                        {item.visitType}
-                      </span>
-                    </td>
-                    <td className="py-2.5">
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          item.status === 'In Consultation'
-                            ? 'bg-blue-100 text-blue-700'
-                            : item.status === 'Waiting'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-emerald-100 text-emerald-700'
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {item.status === 'Waiting' && (
-                          <button
-                            onClick={() => handleCallPatient(item.queueNo)}
-                            type="button"
-                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 font-bold text-[11px] transition-colors cursor-pointer"
-                          >
-                            Call
-                          </button>
-                        )}
-                        {item.status === 'In Consultation' && (
-                          <button
-                            onClick={() => handleCompletePatient(item.queueNo)}
-                            type="button"
-                            className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-bold text-[11px] transition-colors cursor-pointer"
-                          >
-                            Done
-                          </button>
-                        )}
-                        {item.status === 'Completed' && (
-                          <span className="text-[11px] font-bold text-emerald-600 px-2">
-                            Finished
-                          </span>
-                        )}
+                {isLoading && patients.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                        <span>Loading live queue...</span>
                       </div>
                     </td>
                   </tr>
-                ))}
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                      No patients in queue matching your filter.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((item) => {
+                    const isBusy = updatingId === item.id;
+                    const isSelected = selectedPatient?.id === item.id;
+
+                    return (
+                      <tr
+                        key={item.id}
+                        onClick={() => setSelectedPatientId(item.id)}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected ? 'bg-blue-50/70 font-medium' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <td className="py-2.5">
+                          <span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 font-black font-mono text-xs border border-blue-200/60">
+                            {item.queueNo}
+                          </span>
+                        </td>
+                        <td className="py-2.5">
+                          <div className="font-bold text-slate-900">{item.patientName}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{item.pid}</div>
+                        </td>
+                        <td className="py-2.5">
+                          <div className="font-medium text-slate-800">{item.doctor}</div>
+                          <div className="text-[10px] text-slate-400">{item.department}</div>
+                        </td>
+                        <td className="py-2.5 font-mono text-slate-600">{item.checkInTime}</td>
+                        <td className="py-2.5 font-bold text-amber-600">{item.waitingTime}</td>
+                        <td className="py-2.5">
+                          <select
+                            value={item.priority}
+                            disabled={isBusy}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => void handleUpdatePriority(item.id, e.target.value)}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border cursor-pointer focus:outline-hidden ${
+                              item.priority === 'EMERGENCY'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : item.priority === 'URGENT'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-slate-50 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            <option value="NORMAL">Normal</option>
+                            <option value="URGENT">Urgent</option>
+                            <option value="EMERGENCY">Emergency</option>
+                          </select>
+                        </td>
+                        <td className="py-2.5">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              item.status === 'In Consultation'
+                                ? 'bg-blue-100 text-blue-700'
+                                : item.status === 'Waiting'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-emerald-100 text-emerald-700'
+                            }`}
+                          >
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            {item.status === 'Waiting' && (
+                              <button
+                                onClick={() => void handleCallPatient(item.id)}
+                                disabled={isBusy}
+                                type="button"
+                                className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 font-bold text-[11px] transition-colors cursor-pointer disabled:opacity-50"
+                              >
+                                {isBusy ? 'Calling...' : 'Call'}
+                              </button>
+                            )}
+                            {item.status === 'In Consultation' && (
+                              <button
+                                onClick={() => void handleCompletePatient(item.id)}
+                                disabled={isBusy}
+                                type="button"
+                                className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-bold text-[11px] transition-colors cursor-pointer disabled:opacity-50"
+                              >
+                                {isBusy ? 'Saving...' : 'Done'}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTransferTarget({
+                                  id: item.id,
+                                  ticketNumber: item.queueNo,
+                                  patientName: item.patientName,
+                                  patientPid: item.pid,
+                                  departmentId: item.departmentId,
+                                  assignedDoctorId: item.assignedDoctorId,
+                                  roomId: item.roomId,
+                                  priority: item.priority,
+                                })
+                              }
+                              className="p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                              title="Transfer patient to another doctor/dept"
+                            >
+                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleCancelTicket(item.id, item.patientName)}
+                              disabled={isBusy}
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              title="Cancel ticket"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -378,7 +615,32 @@ export function QueuePage({ onNavigateTab }: QueuePageProps) {
         <CheckInModal
           isOpen={checkInModalOpen}
           onClose={() => setCheckInModalOpen(false)}
-          onPatientCheckedIn={handlePatientCheckedIn}
+          onCheckInComplete={() => {
+            void loadQueue();
+            setCheckInModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* Transfer Queue Modal */}
+      {transferTarget && (
+        <TransferQueueModal
+          isOpen={!!transferTarget}
+          target={transferTarget}
+          onClose={() => setTransferTarget(null)}
+          onSuccess={() => {
+            void loadQueue();
+            setTransferTarget(null);
+          }}
+        />
+      )}
+
+      {/* Queue Ticket Print Modal */}
+      {ticketPrintData && (
+        <QueueTicketModal
+          isOpen={!!ticketPrintData}
+          ticket={ticketPrintData}
+          onClose={() => setTicketPrintData(null)}
         />
       )}
     </>

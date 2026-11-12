@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -36,7 +37,7 @@ class _ReceptionistPatientsScreenState
           p.pid.toLowerCase().contains(q) ||
           p.phone.toLowerCase().contains(q);
       final matchStatus =
-          _selectedStatus == 'All' || p.status == _selectedStatus;
+          _selectedStatus == 'All' || p.status.toLowerCase() == _selectedStatus.toLowerCase();
       return matchSearch && matchStatus;
     }).toList();
 
@@ -91,8 +92,7 @@ class _ReceptionistPatientsScreenState
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: GestureDetector(
-                      onTap: () =>
-                          setState(() => _selectedStatus = s),
+                      onTap: () => setState(() => _selectedStatus = s),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         padding:
@@ -145,7 +145,7 @@ class _ReceptionistPatientsScreenState
                     ? _EmptyPatientsState()
                     : ListView.builder(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 80),
                         itemCount: filtered.length,
                         itemBuilder: (_, i) => _PatientCard(
                           patient: filtered[i],
@@ -195,7 +195,7 @@ class _ReceptionistPatientsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Patients',
+                  'Patient Directory',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -203,7 +203,7 @@ class _ReceptionistPatientsScreenState
                   ),
                 ),
                 Text(
-                  '$total registered',
+                  '$total registered patients',
                   style:
                       const TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
@@ -244,156 +244,109 @@ class _PatientCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = patient.status == 'Active'
-        ? AppTheme.success
-        : patient.status == 'Inactive'
-            ? AppTheme.textMuted
-            : AppTheme.warning;
-    final statusBg = patient.status == 'Active'
-        ? AppTheme.successLight
-        : patient.status == 'Inactive'
-            ? AppTheme.surfaceMuted
-            : AppTheme.warningLight;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Avatar
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppTheme.cyan.withValues(alpha: 0.8),
-                    AppTheme.primary,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Center(
-                child: Text(
-                  patient.initials,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF06B6D4), Color(0xFF1E6BFF)],
                   ),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          patient.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                            color: AppTheme.textPrimary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: statusBg,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          patient.status,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: statusColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${patient.pid} · ${patient.age}y · ${patient.gender}',
+                child: Center(
+                  child: Text(
+                    patient.initials,
                     style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textMuted,
-                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.phone_outlined,
-                          size: 12, color: AppTheme.textMuted),
-                      const SizedBox(width: 4),
-                      Text(
-                        patient.phone,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (patient.conditions.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: patient.conditions
-                          .take(2)
-                          .map(
-                            (c) => Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppTheme.cyanLight,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                c,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: AppTheme.cyan,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            patient.name,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textPrimary,
                             ),
-                          )
-                          .toList(),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: patient.status.toLowerCase() == 'active'
+                                ? AppTheme.successLight
+                                : AppTheme.surfaceMuted,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            patient.status,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: patient.status.toLowerCase() == 'active'
+                                  ? AppTheme.success
+                                  : AppTheme.textMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${patient.pid} · ${patient.age} yrs · ${patient.gender}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.phone_outlined,
+                            size: 12, color: AppTheme.textMuted),
+                        const SizedBox(width: 4),
+                        Text(
+                          patient.phone,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                ],
+                ),
               ),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                color: AppTheme.textMuted, size: 20),
-          ],
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppTheme.textMuted, size: 20),
+            ],
+          ),
         ),
       ),
     );
@@ -416,7 +369,8 @@ class _EmptyPatientsState extends StatelessWidget {
               color: AppTheme.surfaceMuted,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Icon(Icons.people_outline, size: 32, color: AppTheme.textMuted),
+            child: const Icon(Icons.people_outline,
+                size: 32, color: AppTheme.textMuted),
           ),
           const SizedBox(height: 16),
           const Text(
@@ -427,6 +381,11 @@ class _EmptyPatientsState extends StatelessWidget {
               color: AppTheme.textSecondary,
             ),
           ),
+          const SizedBox(height: 6),
+          const Text(
+            'Try registering a new patient or adjust search filter',
+            style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
+          ),
         ],
       ),
     );
@@ -435,14 +394,14 @@ class _EmptyPatientsState extends StatelessWidget {
 
 // ─── Patient Detail Sheet ─────────────────────────────────────────────────────
 
-class _PatientDetailSheet extends StatelessWidget {
+class _PatientDetailSheet extends ConsumerWidget {
   final RegistrationPatient patient;
   const _PatientDetailSheet({required this.patient});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return DraggableScrollableSheet(
-      initialChildSize: 0.7,
+      initialChildSize: 0.72,
       maxChildSize: 0.95,
       minChildSize: 0.5,
       builder: (_, controller) => Container(
@@ -546,6 +505,8 @@ class _PatientDetailSheet extends StatelessWidget {
                         label: 'Email', value: patient.email),
                     _InfoRow(icon: Icons.location_on_outlined,
                         label: 'Address', value: patient.address),
+                    _InfoRow(icon: Icons.calendar_today_outlined,
+                        label: 'Registered', value: patient.registrationDate),
                   ]),
                   const SizedBox(height: 16),
                   _Section(title: 'Emergency Contact', children: [
@@ -554,65 +515,18 @@ class _PatientDetailSheet extends StatelessWidget {
                     _InfoRow(icon: Icons.phone_outlined,
                         label: 'Phone', value: patient.emergencyPhone),
                   ]),
-                  const SizedBox(height: 16),
-                  if (patient.conditions.isNotEmpty) ...[
-                    _Section(title: 'Medical Conditions', children: [
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: patient.conditions
-                            .map((c) => Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.dangerLight,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    c,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppTheme.danger,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ))
-                            .toList(),
-                      ),
-                    ]),
-                    const SizedBox(height: 16),
-                  ],
+                  const SizedBox(height: 24),
                   Row(
                     children: [
                       Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.calendar_month_rounded,
-                              size: 16),
-                          label: const Text('Book Appt.'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppTheme.primary,
-                            side:
-                                const BorderSide(color: AppTheme.primary),
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 13),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.how_to_reg_rounded,
-                              size: 16),
-                          label: const Text('Check In'),
+                          onPressed: () => _quickCheckIn(context, ref),
+                          icon: const Icon(Icons.how_to_reg_rounded, size: 18),
+                          label: const Text('Check In to Queue'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.primary,
                             foregroundColor: Colors.white,
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 13),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12)),
                           ),
@@ -628,6 +542,80 @@ class _PatientDetailSheet extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _quickCheckIn(BuildContext context, WidgetRef ref) async {
+    Navigator.pop(context);
+    final entry = await ReceptionistRepository.addToQueue(ref, {
+      'patientId': patient.id,
+      'priority': 'NORMAL',
+      'reason': 'Consultation',
+    });
+
+    if (context.mounted) {
+      if (entry != null) {
+        unawaited(showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: AppTheme.success, size: 28),
+                SizedBox(width: 10),
+                Text('Checked In!'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${patient.name} (${patient.pid})'),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryLight,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'QUEUE TICKET',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.primary),
+                      ),
+                      Text(
+                        '#${entry.queueNumber}',
+                        style: const TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                            color: AppTheme.primary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK',
+                      style: TextStyle(fontWeight: FontWeight.w700))),
+            ],
+          ),
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to check in patient. Check network.'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -713,8 +701,14 @@ class _RegisterPatientSheetState extends ConsumerState<_RegisterPatientSheet> {
   final _lastNameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  final _emergencyNameCtrl = TextEditingController();
+  final _emergencyPhoneCtrl = TextEditingController();
+
   String _gender = 'Male';
   String _bloodType = 'O+';
+  DateTime _dob = DateTime.now().subtract(const Duration(days: 365 * 28));
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -722,11 +716,27 @@ class _RegisterPatientSheetState extends ConsumerState<_RegisterPatientSheet> {
     _lastNameCtrl.dispose();
     _phoneCtrl.dispose();
     _emailCtrl.dispose();
+    _addressCtrl.dispose();
+    _emergencyNameCtrl.dispose();
+    _emergencyPhoneCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final existingPatients = ref.watch(receptionistPatientsProvider);
+
+    // Duplicate detection check
+    final phoneInput = _phoneCtrl.text.trim();
+    final emailInput = _emailCtrl.text.trim();
+    final duplicateMatch = (phoneInput.isNotEmpty || emailInput.isNotEmpty)
+        ? existingPatients.where((p) =>
+            (phoneInput.isNotEmpty && p.phone.isNotEmpty && p.phone == phoneInput) ||
+            (emailInput.isNotEmpty && p.email.isNotEmpty && p.email.toLowerCase() == emailInput.toLowerCase())).firstOrNull
+        : null;
+
+    final age = (DateTime.now().difference(_dob).inDays / 365.25).floor();
+
     return Padding(
       padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -736,7 +746,9 @@ class _RegisterPatientSheetState extends ConsumerState<_RegisterPatientSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: DraggableScrollableSheet(
-          initialChildSize: 1,
+          initialChildSize: 0.9,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
           expand: false,
           builder: (_, controller) => Column(
             children: [
@@ -770,66 +782,148 @@ class _RegisterPatientSheetState extends ConsumerState<_RegisterPatientSheet> {
                   controller: controller,
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   children: [
-                    const _FieldLabel('First Name'),
-                    _SimpleField(controller: _firstNameCtrl, hint: 'First name'),
-                    const SizedBox(height: 14),
-                    const _FieldLabel('Last Name'),
-                    _SimpleField(controller: _lastNameCtrl, hint: 'Last name'),
-                    const SizedBox(height: 14),
-                    const _FieldLabel('Phone Number'),
-                    _SimpleField(
-                        controller: _phoneCtrl,
-                        hint: '+251 9XX XXX XXX',
-                        keyboardType: TextInputType.phone),
-                    const SizedBox(height: 14),
-                    const _FieldLabel('Email Address'),
-                    _SimpleField(
-                        controller: _emailCtrl,
-                        hint: 'patient@email.com',
-                        keyboardType: TextInputType.emailAddress),
-                    const SizedBox(height: 14),
-                    const _FieldLabel('Gender'),
-                    Row(
-                      children: ['Male', 'Female', 'Other'].map((g) {
-                        final isSelected = g == _gender;
-                        return Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: GestureDetector(
-                              onTap: () => setState(() => _gender = g),
-                              child: Container(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? AppTheme.primaryLight
-                                      : AppTheme.surfaceMuted,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: isSelected
-                                      ? Border.all(
-                                          color: AppTheme.primary
-                                              .withValues(alpha: 0.4))
-                                      : null,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    g,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: isSelected
-                                          ? AppTheme.primary
-                                          : AppTheme.textSecondary,
-                                    ),
-                                  ),
+                    // Duplicate Warning Banner
+                    if (duplicateMatch != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.warningLight,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: AppTheme.warning.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warning_amber_rounded,
+                                color: AppTheme.warning),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Possible duplicate found: ${duplicateMatch.name} (${duplicateMatch.pid})',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.textPrimary,
                                 ),
                               ),
                             ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+
+                    const _FieldLabel('First Name *'),
+                    _SimpleField(controller: _firstNameCtrl, hint: 'First name'),
+                    const SizedBox(height: 14),
+
+                    const _FieldLabel('Last Name *'),
+                    _SimpleField(controller: _lastNameCtrl, hint: 'Last name'),
+                    const SizedBox(height: 14),
+
+                    // Date of Birth & Gender
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const _FieldLabel('Date of Birth'),
+                              GestureDetector(
+                                onTap: () async {
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    initialDate: _dob,
+                                    firstDate: DateTime(1920),
+                                    lastDate: DateTime.now(),
+                                  );
+                                  if (picked != null) {
+                                    setState(() => _dob = picked);
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surfaceMuted,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.calendar_today_rounded,
+                                          size: 14, color: AppTheme.primary),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        '${_dob.year}-${_dob.month.toString().padLeft(2, '0')}-${_dob.day.toString().padLeft(2, '0')} ($age y)',
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        );
-                      }).toList(),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const _FieldLabel('Gender'),
+                              Container(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 10),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surfaceMuted,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: _gender,
+                                    isExpanded: true,
+                                    items: ['Male', 'Female', 'Other']
+                                        .map((g) => DropdownMenuItem(
+                                            value: g, child: Text(g)))
+                                        .toList(),
+                                    onChanged: (g) =>
+                                        setState(() => _gender = g!),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 14),
+
+                    const _FieldLabel('Phone Number *'),
+                    _SimpleField(
+                      controller: _phoneCtrl,
+                      hint: '+251 9XX XXX XXX',
+                      keyboardType: TextInputType.phone,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 14),
+
+                    const _FieldLabel('Email Address'),
+                    _SimpleField(
+                      controller: _emailCtrl,
+                      hint: 'patient@email.com',
+                      keyboardType: TextInputType.emailAddress,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 14),
+
+                    const _FieldLabel('Address / Residence'),
+                    _SimpleField(
+                      controller: _addressCtrl,
+                      hint: 'Sub-city, House No, Addis Ababa',
+                    ),
+                    const SizedBox(height: 14),
+
                     const _FieldLabel('Blood Type'),
                     Wrap(
                       spacing: 8,
@@ -868,61 +962,45 @@ class _RegisterPatientSheetState extends ConsumerState<_RegisterPatientSheet> {
                         );
                       }).toList(),
                     ),
+                    const SizedBox(height: 16),
+
+                    const _FieldLabel('Emergency Contact Name'),
+                    _SimpleField(
+                      controller: _emergencyNameCtrl,
+                      hint: 'Family member / contact name',
+                    ),
+                    const SizedBox(height: 14),
+
+                    const _FieldLabel('Emergency Contact Phone'),
+                    _SimpleField(
+                      controller: _emergencyPhoneCtrl,
+                      hint: '+251 9XX XXX XXX',
+                      keyboardType: TextInputType.phone,
+                    ),
                     const SizedBox(height: 24),
+
                     ElevatedButton(
-                      onPressed: () async {
-                        final firstName = _firstNameCtrl.text.trim();
-                        final lastName = _lastNameCtrl.text.trim();
-                        if (firstName.isEmpty || lastName.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please enter both first and last name'),
-                            ),
-                          );
-                          return;
-                        }
-
-                        final data = {
-                          'firstName': firstName,
-                          'lastName': lastName,
-                          'phoneNumber': _phoneCtrl.text.trim(),
-                          'email': _emailCtrl.text.trim(),
-                          'gender': _gender.toUpperCase(),
-                          'bloodType': _bloodType,
-                        };
-
-                        Navigator.pop(context);
-                        final success =
-                            await ReceptionistRepository.registerPatient(
-                                ref, data);
-
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(success
-                                  ? 'Patient registered and synced with server'
-                                  : 'Patient registered locally'),
-                              backgroundColor: AppTheme.success,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ),
-                          );
-                        }
-                      },
+                      onPressed: _isSubmitting ? null : _submitRegistration,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primary,
                         foregroundColor: Colors.white,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      child: const Text(
-                        'Register Patient',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 15),
-                      ),
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Text(
+                              'Complete Patient Registration',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 15),
+                            ),
                     ),
                     const SizedBox(height: 24),
                   ],
@@ -933,6 +1011,109 @@ class _RegisterPatientSheetState extends ConsumerState<_RegisterPatientSheet> {
         ),
       ),
     );
+  }
+
+  void _submitRegistration() async {
+    final firstName = _firstNameCtrl.text.trim();
+    final lastName = _lastNameCtrl.text.trim();
+    if (firstName.isEmpty || lastName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter first and last name')),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    final dobStr =
+        '${_dob.year}-${_dob.month.toString().padLeft(2, '0')}-${_dob.day.toString().padLeft(2, '0')}';
+
+    final data = <String, dynamic>{
+      'firstName': firstName,
+      'lastName': lastName,
+      'phoneNumber': _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
+      'email': _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
+      'gender': _gender.toUpperCase(),
+      'bloodType': _bloodType,
+      'dateOfBirth': dobStr,
+      'address': _addressCtrl.text.trim().isNotEmpty ? _addressCtrl.text.trim() : null,
+      'emergencyContactName': _emergencyNameCtrl.text.trim().isNotEmpty
+          ? _emergencyNameCtrl.text.trim()
+          : null,
+      'emergencyContactPhone': _emergencyPhoneCtrl.text.trim().isNotEmpty
+          ? _emergencyPhoneCtrl.text.trim()
+          : null,
+    };
+
+    final newPatient = await ReceptionistRepository.registerPatient(ref, data);
+
+    if (mounted) {
+      setState(() => _isSubmitting = false);
+      Navigator.pop(context);
+
+      if (newPatient != null) {
+        unawaited(showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: AppTheme.success, size: 28),
+                SizedBox(width: 10),
+                Text('Registered!'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  newPatient.name,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryLight,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'ASSIGNED PID',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.primary),
+                      ),
+                      Text(
+                        newPatient.pid,
+                        style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
+                            color: AppTheme.primary),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text('Phone: ${newPatient.phone}'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Done',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ));
+      }
+    }
   }
 }
 
@@ -959,12 +1140,14 @@ class _FieldLabel extends StatelessWidget {
 class _SimpleField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
-  final TextInputType? keyboardType;
+  final TextInputType keyboardType;
+  final void Function(String)? onChanged;
 
   const _SimpleField({
     required this.controller,
     required this.hint,
-    this.keyboardType,
+    this.keyboardType = TextInputType.text,
+    this.onChanged,
   });
 
   @override
@@ -972,6 +1155,7 @@ class _SimpleField extends StatelessWidget {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: AppTheme.textMuted),

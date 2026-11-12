@@ -9,36 +9,25 @@ import {
   Clock,
   AlertTriangle,
   Upload,
-  ChevronLeft,
-  ChevronRight,
-  Filter,
   Calendar,
   Eye,
-  Download,
-  TrendingUp,
-  TrendingDown,
   User,
   Phone,
   Mail,
   MapPin,
   Stethoscope,
-  History,
-  CalendarCheck,
-  BarChart2,
   RefreshCw,
-  Building2,
 } from 'lucide-react';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
 import LabReportModal from '../../../components/doctor/LabReportModal';
-import { INITIAL_PATIENTS, PatientItem } from '../../../components/doctor/doctorMockData';
+import { PatientItem } from '../../../components/doctor/doctorMockData';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 import { useAuth } from '../../../lib/auth/auth-context';
 import { fetchLabOrders } from '../../../lib/api/clinical';
 import { fetchPatients } from '../../../lib/api/patients';
 import type { LabOrderDTO, PatientDTO } from '@mcms/contracts';
 
-/* ─── Types ─────────────────────────────────────────── */
 type LabStatus = 'Completed' | 'Pending' | 'Abnormal';
 type ActiveTab = 'All' | 'Completed' | 'Pending' | 'Abnormal';
 
@@ -46,6 +35,7 @@ interface LabRow {
   id: string;
   patient: string;
   pid: string;
+  patientId: string;
   avatar: string;
   test: string;
   department: string;
@@ -55,90 +45,15 @@ interface LabRow {
   status: LabStatus;
   date: string;
   time: string;
+  rawOrder: LabOrderDTO;
 }
 
-/* ─── Mock Data ──────────────────────────────────────── */
-const ALL_RESULTS: LabRow[] = [
-  {
-    id: 'l1', patient: 'Aster Mulu', pid: 'PID-001024',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&auto=format&fit=crop&q=80',
-    test: 'Complete Blood Count (CBC)', department: 'Hematology',
-    result: 'WBC: 7.8 ×10³/µL\nHgb: 13.2 g/dL', reference: '4.0 - 11.0\n12.0 - 16.0',
-    status: 'Completed', date: 'Oct 18, 2026', time: '09:15 AM',
-  },
-  {
-    id: 'l2', patient: 'Samuel Girma', pid: 'PID-001087',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&auto=format&fit=crop&q=80',
-    test: 'Liver Function Test (LFT)', department: 'Biochemistry',
-    result: 'ALT: 28 U/L\nAST: 22 U/L', reference: '0 - 40\n0 - 40',
-    status: 'Completed', date: 'Oct 18, 2026', time: '08:40 AM',
-  },
-  {
-    id: 'l3', patient: 'Lidya Kebede', pid: 'PID-001062',
-    avatar: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=80&auto=format&fit=crop&q=80',
-    test: 'Urinalysis', department: 'Microbiology',
-    result: 'Normal\n(No abnormality)', reference: 'Normal\nNormal',
-    status: 'Completed', date: 'Oct 17, 2026', time: '03:45 PM',
-  },
-  {
-    id: 'l4', patient: 'Getachew Tadesse', pid: 'PID-001075',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80&auto=format&fit=crop&q=80',
-    test: 'Lipid Profile', department: 'Biochemistry',
-    result: 'Chol: 180 mg/dL\nTrig: 120 mg/dL', reference: '< 200\n< 150',
-    status: 'Completed', date: 'Oct 17, 2026', time: '10:20 AM',
-  },
-  {
-    id: 'l5', patient: 'Betlehem Abebe', pid: 'PID-001098',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=80&auto=format&fit=crop&q=80',
-    test: 'Thyroid Function Test (TFT)', department: 'Endocrinology',
-    result: 'TSH: 2.36 µU/mL\nT4: 1.2 ng/dL', reference: '0.4 - 4.0\n0.8 - 1.8',
-    status: 'Completed', date: 'Oct 16, 2026', time: '04:10 PM',
-  },
-  {
-    id: 'l6', patient: 'Daniel Wondimu', pid: 'PID-001099',
-    avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=80&auto=format&fit=crop&q=80',
-    test: 'Blood Glucose (FBS)', department: 'Biochemistry',
-    result: '98 mg/dL', reference: '70 - 110',
-    status: 'Completed', date: 'Oct 16, 2026', time: '09:20 AM',
-  },
-  {
-    id: 'l7', patient: 'Tigist Alemu', pid: 'PID-001045',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=80&auto=format&fit=crop&q=80',
-    test: 'HIV Rapid Test', department: 'Immunology',
-    result: 'Negative', reference: 'Negative',
-    status: 'Completed', date: 'Oct 15, 2026', time: '02:15 PM',
-  },
-  {
-    id: 'l8', patient: 'Abebe Assefa', pid: 'PID-001087',
-    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=80&auto=format&fit=crop&q=80',
-    test: 'COVID-19 Antigen Test', department: 'Virology',
-    result: 'Negative', reference: 'Negative',
-    status: 'Completed', date: 'Oct 14, 2026', time: '11:40 AM',
-  },
-  {
-    id: 'l9', patient: 'Sefiya Mohamed', pid: 'PID-001131',
-    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=80&auto=format&fit=crop&q=80',
-    test: 'Vitamin D (25-OH)', department: 'Endocrinology',
-    result: '10 ng/mL', reference: '30 - 100',
-    status: 'Abnormal', date: 'Oct 13, 2026', time: '04:05 PM',
-  },
-  {
-    id: 'l10', patient: 'Yonas Gebre', pid: 'PID-001129',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80&auto=format&fit=crop&q=80',
-    test: 'Renal Function Test (RFT)', department: 'Nephrology',
-    result: 'Creatinine: 1.8 mg/dL\nUrea: 42 mg/dL', reference: '0.6 - 1.2\n10 - 50',
-    status: 'Abnormal', date: 'Oct 12, 2026', time: '09:10 AM',
-  },
-];
-
-/* ─── Status helpers ────────────────────────────────── */
 const statusStyle: Record<LabStatus, string> = {
   Completed: 'bg-emerald-50 text-emerald-600 border border-emerald-200',
   Pending:   'bg-amber-50 text-amber-600 border border-amber-200',
   Abnormal:  'bg-rose-50 text-rose-600 border border-rose-200',
 };
 
-/* ─── Page ───────────────────────────────────────────── */
 export default function DoctorLabResultsPage() {
   const { accessToken } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
@@ -152,8 +67,8 @@ export default function DoctorLabResultsPage() {
   const [selectedLabForReport, setSelectedLabForReport] = useState<LabOrderDTO | null>(null);
   const [selectedPatientForDrawer, setSelectedPatientForDrawer] = useState<PatientItem | null>(null);
 
-  const openDrawerForPatient = (pid: string, patientName: string) => {
-    const match = patients.find((p) => p.pid === pid || p.id === pid || p.fullName === patientName);
+  const openDrawerForPatient = (patientId: string, pid: string, patientName: string) => {
+    const match = patients.find((p) => p.id === patientId || p.pid === pid || p.fullName === patientName);
     if (match) {
       const age = match.dateOfBirth
         ? Math.max(0, new Date().getFullYear() - new Date(match.dateOfBirth).getFullYear())
@@ -171,15 +86,27 @@ export default function DoctorLabResultsPage() {
         lastVisit: 'Recent',
         lastVisitReason: 'Laboratory Diagnostics',
         status: 'Active',
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(patientName)}`,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(match.fullName)}`,
         totalVisits: 1,
         conditions: [],
       });
     } else {
       setSelectedPatientForDrawer({
-        ...INITIAL_PATIENTS[0]!,
+        id: patientId,
         name: patientName,
         pid,
+        age: 30,
+        gender: 'Female',
+        phone: '—',
+        email: '—',
+        address: 'Addis Ababa, Ethiopia',
+        department: 'Diagnostic Laboratory',
+        lastVisit: 'Recent',
+        lastVisitReason: 'Laboratory Diagnostics',
+        status: 'Active',
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(patientName)}`,
+        totalVisits: 1,
+        conditions: [],
       });
     }
   };
@@ -202,49 +129,48 @@ export default function DoctorLabResultsPage() {
   }, [accessToken]);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
-  const activeResults: LabRow[] = orders.length > 0
-    ? orders.map((o) => {
-        const hasAbnormal = o.results?.some((r) => r.isAbnormal);
-        const isCompleted = o.status === 'COMPLETED';
-        const status: LabStatus = hasAbnormal ? 'Abnormal' : isCompleted ? 'Completed' : 'Pending';
-        const firstResult = o.results?.[0];
-        const testName = firstResult?.testName || o.samples?.[0]?.sampleType || 'General Lab Order';
-        const department = firstResult?.testCategory || 'General Laboratory';
-        const resultText = o.results?.length
-          ? o.results.map((r) => `${r.testName}: ${r.value} ${r.unit || ''}`.trim()).join('\n')
-          : 'Pending Processing';
-        const refText = o.results?.length
-          ? o.results.map((r) => r.referenceRange || '-').join('\n')
-          : '-';
-        const d = new Date(o.orderedAt);
-        const dateStr = isNaN(d.getTime())
-          ? 'Recent'
-          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        const timeStr = isNaN(d.getTime())
-          ? '10:00 AM'
-          : d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const activeResults: LabRow[] = orders.map((o) => {
+    const hasAbnormal = o.results?.some((r) => r.isAbnormal);
+    const isCompleted = o.status === 'COMPLETED';
+    const status: LabStatus = hasAbnormal ? 'Abnormal' : isCompleted ? 'Completed' : 'Pending';
+    const firstResult = o.results?.[0];
+    const testName = firstResult?.testName || o.samples?.[0]?.sampleType || 'General Lab Order';
+    const department = firstResult?.testCategory || 'General Laboratory';
+    const resultText = o.results?.length
+      ? o.results.map((r) => `${r.testName}: ${r.value} ${r.unit || ''}`.trim()).join('\n')
+      : 'Pending Processing';
+    const refText = o.results?.length
+      ? o.results.map((r) => r.referenceRange || '-').join('\n')
+      : '-';
+    const d = new Date(o.orderedAt);
+    const dateStr = isNaN(d.getTime())
+      ? 'Recent'
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const timeStr = isNaN(d.getTime())
+      ? '10:00 AM'
+      : d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-        return {
-          id: o.id,
-          patient: o.patientName,
-          pid: o.patientPid,
-          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(o.patientName)}`,
-          test: testName,
-          department,
-          ...(o.branchName ? { branchName: o.branchName } : {}),
-          result: resultText,
-          reference: refText,
-          status,
-          date: dateStr,
-          time: timeStr,
-        };
-      })
-    : ALL_RESULTS;
+    return {
+      id: o.id,
+      patient: o.patientName,
+      pid: o.patientPid || o.patientId.slice(0, 8),
+      patientId: o.patientId,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(o.patientName)}`,
+      test: testName,
+      department,
+      ...(o.branchName ? { branchName: o.branchName } : {}),
+      result: resultText,
+      reference: refText,
+      status,
+      date: dateStr,
+      time: timeStr,
+      rawOrder: o,
+    };
+  });
 
-  /* filter */
   const filtered = activeResults.filter((r) => {
     const matchTab =
       activeTab === 'All' ||
@@ -275,7 +201,6 @@ export default function DoctorLabResultsPage() {
 
   const highlightedPatient = patients.length > 0 ? patients[0] : null;
 
-  /* ─── Header ──────────────────────────────────────── */
   const header = (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div className="flex items-center gap-3">
@@ -286,20 +211,19 @@ export default function DoctorLabResultsPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Lab Results</h1>
             <button
-              onClick={loadData}
+              onClick={() => void loadData()}
               disabled={isLoading}
               title="Refresh results"
-              className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors"
+              className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
             </button>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 font-medium">
-            View and manage laboratory test results, upload new results, and track patient progress.
+            View and manage laboratory test orders, review diagnostic results, and track patient status.
           </p>
         </div>
       </div>
-      {/* Date navigator + Upload */}
       <div className="flex items-center gap-2.5 shrink-0">
         <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-2xs text-xs font-semibold text-slate-700">
           <Calendar className="w-3.5 h-3.5 text-blue-500" />
@@ -316,457 +240,311 @@ export default function DoctorLabResultsPage() {
           onClick={() => setModalOpen(true)}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all cursor-pointer"
         >
-          <Upload className="w-3.5 h-3.5" />
-          Upload Lab Results
+          <Plus className="w-3.5 h-3.5" />
+          Order Lab Test
         </button>
       </div>
     </div>
   );
 
-  /* ─── KPI Cards ────────────────────────────────────── */
   const kpis = (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-      {/* Total Tests */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex items-center gap-3.5">
-        <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-          <FlaskConical className="w-5 h-5" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">Total Tests</div>
-          <div className="text-2xl font-black text-slate-900 leading-tight">{counts.All}</div>
-          <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold mt-0.5">
-            <TrendingUp className="w-3 h-3" />
-            <span>Live Sync</span>
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+      {[
+        { label: 'Total Orders',     val: counts.All,       color: 'text-blue-600',    bg: 'bg-blue-50',    border: 'border-blue-100',    icon: FlaskConical },
+        { label: 'Completed Tests',  val: counts.Completed, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100', icon: CheckCircle2 },
+        { label: 'Pending Results',  val: counts.Pending,   color: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-100',   icon: Clock },
+        { label: 'Abnormal Findings',val: counts.Abnormal,  color: 'text-rose-600',    bg: 'bg-rose-50',    border: 'border-rose-100',    icon: AlertTriangle },
+      ].map(({ label, val, color, bg, border, icon: Icon }) => (
+        <div key={label} className={`p-4 rounded-2xl bg-white border ${border} shadow-2xs flex items-center gap-3.5`}>
+          <div className={`w-11 h-11 rounded-xl ${bg} ${color} flex items-center justify-center shrink-0`}>
+            <Icon className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xl font-black text-slate-900 tracking-tight">
+              {isLoading ? '—' : val}
+            </div>
+            <div className="text-xs text-slate-500 font-medium">{label}</div>
           </div>
         </div>
-      </div>
-
-      {/* Completed */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex items-center gap-3.5">
-        <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-          <CheckCircle2 className="w-5 h-5" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">Completed</div>
-          <div className="text-2xl font-black text-slate-900 leading-tight">{counts.Completed}</div>
-          <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold mt-0.5">
-            <TrendingUp className="w-3 h-3" />
-            <span>Verified</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Pending */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex items-center gap-3.5">
-        <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-          <Clock className="w-5 h-5" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">Pending</div>
-          <div className="text-2xl font-black text-slate-900 leading-tight">{counts.Pending}</div>
-          <div className="flex items-center gap-1 text-[10px] text-amber-500 font-bold mt-0.5">
-            <Clock className="w-3 h-3" />
-            <span>In Pipeline</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Abnormal */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex items-center gap-3.5">
-        <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-          <AlertTriangle className="w-5 h-5" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">Abnormal</div>
-          <div className="text-2xl font-black text-slate-900 leading-tight">{counts.Abnormal}</div>
-          <div className="flex items-center gap-1 text-[10px] text-rose-500 font-bold mt-0.5">
-            <AlertTriangle className="w-3 h-3" />
-            <span>Attention</span>
-          </div>
-        </div>
-      </div>
+      ))}
     </div>
   );
 
-  /* ─── Right Panel ─────────────────────────────────── */
   const rightPanel = (
-    <div className="space-y-4">
-      {/* Patient Details */}
+    <>
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <User className="w-4 h-4 text-blue-600" />
-            <h3 className="text-xs font-bold text-slate-800">Patient Details</h3>
+            <h3 className="text-xs font-bold text-slate-800">Highlighted Patient</h3>
           </div>
-          <button className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer">View All</button>
+          {highlightedPatient && (
+            <button
+              onClick={() => openDrawerForPatient(highlightedPatient.id, highlightedPatient.pid, highlightedPatient.fullName)}
+              className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
+            >
+              View Chart
+            </button>
+          )}
         </div>
 
-        <div className="mt-3 flex items-start gap-3">
-          <img
-            src={
-              highlightedPatient
-                ? `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(highlightedPatient.fullName || highlightedPatient.firstName)}`
-                : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
-            }
-            alt={highlightedPatient?.fullName || highlightedPatient?.firstName || 'Aster Mulu'}
-            className="w-14 h-14 rounded-full object-cover ring-2 ring-blue-100 shrink-0"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-sm font-black text-slate-900">
-                {highlightedPatient ? (highlightedPatient.fullName || `${highlightedPatient.firstName} ${highlightedPatient.lastName}`) : 'Aster Mulu'}
-              </span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
-                <span className="w-1 h-1 rounded-full bg-emerald-500" />
-                Active
-              </span>
+        {highlightedPatient ? (
+          <>
+            <div className="mt-3 flex items-start gap-3">
+              <img
+                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(highlightedPatient.fullName)}`}
+                alt={highlightedPatient.fullName}
+                className="w-12 h-12 rounded-full object-cover ring-2 ring-blue-100 shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-sm font-black text-slate-900">{highlightedPatient.fullName}</span>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                    <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                    Active
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                  {highlightedPatient.pid}
+                </p>
+              </div>
             </div>
-            <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
-              {highlightedPatient?.pid || 'PID-001024'}
-            </p>
-          </div>
-        </div>
 
-        <div className="mt-3 space-y-1.5 text-[11px]">
-          <div className="flex items-center gap-2 text-slate-600">
-            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>
-              {highlightedPatient
-                ? `${highlightedPatient.gender || 'Unknown'}`
-                : '28 years / Female'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-slate-600">
-            <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>{highlightedPatient?.phoneNumber || '+251 912 345 678'}</span>
-          </div>
-          <div className="flex items-center gap-2 text-slate-600">
-            <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span className="truncate">{highlightedPatient?.email || 'aster.mulu@email.com'}</span>
-          </div>
-          <div className="flex items-center gap-2 text-slate-600">
-            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>{highlightedPatient?.address || 'Addis Ababa, Ethiopia'}</span>
-          </div>
-        </div>
+            <div className="mt-3 space-y-1.5 text-[11px]">
+              <div className="flex items-center gap-2 text-slate-600">
+                <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>
+                  {highlightedPatient.dateOfBirth
+                    ? `${Math.max(0, new Date().getFullYear() - new Date(highlightedPatient.dateOfBirth).getFullYear())} years`
+                    : 'Age —'} • {highlightedPatient.gender === 'FEMALE' ? 'Female' : 'Male'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600">
+                <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>{highlightedPatient.phoneNumber || '—'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600">
+                <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="truncate">{highlightedPatient.email || '—'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600">
+                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>{highlightedPatient.address || 'Addis Ababa, Ethiopia'}</span>
+              </div>
+            </div>
 
-        {/* Sub-tabs */}
-        <div className="mt-3 grid grid-cols-3 text-center text-[10px] font-bold rounded-xl overflow-hidden border border-slate-200">
-          <button className="py-1.5 bg-blue-600 text-white">Overview</button>
-          <button className="py-1.5 text-slate-600 hover:bg-slate-50 border-x border-slate-200 transition-colors">Medical History</button>
-          <button className="py-1.5 text-slate-600 hover:bg-slate-50 transition-colors">Appointments</button>
-        </div>
-
-        {/* Last Visit / Next Appt */}
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-            <div className="text-[10px] font-bold text-slate-400 mb-0.5">Last Visit</div>
-            <div className="text-[11px] font-black text-slate-800">Oct 18, 2026</div>
-            <div className="text-[10px] text-slate-500">09:15 AM</div>
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setModalOpen(true)}
+                className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Order New Lab for Patient
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="py-6 text-center text-xs text-slate-400">
+            No patient currently loaded.
           </div>
-          <div className="p-2.5 rounded-xl bg-blue-50/50 border border-blue-100">
-            <div className="text-[10px] font-bold text-slate-400 mb-0.5">Next Appointment</div>
-            <div className="text-[11px] font-black text-slate-800">Oct 25, 2026</div>
-            <div className="text-[10px] text-slate-500">09:00 AM • Cardiology</div>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Quick Actions */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
         <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
           <Stethoscope className="w-4 h-4 text-blue-600" />
-          <h3 className="text-xs font-bold text-slate-800">Quick Actions</h3>
+          <h3 className="text-xs font-bold text-slate-800">Quick Diagnostic Actions</h3>
         </div>
         <div className="grid grid-cols-2 gap-2 mt-3">
-          {[
-            { icon: Eye,         label: 'View Full Results',     color: 'text-blue-600 bg-blue-50' },
-            { icon: Download,    label: 'Download Report',        color: 'text-emerald-600 bg-emerald-50' },
-            { icon: Plus,        label: 'Add New Order',          color: 'text-amber-600 bg-amber-50' },
-            { icon: History,     label: 'View Patient History',   color: 'text-purple-600 bg-purple-50' },
-          ].map(({ icon: Icon, label, color }) => (
-            <button
-              key={label}
-              className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all text-center cursor-pointer group"
-            >
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${color}`}>
-                <Icon className="w-4 h-4" />
-              </div>
-              <span className="text-[10px] font-bold text-slate-700 leading-tight">{label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Recent Lab Results */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <BarChart2 className="w-4 h-4 text-blue-600" />
-            <h3 className="text-xs font-bold text-slate-800">Recent Lab Results</h3>
-          </div>
-          <button className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer">View All</button>
-        </div>
-        <div className="mt-2 space-y-2">
-          {[
-            { name: 'CBC',             date: 'Oct 18, 2026', status: 'Completed' as LabStatus },
-            { name: 'LFT',             date: 'Oct 18, 2026', status: 'Completed' as LabStatus },
-            { name: 'Urinalysis',      date: 'Oct 17, 2026', status: 'Completed' as LabStatus },
-            { name: 'Lipid Profile',   date: 'Oct 17, 2026', status: 'Completed' as LabStatus },
-            { name: 'Vitamin D (25-OH)', date: 'Oct 13, 2026', status: 'Abnormal' as LabStatus },
-          ].map(({ name, date, status }) => (
-            <div key={name} className="flex items-center justify-between gap-2 py-1.5 border-b border-slate-50 last:border-0">
-              <div>
-                <div className="text-[11px] font-bold text-slate-800">{name}</div>
-                <div className="text-[10px] text-slate-400">{date} • {status === 'Abnormal' ? 'Abnormal' : 'Completed'}</div>
-              </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${statusStyle[status]}`}>
-                {status}
-              </span>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all text-center cursor-pointer group"
+          >
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-blue-600 bg-blue-50">
+              <Plus className="w-4 h-4" />
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Lab Result Summary */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-          <BarChart2 className="w-4 h-4 text-blue-600" />
-          <h3 className="text-xs font-bold text-slate-800">Lab Result Summary</h3>
-        </div>
-        <div className="mt-3 flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-3.5 h-3.5" />
+            <span className="text-[10px] font-bold text-slate-700 leading-tight">Order Lab Test</span>
+          </button>
+          <button
+            onClick={() => void loadData()}
+            className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30 transition-all text-center cursor-pointer group"
+          >
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-emerald-600 bg-emerald-50">
+              <RefreshCw className="w-4 h-4" />
             </div>
-            <p className="text-[11px] text-slate-700 font-medium">
-              8 abnormal results require follow up.
-            </p>
-          </div>
-          <button className="text-[11px] font-bold text-blue-600 hover:underline shrink-0 cursor-pointer">
-            View Details
+            <span className="text-[10px] font-bold text-slate-700 leading-tight">Sync Lab Feed</span>
           </button>
         </div>
       </div>
-    </div>
+    </>
   );
 
-  /* ─── Render ──────────────────────────────────────── */
   return (
     <>
-      <DoctorPageShell
-        header={header}
-        kpis={kpis}
-        rightPanel={rightPanel}
-        rightPanelWidth="lg:w-[300px] xl:w-[320px] 2xl:w-[340px]"
-      >
-        {/* ── Tab bar ── */}
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-          {(['All', 'Completed', 'Pending', 'Abnormal'] as ActiveTab[]).map((tab) => {
-            const icons: Record<ActiveTab, React.ReactNode> = {
-              All:       <FlaskConical className="w-3.5 h-3.5" />,
-              Completed: <CheckCircle2 className="w-3.5 h-3.5" />,
-              Pending:   <Clock className="w-3.5 h-3.5" />,
-              Abnormal:  <AlertTriangle className="w-3.5 h-3.5" />,
-            };
-            const tabColors: Record<ActiveTab, string> = {
-              All:       'bg-blue-600 text-white shadow-2xs',
-              Completed: 'bg-emerald-600 text-white shadow-2xs',
-              Pending:   'bg-amber-500 text-white shadow-2xs',
-              Abnormal:  'bg-rose-500 text-white shadow-2xs',
-            };
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === tab
-                    ? tabColors[tab]
-                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {icons[tab]}
-                {tab} {tab === 'All' ? `(${counts.All})` : `(${counts[tab]})`}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ── Search + Filters ── */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex-1 min-w-[200px] flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-400 shadow-2xs">
-            <Search className="w-4 h-4 shrink-0" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by patient name, test name, or ID..."
-              className="w-full text-xs text-slate-800 placeholder-slate-400 focus:outline-none bg-transparent"
-            />
-          </div>
-          {['All Departments', 'All Test Types', 'All Statuses'].map((f) => (
-            <select key={f} className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-white border border-slate-200 shadow-2xs focus:outline-none cursor-pointer appearance-none">
-              <option>{f}</option>
-            </select>
-          ))}
-          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-2xs text-xs font-semibold text-slate-600 cursor-pointer">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            Select Date Range
-          </div>
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-2xs text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer">
-            <Filter className="w-3.5 h-3.5" />
-            Filter
-          </button>
-        </div>
-
-        {/* ── Table ── */}
+      <DoctorPageShell header={header} kpis={kpis} rightPanel={rightPanel}>
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+          {/* Top toolbar */}
+          <div className="p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-100">
+            {/* Tabs */}
+            <div className="flex items-center gap-1 bg-slate-100/70 p-1 rounded-xl self-start sm:self-auto overflow-x-auto">
+              {(['All', 'Completed', 'Pending', 'Abnormal'] as ActiveTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setActiveTab(tab); setPage(1); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    activeTab === tab
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {tab}
+                  <span className={`ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    activeTab === tab ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'
+                  }`}>
+                    {counts[tab]}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Search */}
+            <div className="relative min-w-[200px] sm:w-64">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search patient, test, or PID..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Table */}
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs min-w-[700px]">
+            <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/60">
-                  <th className="py-3 px-3 w-8">
-                    <input type="checkbox" className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 cursor-pointer" />
+                <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/50">
+                  <th className="py-3 px-4 w-8">
+                    <input
+                      type="checkbox"
+                      onChange={(e) => {
+                        if (e.target.checked) setCheckedIds(new Set(filtered.map((r) => r.id)));
+                        else setCheckedIds(new Set());
+                      }}
+                      checked={filtered.length > 0 && checkedIds.size === filtered.length}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
                   </th>
-                  <th className="py-3 px-3">Patient</th>
-                  <th className="py-3 px-3">Test Name</th>
-                  <th className="py-3 px-3">Department</th>
-                  <th className="py-3 px-3">Result</th>
-                  <th className="py-3 px-3">Reference Range</th>
-                  <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3">Date</th>
-                  <th className="py-3 px-3 text-center">Actions</th>
+                  <th className="py-3 px-4">Patient</th>
+                  <th className="py-3 px-4">Test / Order</th>
+                  <th className="py-3 px-4">Results</th>
+                  <th className="py-3 px-4">Ref Range</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-blue-50/20 transition-colors">
-                    <td className="py-3 px-3">
-                      <input
-                        type="checkbox"
-                        checked={checkedIds.has(r.id)}
-                        onChange={() => toggleCheck(r.id)}
-                        className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 cursor-pointer"
-                      />
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-slate-400 text-xs">
+                      <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-500" />
+                      Loading laboratory test results...
                     </td>
-                    <td className="py-3 px-3">
-                      <div
-                        onClick={() => openDrawerForPatient(r.pid, r.patient)}
-                        className="flex items-center gap-2.5 cursor-pointer group"
-                      >
-                        <img src={r.avatar} alt={r.patient} className="w-8 h-8 rounded-full object-cover ring-1 ring-white shadow-2xs shrink-0 group-hover:ring-blue-300 transition-all" />
-                        <div>
-                          <div className="font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition-colors">{r.patient}</div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[10px] text-slate-400">{r.pid}</span>
-                            {r.branchName && (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60">
-                                <Building2 className="w-2.5 h-2.5 text-slate-400" />
-                                {r.branchName}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 font-semibold text-slate-800">{r.test}</td>
-                    <td className="py-3 px-3 text-slate-500">{r.department}</td>
-                    <td className="py-3 px-3 font-mono text-slate-800 whitespace-pre-line leading-relaxed text-[10px]">{r.result}</td>
-                    <td className="py-3 px-3 text-slate-500 whitespace-pre-line leading-relaxed text-[10px]">{r.reference}</td>
-                    <td className="py-3 px-3">
-                      <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${statusStyle[r.status]}`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap">
-                      <div className="text-slate-700 font-semibold">{r.date}</div>
-                      <div className="text-[10px] text-slate-400">{r.time}</div>
-                    </td>
-                    <td className="py-3 px-3">
-                      <div className="flex items-center justify-center gap-1.5">
+                  </tr>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <FlaskConical className="w-8 h-8 text-slate-300" />
+                        <p className="text-xs font-semibold text-slate-600">No laboratory test orders found</p>
+                        <p className="text-[11px] text-slate-400">Request diagnostic laboratory panels for your patients.</p>
                         <button
-                          title="View Official Report"
-                          onClick={() => {
-                            const matched = orders.find((o) => o.id === r.id);
-                            if (matched) {
-                              setSelectedLabForReport(matched);
-                            } else {
-                              setSelectedLabForReport({
-                                id: r.id,
-                                tenantId: 'demo',
-                                branchId: 'demo',
-                                branchName: r.branchName || 'Central Lab',
-                                patientId: r.pid,
-                                patientName: r.patient,
-                                patientPid: r.pid,
-                                orderingDoctorId: 'doc-1',
-                                orderingDoctorName: 'Dr. Attending Physician',
-                                orderNumber: `ORD-${r.id.toUpperCase()}`,
-                                priority: 'ROUTINE',
-                                status: r.status === 'Completed' ? 'COMPLETED' : 'PENDING',
-                                orderedAt: new Date().toISOString(),
-                                samples: [],
-                                results: [
-                                  {
-                                    id: `res-${r.id}`,
-                                    testName: r.test,
-                                    testCategory: r.department,
-                                    value: r.result.split('\n')[0] || 'Normal',
-                                    referenceRange: r.reference.split('\n')[0] || 'Normal',
-                                    isAbnormal: r.status === 'Abnormal',
-                                    performedAt: new Date().toISOString(),
-                                  },
-                                ],
-                              });
-                            }
-                          }}
-                          className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-600 flex items-center justify-center transition-colors cursor-pointer"
+                          onClick={() => setModalOpen(true)}
+                          className="mt-2 px-3 py-1.5 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 transition cursor-pointer"
                         >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          title="View Patient EMR Chart"
-                          onClick={() => openDrawerForPatient(r.pid, r.patient)}
-                          className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors cursor-pointer"
-                        >
-                          <User className="w-3.5 h-3.5" />
+                          + Order Lab Test
                         </button>
                       </div>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filtered.map((r) => (
+                    <tr
+                      key={r.id}
+                      onClick={() => openDrawerForPatient(r.patientId, r.pid, r.patient)}
+                      className="hover:bg-slate-50/70 transition-colors cursor-pointer group"
+                    >
+                      <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={checkedIds.has(r.id)}
+                          onChange={() => toggleCheck(r.id)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <img src={r.avatar} alt={r.patient} className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-slate-200" />
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors block truncate">
+                              {r.patient}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-mono">{r.pid}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-800">{r.test}</div>
+                        <div className="text-[11px] text-slate-400">{r.department}</div>
+                      </td>
+
+                      <td className="py-3.5 px-4 whitespace-pre-line font-medium text-slate-700">
+                        {r.result}
+                      </td>
+
+                      <td className="py-3.5 px-4 whitespace-pre-line text-slate-400 font-mono text-[11px]">
+                        {r.reference}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-center">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusStyle[r.status]}`}>
+                          {r.status}
+                        </span>
+                        <div className="text-[10px] text-slate-400 mt-0.5">{r.date}</div>
+                      </td>
+
+                      <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            title="View Full Report"
+                            onClick={() => setSelectedLabForReport(r.rawOrder)}
+                            className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-600 flex items-center justify-center transition-colors cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            title="View Patient Chart"
+                            onClick={() => openDrawerForPatient(r.patientId, r.pid, r.patient)}
+                            className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors cursor-pointer"
+                          >
+                            <User className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
 
-          {/* Pagination */}
-          <div className="px-4 py-3 flex items-center justify-between border-t border-slate-100 bg-slate-50/40">
-            <span className="text-[11px] text-slate-500 font-medium">
-              Showing 1-{filtered.length} of {counts.All} results
+          <div className="px-4 py-3 flex items-center justify-between border-t border-slate-100 bg-slate-50/40 text-[11px] text-slate-500 font-medium">
+            <span>
+              Showing {filtered.length} of {activeResults.length} test orders
             </span>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, '...', 13].map((p, i) => (
-                <button
-                  key={i}
-                  onClick={() => typeof p === 'number' && setPage(p)}
-                  className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    page === p
-                      ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
-              Rows per page:
-              <select className="text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-1.5 py-0.5 focus:outline-none cursor-pointer">
-                <option>10</option>
-                <option>20</option>
-                <option>50</option>
-              </select>
-            </div>
           </div>
         </div>
       </DoctorPageShell>
@@ -777,14 +555,12 @@ export default function DoctorLabResultsPage() {
         {...(highlightedPatient?.id ? { patientId: highlightedPatient.id } : {})}
       />
 
-      {/* Official Diagnostic Report Modal */}
       <LabReportModal
         isOpen={Boolean(selectedLabForReport)}
         onClose={() => setSelectedLabForReport(null)}
         order={selectedLabForReport}
       />
 
-      {/* Patient EMR Drawer */}
       <DoctorPatientDrawer
         isOpen={Boolean(selectedPatientForDrawer)}
         onClose={() => setSelectedPatientForDrawer(null)}

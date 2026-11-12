@@ -23,12 +23,14 @@ import {
   Stethoscope,
   ChevronRight,
   Sparkles,
+  Share2,
 } from 'lucide-react';
 import type { AppointmentDTO, PatientDTO, QueueEntryDTO } from '@mcms/contracts';
 import { PatientItem } from '../../../components/doctor/doctorMockData';
 import DoctorPatientDrawer from '../../../components/doctor/DoctorPatientDrawer';
 import DoctorPrescriptionModal from '../../../components/doctor/DoctorPrescriptionModal';
 import DoctorLabOrderModal from '../../../components/doctor/DoctorLabOrderModal';
+import DoctorReferralModal from '../../../components/doctor/DoctorReferralModal';
 import DoctorPageShell from '../../../components/doctor/DoctorPageShell';
 import DoctorStatCard from '../../../components/doctor/DoctorStatCard';
 import { useAuth } from '../../../lib/auth/auth-context';
@@ -64,6 +66,13 @@ export default function DoctorAppointmentsPage() {
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [consultationNotes, setConsultationNotes] = useState('');
   const [diagnosisInput, setDiagnosisInput] = useState('');
+  const [completingQueueEntry, setCompletingQueueEntry] = useState<QueueEntryDTO | null>(null);
+
+  // Referral modal state
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
+  const [referralPatientId, setReferralPatientId] = useState<string>('');
+  const [referralPatientName, setReferralPatientName] = useState<string>('');
+  const [referralQueueEntry, setReferralQueueEntry] = useState<QueueEntryDTO | undefined>(undefined);
 
   const todayStr = new Date().toISOString().split('T')[0]!;
   const now = new Date();
@@ -183,13 +192,22 @@ export default function DoctorAppointmentsPage() {
 
   const handleOpenCompleteModal = (apt: AppointmentDTO) => {
     setSelectedAppointment(apt);
+    setCompletingQueueEntry(null);
     setDiagnosisInput(apt.reason || '');
     setConsultationNotes(apt.notes || '');
     setCompleteModalOpen(true);
   };
 
+  const handleOpenQueueCompleteModal = (queue: QueueEntryDTO) => {
+    setCompletingQueueEntry(queue);
+    setSelectedAppointment(null);
+    setDiagnosisInput(queue.priority === 'EMERGENCY' ? 'Emergency Evaluation' : 'Clinical Consultation');
+    setConsultationNotes('');
+    setCompleteModalOpen(true);
+  };
+
   const handleConfirmCompleteConsultation = async () => {
-    if (!selectedAppointment || !accessToken) return;
+    if (!accessToken) return;
     setIsUpdating(true);
     try {
       const finalNotes = [
@@ -199,13 +217,34 @@ export default function DoctorAppointmentsPage() {
         .filter(Boolean)
         .join(' | ');
 
-      await handleStatusChange(selectedAppointment.id, 'COMPLETED', finalNotes || undefined);
+      if (selectedAppointment) {
+        await handleStatusChange(selectedAppointment.id, 'COMPLETED', finalNotes || undefined);
+      } else if (completingQueueEntry) {
+        await updateQueueEntry(completingQueueEntry.id, { status: 'COMPLETED' }, accessToken);
+        // If an appointment exists for this patient today, mark it completed too
+        const matchAppt = appointments.find(
+          (a) => a.patientId === completingQueueEntry.patientId && isToday(a.appointmentDate)
+        );
+        if (matchAppt) {
+          await updateAppointment(matchAppt.id, { status: 'COMPLETED', notes: finalNotes || undefined }, accessToken);
+        }
+        await loadData();
+      }
+
       setCompleteModalOpen(false);
       setDiagnosisInput('');
       setConsultationNotes('');
+      setCompletingQueueEntry(null);
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const openReferral = (patientId: string, patientName: string, queueEntry?: QueueEntryDTO) => {
+    setReferralPatientId(patientId);
+    setReferralPatientName(patientName);
+    setReferralQueueEntry(queueEntry);
+    setReferralModalOpen(true);
   };
 
   const openDrawerForPatient = (patientId: string, patientName: string, patientPid?: string) => {
@@ -422,7 +461,7 @@ export default function DoctorAppointmentsPage() {
           )}
 
           {/* Clinical Workspace Shortcuts */}
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
             <button
               onClick={() => openPrescription(selectedAppointment.patientId, selectedAppointment.patientName)}
               className="p-2.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 text-center transition-all cursor-pointer flex flex-col items-center gap-1 group"
@@ -437,6 +476,14 @@ export default function DoctorAppointmentsPage() {
             >
               <FlaskConical className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
               <span className="text-[11px] font-bold text-slate-700">Order Labs</span>
+            </button>
+
+            <button
+              onClick={() => openReferral(selectedAppointment.patientId, selectedAppointment.patientName)}
+              className="p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 text-center transition-all cursor-pointer flex flex-col items-center gap-1 group"
+            >
+              <Share2 className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
+              <span className="text-[11px] font-bold text-slate-700">Refer</span>
             </button>
           </div>
 
@@ -514,7 +561,7 @@ export default function DoctorAppointmentsPage() {
           {isQueueInConsult && (
             <button
               disabled={isUpdating}
-              onClick={() => void handleQueueStatusChange(selectedQueue.id, 'COMPLETED')}
+              onClick={() => handleOpenQueueCompleteModal(selectedQueue)}
               className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <Check className="w-4 h-4" />
@@ -522,7 +569,7 @@ export default function DoctorAppointmentsPage() {
             </button>
           )}
 
-          <div className="grid grid-cols-2 gap-2 pt-2">
+          <div className="grid grid-cols-3 gap-2 pt-2">
             <button
               onClick={() => openPrescription(selectedQueue.patientId, selectedQueue.patientName)}
               className="p-2.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 text-center transition-all cursor-pointer flex flex-col items-center gap-1 group"
@@ -537,6 +584,14 @@ export default function DoctorAppointmentsPage() {
             >
               <FlaskConical className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
               <span className="text-[11px] font-bold text-slate-700">Order Labs</span>
+            </button>
+
+            <button
+              onClick={() => openReferral(selectedQueue.patientId, selectedQueue.patientName, selectedQueue)}
+              className="p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 text-center transition-all cursor-pointer flex flex-col items-center gap-1 group"
+            >
+              <Share2 className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
+              <span className="text-[11px] font-bold text-slate-700">Refer</span>
             </button>
           </div>
 
@@ -837,6 +892,9 @@ export default function DoctorAppointmentsPage() {
           setModalPatientName(drawerPatientItem?.name || '');
           setLabModalOpen(true);
         }}
+        onOpenReferralModal={(pId) => {
+          openReferral(pId, drawerPatientItem?.name || '');
+        }}
       />
 
       {/* Prescription Modal */}
@@ -855,15 +913,25 @@ export default function DoctorAppointmentsPage() {
         patientName={modalPatientName}
       />
 
+      {/* Referral Modal */}
+      <DoctorReferralModal
+        isOpen={referralModalOpen}
+        onClose={() => setReferralModalOpen(false)}
+        patientId={referralPatientId}
+        patientName={referralPatientName}
+        activeQueueEntry={referralQueueEntry}
+        onSuccess={() => void loadData()}
+      />
+
       {/* Complete Consultation Dialog */}
-      {completeModalOpen && selectedAppointment && (
+      {completeModalOpen && (selectedAppointment || completingQueueEntry) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-100 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-emerald-600" />
                 <h3 className="text-sm font-bold text-slate-800">
-                  Complete Consultation — {selectedAppointment.patientName}
+                  Complete Consultation — {selectedAppointment?.patientName || completingQueueEntry?.patientName}
                 </h3>
               </div>
               <button

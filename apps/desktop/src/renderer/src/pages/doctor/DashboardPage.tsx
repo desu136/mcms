@@ -29,6 +29,7 @@ import { PatientItem } from '../../components/doctor/doctorMockData';
 import { DoctorPatientDrawer } from '../../components/doctor/DoctorPatientDrawer';
 import { DoctorPrescriptionModal } from '../../components/doctor/DoctorPrescriptionModal';
 import { DoctorLabOrderModal } from '../../components/doctor/DoctorLabOrderModal';
+import { DoctorReferralModal } from '../../components/doctor/DoctorReferralModal';
 import { DoctorPageShell } from '../../components/doctor/DoctorPageShell';
 import { DoctorStatCard } from '../../components/doctor/DoctorStatCard';
 import { useAuth } from '../../auth/AuthContext';
@@ -110,6 +111,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
   const [chartTimeframe, setChartTimeframe] = useState('This Week');
   const [calendarSelectedDay, setCalendarSelectedDay] = useState(19);
 
@@ -786,17 +788,25 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         onClose={() => setDrawerOpen(false)}
         onOpenPrescriptionModal={() => setPrescriptionModalOpen(true)}
         onOpenLabModal={() => setLabModalOpen(true)}
+        onOpenReferralModal={() => setReferralModalOpen(true)}
       />
       <DoctorPrescriptionModal
         isOpen={prescriptionModalOpen}
         onClose={() => setPrescriptionModalOpen(false)}
-        defaultPatientId={currentPatient?.id || (livePatients[0]?.id ?? 'p-1')}
+        defaultPatientId={currentPatient?.id || livePatients[0]?.id}
         onSuccess={() => void loadDashboardData()}
       />
       <DoctorLabOrderModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        defaultPatientId={currentPatient?.id || (livePatients[0]?.id ?? 'p-1')}
+        defaultPatientId={currentPatient?.id || livePatients[0]?.id}
+        onSuccess={() => void loadDashboardData()}
+      />
+      <DoctorReferralModal
+        isOpen={referralModalOpen}
+        onClose={() => setReferralModalOpen(false)}
+        patientId={currentPatient?.id || livePatients[0]?.id}
+        patientName={currentPatient?.name || livePatients[0]?.fullName}
         onSuccess={() => void loadDashboardData()}
       />
     </>

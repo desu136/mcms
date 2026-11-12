@@ -449,6 +449,43 @@ class MobileApiClient {
     }
     throw Exception('Failed to discharge admission: ${response.statusCode}');
   }
+
+  // ─── Staff & Departments ───────────────────────────────────────────────────
+
+  Future<List<dynamic>> getDoctors({String? departmentId}) async {
+    final q = <String, String>{};
+    if (departmentId != null) q['departmentId'] = departmentId;
+
+    final response = await _client.get(
+      ApiEndpoints.doctors(q),
+      headers: _buildHeaders(),
+    );
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) return decoded;
+      if (decoded is Map<String, dynamic> && decoded['data'] is List) {
+        return decoded['data'] as List<dynamic>;
+      }
+      return [];
+    }
+    throw Exception('Failed to fetch doctors: ${response.statusCode}');
+  }
+
+  Future<List<dynamic>> getDepartments() async {
+    final response = await _client.get(
+      ApiEndpoints.departments(),
+      headers: _buildHeaders(),
+    );
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) return decoded;
+      if (decoded is Map<String, dynamic> && decoded['data'] is List) {
+        return decoded['data'] as List<dynamic>;
+      }
+      return [];
+    }
+    throw Exception('Failed to fetch departments: ${response.statusCode}');
+  }
 }
 
 // ─── Riverpod Provider ───────────────────────────────────────────────────────
