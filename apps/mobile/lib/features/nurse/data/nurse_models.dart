@@ -251,6 +251,9 @@ class VitalsRecord {
   final double temp;
   final int spo2;
   final int respRate;
+  final double? weight;
+  final double? height;
+  final double? bmi;
   final String recordedBy;
   final String? notes;
 
@@ -265,18 +268,28 @@ class VitalsRecord {
     required this.temp,
     required this.spo2,
     this.respRate = 18,
+    this.weight,
+    this.height,
+    this.bmi,
     required this.recordedBy,
     this.notes,
   });
 
   factory VitalsRecord.fromDto(Map<String, dynamic> json) {
-    final systolic = json['systolic'] ?? json['bloodPressureSystolic'] ?? 120;
-    final diastolic = json['diastolic'] ?? json['bloodPressureDiastolic'] ?? 80;
+    final systolic = json['systolic'] ?? json['systolicBp'] ?? json['bloodPressureSystolic'] ?? 120;
+    final diastolic = json['diastolic'] ?? json['diastolicBp'] ?? json['bloodPressureDiastolic'] ?? 80;
     final bp = '$systolic/$diastolic';
     final hr = (json['heartRate'] as num?)?.toInt() ?? (json['pulse'] as num?)?.toInt() ?? 75;
     final temp = (json['temperature'] as num?)?.toDouble() ?? 36.8;
     final spo2 = (json['oxygenSaturation'] as num?)?.toInt() ?? (json['spo2'] as num?)?.toInt() ?? 98;
     final respRate = (json['respiratoryRate'] as num?)?.toInt() ?? 18;
+    final weight = (json['weight'] as num?)?.toDouble();
+    final height = (json['height'] as num?)?.toDouble();
+    double? bmi = (json['bmi'] as num?)?.toDouble();
+    if (bmi == null && weight != null && height != null && height > 0) {
+      final hInM = height / 100.0;
+      bmi = double.parse((weight / (hInM * hInM)).toStringAsFixed(1));
+    }
 
     return VitalsRecord(
       id: json['id'] as String? ?? '',
@@ -291,6 +304,9 @@ class VitalsRecord {
       temp: temp,
       spo2: spo2,
       respRate: respRate,
+      weight: weight,
+      height: height,
+      bmi: bmi,
       recordedBy: json['recordedBy'] as String? ?? 'Staff Nurse',
       notes: json['notes'] as String?,
     );
@@ -653,6 +669,146 @@ class NurseAppointment {
     required this.status,
     required this.doctor,
   });
+
+  factory NurseAppointment.fromDto(Map<String, dynamic> json) {
+    final patientObj = json['patient'] as Map<String, dynamic>?;
+    final doctorObj = json['doctor'] as Map<String, dynamic>?;
+    final rawName = patientObj != null
+        ? '${patientObj['firstName'] ?? ''} ${patientObj['lastName'] ?? ''}'.trim()
+        : (json['patientName'] as String? ?? 'Patient');
+    final name = rawName.isNotEmpty ? rawName : 'Patient';
+    final docName = doctorObj != null
+        ? 'Dr. ${doctorObj['firstName'] ?? ''} ${doctorObj['lastName'] ?? ''}'.trim()
+        : (json['doctorName'] as String? ?? 'Attending Physician');
+
+    return NurseAppointment(
+      id: json['id'] as String? ?? '',
+      patientId: json['patientId'] as String? ?? '',
+      patientName: name,
+      patientPid: json['patientPid'] as String? ??
+          (patientObj != null ? patientObj['pid'] as String? : null) ??
+          'PID-000000',
+      avatar: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(name)}&size=160&background=dbeafe&color=1e40af',
+      age: (json['patientAge'] as num?)?.toInt() ?? 30,
+      gender: json['patientGender'] as String? ?? 'Female',
+      department: json['departmentName'] as String? ?? 'General OPD',
+      reason: json['reason'] as String? ?? json['visitReason'] as String? ?? 'Consultation',
+      appointmentTime: json['appointmentTime'] as String? ??
+          (json['scheduledAt'] != null
+              ? (json['scheduledAt'] as String).split('T').last.substring(0, 5)
+              : '09:00 AM'),
+      date: json['appointmentDate'] as String? ??
+          (json['scheduledAt'] != null
+              ? (json['scheduledAt'] as String).split('T').first
+              : 'Today'),
+      status: (json['status'] as String? ?? 'SCHEDULED').toUpperCase(),
+      doctor: docName.isNotEmpty ? docName : 'Dr. Attending',
+    );
+  }
+}
+
+// ─── Triage Queue (Incoming from Receptionist) ──────────────────────────────
+
+class NurseTriageQueueEntry {
+  final String id;
+  final String ticketNumber;
+  final String patientId;
+  final String patientName;
+  final String patientPid;
+  final int age;
+  final String gender;
+  final String departmentName;
+  final String? departmentId;
+  final String? doctorName;
+  final String? doctorId;
+  final String priority; // 'ROUTINE', 'URGENT', 'EMERGENCY'
+  final String status; // 'WAITING_FOR_TRIAGE', 'TRIAGE_IN_PROGRESS', 'WAITING_FOR_DOCTOR', 'IN_CONSULTATION', 'COMPLETED'
+  final String checkInTime;
+  final int waitMinutes;
+  final String? visitReason;
+
+  const NurseTriageQueueEntry({
+    required this.id,
+    required this.ticketNumber,
+    required this.patientId,
+    required this.patientName,
+    required this.patientPid,
+    required this.age,
+    required this.gender,
+    required this.departmentName,
+    this.departmentId,
+    this.doctorName,
+    this.doctorId,
+    required this.priority,
+    required this.status,
+    required this.checkInTime,
+    required this.waitMinutes,
+    this.visitReason,
+  });
+
+  factory NurseTriageQueueEntry.fromDto(Map<String, dynamic> json) {
+    final checkIn = json['checkInTime'] != null
+        ? DateTime.tryParse(json['checkInTime'] as String) ?? DateTime.now()
+        : DateTime.now();
+    final waitMins = DateTime.now().difference(checkIn).inMinutes.clamp(0, 9999);
+
+    final rawName = json['patientName'] as String? ??
+        (json['patient'] != null
+            ? '${json['patient']['firstName'] ?? ''} ${json['patient']['lastName'] ?? ''}'.trim()
+            : 'Patient');
+
+    return NurseTriageQueueEntry(
+      id: json['id'] as String? ?? '',
+      ticketNumber: json['ticketNumber'] as String? ?? 'T-000',
+      patientId: json['patientId'] as String? ?? '',
+      patientName: rawName.isNotEmpty ? rawName : 'Patient',
+      patientPid: json['patientPid'] as String? ??
+          (json['patient'] != null ? json['patient']['pid'] as String? : null) ??
+          'PID-000000',
+      age: (json['patientAge'] as num?)?.toInt() ?? 30,
+      gender: json['patientGender'] as String? ?? 'Female',
+      departmentName: json['departmentName'] as String? ??
+          (json['department'] != null ? json['department']['name'] as String? : null) ??
+          'General OPD',
+      departmentId: json['departmentId'] as String?,
+      doctorName: json['doctorName'] as String? ??
+          (json['assignedDoctor'] != null
+              ? 'Dr. ${json['assignedDoctor']['firstName'] ?? ''} ${json['assignedDoctor']['lastName'] ?? ''}'.trim()
+              : null),
+      doctorId: json['assignedDoctorId'] as String? ?? json['doctorId'] as String?,
+      priority: (json['priority'] as String? ?? 'ROUTINE').toUpperCase(),
+      status: (json['status'] as String? ?? 'WAITING_FOR_TRIAGE').toUpperCase(),
+      checkInTime:
+          '${checkIn.hour.toString().padLeft(2, '0')}:${checkIn.minute.toString().padLeft(2, '0')}',
+      waitMinutes: waitMins,
+      visitReason: json['visitReason'] as String? ?? json['notes'] as String?,
+    );
+  }
+
+  NurseTriageQueueEntry copyWith({
+    String? status,
+    String? doctorName,
+    String? doctorId,
+  }) {
+    return NurseTriageQueueEntry(
+      id: id,
+      ticketNumber: ticketNumber,
+      patientId: patientId,
+      patientName: patientName,
+      patientPid: patientPid,
+      age: age,
+      gender: gender,
+      departmentName: departmentName,
+      departmentId: departmentId,
+      doctorName: doctorName ?? this.doctorName,
+      doctorId: doctorId ?? this.doctorId,
+      priority: priority,
+      status: status ?? this.status,
+      checkInTime: checkInTime,
+      waitMinutes: waitMinutes,
+      visitReason: visitReason,
+    );
+  }
 }
 
 // ─── Communication / Messages ───────────────────────────────────────────────

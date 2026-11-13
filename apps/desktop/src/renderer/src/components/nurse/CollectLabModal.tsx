@@ -1,32 +1,86 @@
-'use client';
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, FlaskConical, Check } from 'lucide-react';
-import { NURSE_PATIENTS } from './nurseMockData';
+import { useAuth } from '../../auth/AuthContext';
+import { collectLabSample } from '../../api/clinical';
+import { fetchPatients } from '../../api/patients';
 
 interface CollectLabModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedPatientId?: string | undefined;
+  labOrderId?: string | undefined;
+  sampleId?: string | undefined;
   onCollect?: ((data: any) => void) | undefined;
 }
 
-export default function CollectLabModal({
+export function CollectLabModal({
   isOpen,
   onClose,
   selectedPatientId,
+  labOrderId,
+  sampleId,
   onCollect,
 }: CollectLabModalProps) {
-  const [patientId, setPatientId] = useState(selectedPatientId || NURSE_PATIENTS[0]!.id);
+  const { accessToken } = useAuth();
+  const [patientsList, setPatientsList] = useState<{ id: string; name: string; pid: string }[]>([]);
+  const [patientId, setPatientId] = useState(selectedPatientId || '');
   const [sampleType, setSampleType] = useState('Venous Blood (CBC)');
   const [barcode, setBarcode] = useState(`SMP-${Math.floor(100000 + Math.random() * 900000)}`);
   const [notes, setNotes] = useState('');
   const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (selectedPatientId) setPatientId(selectedPatientId);
+  }, [selectedPatientId]);
+
+  useEffect(() => {
+    if (sampleId) setBarcode(sampleId);
+  }, [sampleId]);
+
+  useEffect(() => {
+    if (!accessToken || !isOpen) return;
+    void (async () => {
+      try {
+        const res = await fetchPatients(accessToken, { limit: 50 });
+        if (res.data.length > 0) {
+          const mapped = res.data.map((p) => ({
+            id: p.id,
+            name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+            pid: p.pid,
+          }));
+          setPatientsList(mapped);
+          if (!selectedPatientId && mapped.length > 0) {
+            setPatientId(mapped[0]!.id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load patients in CollectLabModal:', err);
+      }
+    })();
+  }, [accessToken, isOpen, selectedPatientId]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
+    if (accessToken && labOrderId && sampleId) {
+      try {
+        await collectLabSample(
+          labOrderId,
+          sampleId,
+          {
+            sampleId,
+            sampleType,
+          },
+          accessToken,
+        );
+      } catch (err) {
+        console.error('Failed to update sample collection in API:', err);
+      }
+    }
+    setIsSaving(false);
     setIsSaved(true);
     if (onCollect) {
       onCollect({
@@ -75,11 +129,15 @@ export default function CollectLabModal({
               onChange={(e) => setPatientId(e.target.value)}
               className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
             >
-              {NURSE_PATIENTS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.pid}) â€” Room {p.room}
-                </option>
-              ))}
+              {patientsList.length > 0 ? (
+                patientsList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.pid})
+                  </option>
+                ))
+              ) : (
+                <option value="">No patients available</option>
+              )}
             </select>
           </div>
 
@@ -90,51 +148,57 @@ export default function CollectLabModal({
               onChange={(e) => setSampleType(e.target.value)}
               className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
             >
-              <option value="Venous Blood (CBC)">Venous Blood (CBC / Differential)</option>
-              <option value="Fasting Blood Glucose">Fasting Blood Glucose</option>
-              <option value="Clean Catch Urine">Clean Catch Urine</option>
-              <option value="Wound Swab / Culture">Wound Swab / Culture</option>
+              <option value="Venous Blood (CBC)">Venous Blood (CBC)</option>
+              <option value="Serum (Chemistry / Lipids)">Serum (Chemistry / Lipids)</option>
+              <option value="Urine Sample">Urine Sample</option>
+              <option value="Stool Specimen">Stool Specimen</option>
+              <option value="Throat Swab">Throat Swab</option>
               <option value="Sputum Specimen">Sputum Specimen</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Specimen Barcode ID</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Sample Barcode ID</label>
             <input
               type="text"
-              readOnly
+              required
               value={barcode}
-              className="w-full text-xs font-mono font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-600"
+              onChange={(e) => setBarcode(e.target.value)}
+              className="w-full text-xs font-mono font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-slate-50"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Collector Notes</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Collection Notes (Optional)</label>
             <textarea
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Left antecubital vein, single stick..."
+              placeholder="e.g. Fasting sample, collected without complication..."
               className="w-full text-xs px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 resize-none"
             />
           </div>
 
           <button
             type="submit"
-            disabled={isSaved}
+            disabled={isSaved || isSaving || !patientId}
             className={`w-full py-3 rounded-xl text-xs font-bold text-white transition flex items-center justify-center gap-2 shadow-md ${
               isSaved
                 ? 'bg-emerald-600'
-                : 'bg-teal-600 hover:bg-teal-700 shadow-teal-500/30'
+                : patientId
+                ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-500/30'
+                : 'bg-slate-300 cursor-not-allowed'
             }`}
           >
             {isSaved ? (
               <>
                 <Check className="w-4 h-4" />
-                Specimen Collected & Dispatched!
+                Specimen Collected & Logged!
               </>
+            ) : isSaving ? (
+              'Logging...'
             ) : (
-              'Confirm Specimen Collection'
+              'Confirm Sample Collection'
             )}
           </button>
         </form>
@@ -142,3 +206,4 @@ export default function CollectLabModal({
     </div>
   );
 }
+export default CollectLabModal;

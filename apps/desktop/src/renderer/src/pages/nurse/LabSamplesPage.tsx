@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   FlaskConical,
   CheckCircle2,
@@ -15,16 +15,60 @@ import {
   Barcode,
   Printer,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
-import {
-  NURSE_LAB_SAMPLES,
-  NurseLabSample,
-} from '../../components/nurse/nurseMockData';
+import { NurseLabSample } from '../../components/nurse/nurseMockData';
 import { NurseStatCard } from '../../components/nurse/NurseStatCard';
 import NurseLabSampleDetailsModal from '../../components/nurse/NurseLabSampleDetailsModal';
 import CollectLabModal from '../../components/nurse/CollectLabModal';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchLabOrders } from '../../api/clinical';
+import type { LabOrderDTO } from '@mcms/contracts';
+
+// Map LabOrderDTO → NurseLabSample for desktop display
+function mapLabOrderToSample(dto: LabOrderDTO): NurseLabSample {
+  const rawStatus = dto.samples[0]?.status ?? dto.status;
+  const statusMap: Record<string, NurseLabSample['status']> = {
+    PENDING: 'Pending',
+    COLLECTED: 'Collected',
+    IN_LAB: 'In Lab',
+    PROCESSING: 'In Lab',
+    COMPLETED: 'Completed',
+    VERIFIED: 'Completed',
+  };
+  const sampleType = dto.samples[0]?.sampleType;
+  const allowedTypes: NurseLabSample['sampleType'][] = ['Blood', 'Urine', 'Stool', 'Swab', 'Sputum'];
+  const normalizedType: NurseLabSample['sampleType'] =
+    allowedTypes.find((t) => t.toLowerCase() === (sampleType ?? '').toLowerCase()) ?? 'Blood';
+
+  return {
+    id: dto.id,
+    sampleId: dto.samples[0]?.sampleId ?? dto.orderNumber,
+    patientId: dto.patientId,
+    patientName: dto.patientName,
+    patientPid: dto.patientPid,
+    patientAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(dto.patientName)}`,
+    room: 'Ward 3A',
+    phone: '—',
+    email: '—',
+    address: 'Addis Ababa, Ethiopia',
+    department: 'General Lab',
+    testName: dto.results[0]?.testName ?? (dto.samples[0] ? `${normalizedType} Panel` : 'Lab Test'),
+    sampleType: normalizedType,
+    priority: dto.priority === 'HIGH' ? 'High' : dto.priority === 'URGENT' ? 'Urgent' : 'Normal',
+    collectionTime: dto.samples[0]?.collectedAt
+      ? new Date(dto.samples[0].collectedAt).toLocaleString()
+      : new Date(dto.orderedAt).toLocaleString(),
+    status: statusMap[rawStatus.toUpperCase()] ?? 'Pending',
+    doctor: dto.orderingDoctorName ?? 'Attending Doctor',
+    ...(dto.clinicalNotes ? { instructions: dto.clinicalNotes } : {}),
+    ...(dto.samples[0]?.collectedAt ? { collectedAt: new Date(dto.samples[0].collectedAt).toLocaleString() } : {}),
+    ...(dto.samples[0]?.receivedAt ? { deliveredAt: new Date(dto.samples[0].receivedAt).toLocaleString() } : {}),
+  };
+}
 
 export function LabSamplesPage() {
+  const { accessToken } = useAuth();
   const [activeTab, setActiveTab] = useState<'pending' | 'collected' | 'in_lab' | 'completed' | 'all'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
@@ -33,12 +77,46 @@ export function LabSamplesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
 
-  const [selectedSample, setSelectedSample] = useState<NurseLabSample>(NURSE_LAB_SAMPLES[0]!);
+  const [samples, setSamples] = useState<NurseLabSample[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedSample, setSelectedSample] = useState<NurseLabSample | null>(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [collectModalOpen, setCollectModalOpen] = useState(false);
 
+  const loadSamples = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const orders = await fetchLabOrders(accessToken);
+      if (Array.isArray(orders) && orders.length > 0) {
+        const mapped = orders.map(mapLabOrderToSample);
+        setSamples(mapped);
+        setSelectedSample((prev) => {
+          if (prev) {
+            const found = mapped.find((m) => m.id === prev.id);
+            if (found) return found;
+          }
+          return mapped[0] ?? null;
+        });
+      } else {
+        setSamples([]);
+        setSelectedSample(null);
+      }
+    } catch (err) {
+      console.error('Failed to load lab orders for desktop:', err);
+      setSamples([]);
+      setSelectedSample(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadSamples();
+  }, [loadSamples]);
+
   const filteredSamples = useMemo(() => {
-    return NURSE_LAB_SAMPLES.filter((sample) => {
+    return samples.filter((sample) => {
       if (activeTab === 'pending' && sample.status !== 'Pending') return false;
       if (activeTab === 'collected' && sample.status !== 'Collected') return false;
       if (activeTab === 'in_lab' && sample.status !== 'In Lab') return false;
@@ -58,22 +136,22 @@ export function LabSamplesPage() {
       }
       return true;
     });
-  }, [activeTab, selectedDept, selectedSampleType, selectedPriority, searchQuery]);
+  }, [samples, activeTab, selectedDept, selectedSampleType, selectedPriority, searchQuery]);
 
   const totalPages = Math.ceil(filteredSamples.length / rowsPerPage) || 1;
   const paginatedSamples = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
     return filteredSamples.slice(start, start + rowsPerPage);
-  }, [filteredSamples, currentPage]);
+  }, [filteredSamples, currentPage, rowsPerPage]);
 
   const stats = useMemo(() => {
-    const total = NURSE_LAB_SAMPLES.length;
-    const pending = NURSE_LAB_SAMPLES.filter((s) => s.status === 'Pending').length;
-    const collected = NURSE_LAB_SAMPLES.filter((s) => s.status === 'Collected').length;
-    const inLab = NURSE_LAB_SAMPLES.filter((s) => s.status === 'In Lab').length;
-    const completed = NURSE_LAB_SAMPLES.filter((s) => s.status === 'Completed').length;
+    const total = samples.length;
+    const pending = samples.filter((s) => s.status === 'Pending').length;
+    const collected = samples.filter((s) => s.status === 'Collected').length;
+    const inLab = samples.filter((s) => s.status === 'In Lab').length;
+    const completed = samples.filter((s) => s.status === 'Completed').length;
     return { total, pending, collected, inLab, completed };
-  }, []);
+  }, [samples]);
 
   const handleOpenDetails = (sample: NurseLabSample) => {
     setSelectedSample(sample);
@@ -95,196 +173,249 @@ export function LabSamplesPage() {
               <p className="text-xs text-gray-400 mt-0.5">Collect phlebotomy, urine, and pathology specimens with barcode tracking</p>
             </div>
           </div>
-          <button
-            onClick={() => setCollectModalOpen(true)}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <FlaskConical size={13} />
-            <span>Collect Specimen</span>
-          </button>
-        </div>
-
-        {/* KPI Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-          <NurseStatCard icon={<Clock size={18} className="text-amber-600" />} iconBg="bg-amber-50" label="Pending Collection" value={stats.pending} trend="2 STAT orders" trendUp={false} />
-          <NurseStatCard icon={<CheckCircle2 size={18} className="text-blue-600" />} iconBg="bg-blue-50" label="Collected (In Ward)" value={stats.collected} trend="Awaiting courier" trendUp />
-          <NurseStatCard icon={<Truck size={18} className="text-purple-600" />} iconBg="bg-purple-50" label="Dispatched to Lab" value={stats.inLab} trend="Under processing" trendUp />
-          <NurseStatCard icon={<FileCheck size={18} className="text-green-600" />} iconBg="bg-green-50" label="Results Verified" value={stats.completed} trend="Available in EHR" trendUp />
-        </div>
-
-        {/* Tab Filters */}
-        <div className="flex items-center gap-1.5">
-          {[
-            { id: 'pending', label: 'Pending Collection', count: stats.pending },
-            { id: 'collected', label: 'Collected in Ward', count: stats.collected },
-            { id: 'in_lab', label: 'In Lab', count: stats.inLab },
-            { id: 'completed', label: 'Results Ready', count: stats.completed },
-            { id: 'all', label: 'All Orders', count: stats.total },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id as any);
-                setCurrentPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === tab.id
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
-              }`}
-            >
-              {tab.label} ({tab.count})
-            </button>
-          ))}
-        </div>
-
-        {/* Search & Filter Bar */}
-        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by patient, test name, or barcode..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
           <div className="flex items-center gap-2">
-            <select
-              value={selectedSampleType}
-              onChange={(e) => {
-                setSelectedSampleType(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            <button
+              onClick={() => void loadSamples()}
+              disabled={loading}
+              className="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors shadow-2xs cursor-pointer"
+              title="Refresh Samples"
             >
-              <option>All Sample Types</option>
-              <option>Blood</option>
-              <option>Urine</option>
-              <option>Swab</option>
-              <option>CSF</option>
-            </select>
-            <select
-              value={selectedPriority}
-              onChange={(e) => {
-                setSelectedPriority(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              <RefreshCw size={14} className={loading ? 'animate-spin text-cyan-600' : ''} />
+            </button>
+            <button
+              onClick={() => setCollectModalOpen(true)}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
             >
-              <option>All Priorities</option>
-              <option>STAT</option>
-              <option>Urgent</option>
-              <option>Routine</option>
-            </select>
+              <FlaskConical size={13} />
+              <span>Collect Sample</span>
+            </button>
           </div>
         </div>
 
-        {/* Samples Table */}
-        <div className="bg-white rounded-xl border border-gray-200/80 shadow-xs overflow-hidden flex flex-col">
+        {/* KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+          <NurseStatCard
+            icon={Clock}
+            color="amber"
+            label="Pending Collection"
+            value={String(stats.pending)}
+            trend="Awaiting phlebotomy"
+            trendUp={stats.pending === 0}
+          />
+          <NurseStatCard
+            icon={CheckCircle2}
+            color="green"
+            label="Specimens Collected"
+            value={String(stats.collected)}
+            trend="Labeled & barcoded"
+            trendUp={true}
+          />
+          <NurseStatCard
+            icon={Truck}
+            color="blue"
+            label="Processing in Lab"
+            value={String(stats.inLab)}
+            trend="Under pathology analysis"
+            trendUp={true}
+          />
+          <NurseStatCard
+            icon={FileCheck}
+            color="purple"
+            label="Results Completed"
+            value={String(stats.completed)}
+            trend="Reported to doctor"
+            trendUp={true}
+          />
+        </div>
+
+        {/* Filters and Tabs */}
+        <div className="bg-white rounded-xl border border-gray-200/80 shadow-2xs overflow-hidden">
+          <div className="p-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+              {(
+                [
+                  { id: 'pending', label: 'Pending Collection' },
+                  { id: 'collected', label: 'Collected / Transit' },
+                  { id: 'in_lab', label: 'In Lab Analysis' },
+                  { id: 'completed', label: 'Results Ready' },
+                  { id: 'all', label: 'All Orders' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                    activeTab === tab.id
+                      ? 'bg-cyan-600 text-white shadow-2xs'
+                      : 'text-gray-600 hover:bg-gray-100/80'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-56">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search barcode, test, patient..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                />
+              </div>
+
+              <select
+                value={selectedSampleType}
+                onChange={(e) => {
+                  setSelectedSampleType(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none"
+              >
+                <option value="All Sample Types">All Specimen Types</option>
+                <option value="Blood">Blood</option>
+                <option value="Urine">Urine</option>
+                <option value="Stool">Stool</option>
+                <option value="Swab">Swab</option>
+                <option value="Sputum">Sputum</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Table */}
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                <tr className="bg-gray-50/80 border-b border-gray-100 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  <th className="py-2.5 px-3">Barcode Tag</th>
                   <th className="py-2.5 px-3">Patient</th>
-                  <th className="py-2.5 px-3">Test Ordered</th>
-                  <th className="py-2.5 px-3">Sample Type</th>
-                  <th className="py-2.5 px-3">Barcode</th>
+                  <th className="py-2.5 px-3">Test / Panel</th>
+                  <th className="py-2.5 px-3">Specimen</th>
                   <th className="py-2.5 px-3">Priority</th>
                   <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Ordered By</th>
-                  <th className="py-2.5 px-3 text-center">Actions</th>
+                  <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
-                {paginatedSamples.map((sample) => {
-                  const isSelected = selectedSample.id === sample.id;
-                  return (
-                    <tr
-                      key={sample.id}
-                      onClick={() => setSelectedSample(sample)}
-                      className={`hover:bg-blue-50/40 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/50' : ''}`}
-                    >
-                      <td className="py-2 px-3">
-                        <div className="flex items-center gap-2">
-                          <img src={sample.patientAvatar} alt={sample.patientName} className="w-7 h-7 rounded-full object-cover shrink-0" />
-                          <div>
-                            <p className="font-bold text-gray-800 leading-tight">{sample.patientName}</p>
-                            <p className="text-[10px] text-gray-400 font-mono">
-                              {sample.patientPid} · Room {sample.room}
-                            </p>
+              <tbody className="divide-y divide-gray-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-gray-400">
+                      <RefreshCw size={24} className="animate-spin text-cyan-600 mx-auto mb-2" />
+                      Loading lab orders...
+                    </td>
+                  </tr>
+                ) : paginatedSamples.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-gray-400">
+                      No lab specimen orders found.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedSamples.map((sample) => {
+                    const isSelected = selectedSample?.id === sample.id;
+                    return (
+                      <tr
+                        key={sample.id}
+                        onClick={() => setSelectedSample(sample)}
+                        className={`hover:bg-cyan-50/40 transition-colors cursor-pointer ${
+                          isSelected ? 'bg-cyan-50/60' : ''
+                        }`}
+                      >
+                        <td className="py-2 px-3">
+                          <span className="font-mono font-bold text-xs bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
+                            {sample.sampleId}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={sample.patientAvatar}
+                              alt={sample.patientName}
+                              className="w-7 h-7 rounded-full object-cover shrink-0"
+                            />
+                            <div>
+                              <span className="font-bold text-gray-800 block leading-tight">{sample.patientName}</span>
+                              <span className="text-[10px] text-gray-400 font-mono">{sample.patientPid}</span>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 font-semibold text-gray-800">{sample.testName}</td>
-                      <td className="py-2 px-3 text-gray-600">{sample.sampleType}</td>
-                      <td className="py-2 px-3 font-mono text-[11px] text-gray-600">{sample.sampleId}</td>
-                      <td className="py-2 px-3">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            sample.priority === 'Urgent'
-                              ? 'bg-rose-100 text-rose-700 animate-pulse'
-                              : sample.priority === 'High'
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {sample.priority}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            sample.status === 'Completed'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : sample.status === 'In Lab'
-                              ? 'bg-purple-100 text-purple-700'
-                              : sample.status === 'Collected'
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'bg-amber-100 text-amber-700'
-                          }`}
-                        >
-                          {sample.status}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-gray-600">{sample.doctor}</td>
-                      <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => handleOpenDetails(sample)}
-                            className="p-1.5 rounded-md border border-gray-200 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                            title="View Specimen Details"
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="font-bold text-gray-800 block">{sample.testName}</span>
+                          <span className="text-[10px] text-gray-400">By: {sample.doctor}</span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="font-semibold text-gray-700">{sample.sampleType}</span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              sample.priority === 'Urgent' || sample.priority === 'High'
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
                           >
-                            <Eye size={13} />
-                          </button>
-                          {sample.status === 'Pending' && (
+                            {sample.priority}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              sample.status === 'Completed'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : sample.status === 'In Lab'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : sample.status === 'Collected'
+                                    ? 'bg-cyan-100 text-cyan-700'
+                                    : 'bg-amber-100 text-amber-700'
+                            }`}
+                          >
+                            {sample.status}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                             <button
-                              onClick={() => {
-                                setSelectedSample(sample);
-                                setCollectModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-md border border-gray-200 text-cyan-600 hover:bg-cyan-50 transition-colors cursor-pointer"
-                              title="Collect Sample"
+                              onClick={() => handleOpenDetails(sample)}
+                              className="p-1 rounded-md hover:bg-gray-100 text-gray-500 transition-colors cursor-pointer"
+                              title="View Details"
                             >
-                              <FlaskConical size={13} />
+                              <Eye size={13} />
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            {sample.status === 'Pending' && (
+                              <button
+                                onClick={() => {
+                                  setSelectedSample(sample);
+                                  setCollectModalOpen(true);
+                                }}
+                                className="px-2 py-0.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                              >
+                                Collect
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
 
-          <div className="px-3.5 py-2.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+          {/* Pagination */}
+          <div className="p-2.5 sm:p-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
             <span>
-              Showing {(currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filteredSamples.length)} of {filteredSamples.length} orders
+              Showing {filteredSamples.length > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0} to{' '}
+              {Math.min(currentPage * rowsPerPage, filteredSamples.length)} of {filteredSamples.length} records
             </span>
             <div className="flex items-center gap-1">
               <button
@@ -294,7 +425,7 @@ export function LabSamplesPage() {
               >
                 <ChevronLeft size={13} />
               </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map((n) => (
                 <button
                   key={n}
                   onClick={() => setCurrentPage(n)}
@@ -321,44 +452,50 @@ export function LabSamplesPage() {
       <aside className="w-72 xl:w-80 border-l border-gray-200 bg-white overflow-y-auto p-3 space-y-3 shrink-0">
         <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800 mb-2.5">Specimen Barcode Tag</h3>
-          <div className="space-y-2 text-xs">
-            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-center">
-              <div className="font-mono text-base font-black tracking-widest text-slate-800">{selectedSample.sampleId}</div>
-              <div className="flex items-center justify-center gap-1 text-[11px] text-slate-500 mt-1">
-                <Barcode size={16} />
-                <span>2D Barcode Generated</span>
+          {selectedSample ? (
+            <div className="space-y-2 text-xs">
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-center">
+                <div className="font-mono text-base font-black tracking-widest text-slate-800">{selectedSample.sampleId}</div>
+                <div className="flex items-center justify-center gap-1 text-[11px] text-slate-500 mt-1">
+                  <Barcode size={16} />
+                  <span>2D Barcode Generated</span>
+                </div>
               </div>
-            </div>
 
-            <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100 text-[11px] space-y-1">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Patient:</span>
-                <span className="font-semibold text-gray-800">{selectedSample.patientName}</span>
+              <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100 text-[11px] space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Patient:</span>
+                  <span className="font-semibold text-gray-800">{selectedSample.patientName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Test:</span>
+                  <span className="text-gray-800 font-medium">{selectedSample.testName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Specimen:</span>
+                  <span className="text-gray-700">{selectedSample.sampleType}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Priority:</span>
+                  <span className="font-bold text-rose-600">{selectedSample.priority}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Test:</span>
-                <span className="text-gray-800 font-medium">{selectedSample.testName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Specimen:</span>
-                <span className="text-gray-700">{selectedSample.sampleType}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Priority:</span>
-                <span className="font-bold text-rose-600">{selectedSample.priority}</span>
-              </div>
-            </div>
 
-            <button
-              onClick={() => {
-                setSelectedSample(selectedSample);
-                setCollectModalOpen(true);
-              }}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
-            >
-              Collect & Print Tube Label
-            </button>
-          </div>
+              {selectedSample.status === 'Pending' && (
+                <button
+                  onClick={() => {
+                    setSelectedSample(selectedSample);
+                    setCollectModalOpen(true);
+                  }}
+                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  Collect & Print Tube Label
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 py-3 text-center">Select an order to view specimen barcode</p>
+          )}
         </div>
       </aside>
 
@@ -375,7 +512,8 @@ export function LabSamplesPage() {
       <CollectLabModal
         isOpen={collectModalOpen}
         onClose={() => setCollectModalOpen(false)}
-        selectedPatientId={selectedSample.patientId}
+        onCollect={() => void loadSamples()}
+        selectedPatientId={selectedSample?.patientId}
       />
     </div>
   );

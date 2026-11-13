@@ -33,30 +33,25 @@ import RecordVitalsModal from '../../components/nurse/RecordVitalsModal';
 import AdministerMedModal from '../../components/nurse/AdministerMedModal';
 import CollectLabModal from '../../components/nurse/CollectLabModal';
 import AddNoteModal from '../../components/nurse/AddNoteModal';
-import {
-  CURRENT_NURSE,
-  NURSE_PATIENTS,
-  NURSE_TASKS,
-  NURSE_APPOINTMENTS,
-  NURSE_NOTES,
-  NursingTask,
-} from '../../components/nurse/nurseMockData';
 import { useAuth } from '../../lib/auth/auth-context';
 import { fetchPatients } from '../../lib/api/patients';
-import { fetchNursingTasks, fetchPatientVitals } from '../../lib/api/clinical';
-import type { NursingTaskDTO } from '@mcms/contracts';
+import { fetchNursingTasks, fetchPatientVitals, updateNursingTask } from '../../lib/api/clinical';
+import { fetchAppointments, fetchQueue } from '../../lib/api/appointments';
+import type { NursingTaskDTO, AppointmentDTO, QueueEntryDTO, PatientDTO } from '@mcms/contracts';
 
 
 export default function NurseDashboardPage() {
   const { accessToken, user } = useAuth();
-  const [tasks, setTasks] = useState<NursingTask[]>(NURSE_TASKS.slice(0, 5));
-  const [notes, setNotes] = useState(NURSE_NOTES);
+  const [notes, setNotes] = useState<{ id: string; patientName: string; patientPid: string; title: string; category: string; timestamp: string; author: string; text: string }[]>([]);
   const [selectedDate, setSelectedDate] = useState(() =>
     new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
   );
 
   // Live data
   const [liveTasks, setLiveTasks] = useState<NursingTaskDTO[]>([]);
+  const [liveAppointments, setLiveAppointments] = useState<AppointmentDTO[]>([]);
+  const [liveQueue, setLiveQueue] = useState<QueueEntryDTO[]>([]);
+  const [livePatients, setLivePatients] = useState<PatientDTO[]>([]);
   const [patientCount, setPatientCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -70,12 +65,19 @@ export default function NurseDashboardPage() {
     if (!accessToken) return;
     setIsLoading(true);
     try {
-      const [taskRes, patRes] = await Promise.allSettled([
+      const [taskRes, patRes, apptRes, queueRes] = await Promise.allSettled([
         fetchNursingTasks(accessToken),
-        fetchPatients(accessToken, { limit: 1 }),
+        fetchPatients(accessToken, { limit: 5 }),
+        fetchAppointments(accessToken),
+        fetchQueue(accessToken),
       ]);
       if (taskRes.status === 'fulfilled') setLiveTasks(taskRes.value);
-      if (patRes.status === 'fulfilled') setPatientCount(patRes.value.total);
+      if (patRes.status === 'fulfilled') {
+        setLivePatients(patRes.value.data || []);
+        setPatientCount(patRes.value.total);
+      }
+      if (apptRes.status === 'fulfilled') setLiveAppointments(Array.isArray(apptRes.value) ? apptRes.value : []);
+      if (queueRes.status === 'fulfilled') setLiveQueue(queueRes.value);
     } catch (err) {
       console.error('Nurse dashboard live data error:', err);
     } finally {
@@ -85,27 +87,24 @@ export default function NurseDashboardPage() {
 
   useEffect(() => { void loadLiveData(); }, [loadLiveData]);
 
-  // Derived KPIs from live data (fall back to mock if empty)
-  const totalPatients = patientCount || NURSE_PATIENTS.length;
-  const pendingTasks = liveTasks.length > 0
-    ? liveTasks.filter((t) => t.status === 'PENDING' || t.status === 'IN_PROGRESS').length
-    : NURSE_TASKS.filter((t) => t.status === 'Pending' || t.status === 'In Progress').length;
-  const completedTasks = liveTasks.length > 0
-    ? liveTasks.filter((t) => t.status === 'COMPLETED').length
-    : NURSE_TASKS.filter((t) => t.status === 'Completed').length;
-  const nurseName = user?.displayName || CURRENT_NURSE.name;
+  // Derived KPIs from live data
+  const totalPatients = patientCount;
+  const pendingTasks = liveTasks.filter((t) => t.status === 'PENDING' || t.status === 'IN_PROGRESS').length;
+  const completedTasks = liveTasks.filter((t) => t.status === 'COMPLETED').length;
+  const nurseName = user?.displayName || 'Nurse';
 
-  const toggleTask = (id: string) => {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? {
-              ...t,
-              status: t.status === 'Completed' ? 'Pending' : 'Completed',
-            }
-          : t
-      )
+  const toggleTask = async (id: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'COMPLETED' ? 'PENDING' : 'COMPLETED';
+    setLiveTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status: nextStatus as any } : t))
     );
+    if (accessToken) {
+      try {
+        await updateNursingTask(id, { status: nextStatus as any }, accessToken);
+      } catch (err) {
+        console.error('Failed to toggle nursing task:', err);
+      }
+    }
   };
 
   // ── Top Banner ──────────────────────────────────────────────────────────────
@@ -158,7 +157,7 @@ export default function NurseDashboardPage() {
       />
       <NurseStatCard
         title="Today's Appointments"
-        value={NURSE_APPOINTMENTS.length}
+        value={isLoading ? '—' : liveAppointments.length}
         iconName="calendar"
         trendText="Today's schedule"
         trendDirection="up"
@@ -194,16 +193,16 @@ export default function NurseDashboardPage() {
         <div className="flex items-start justify-between gap-2.5">
           <div className="flex items-center gap-2.5">
             <img
-              src={CURRENT_NURSE.avatar}
-              alt={CURRENT_NURSE.name}
+              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user?.displayName || 'nurse')}`}
+              alt={nurseName}
               className="w-11 h-11 rounded-full object-cover ring-2 ring-blue-500/20 shrink-0"
             />
             <div>
               <h3 className="text-sm font-bold text-slate-900 leading-tight">
-                {CURRENT_NURSE.name}
+                {nurseName}
               </h3>
               <span className="text-[11px] font-medium text-slate-500 block">
-                {CURRENT_NURSE.role}
+                {user?.role || 'Nurse'}
               </span>
             </div>
           </div>
@@ -218,21 +217,21 @@ export default function NurseDashboardPage() {
         <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
           <div className="flex items-center gap-2">
             <Phone className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-            <span className="truncate">{CURRENT_NURSE.phone}</span>
+            <span className="truncate">{user?.staffProfile?.phoneNumber || '—'}</span>
           </div>
           <div className="flex items-center gap-2">
             <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-            <span className="truncate">{CURRENT_NURSE.email}</span>
+            <span className="truncate">{user?.email || '—'}</span>
           </div>
           <div className="flex items-center gap-2">
             <MapPin className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-            <span className="truncate">{CURRENT_NURSE.location}</span>
+            <span className="truncate">Medical Center</span>
           </div>
         </div>
 
         <div className="mt-3 p-2.5 rounded-lg bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border border-blue-100/60 flex items-center justify-between">
           <p className="text-[11px] font-medium italic text-blue-900 line-clamp-2">
-            &ldquo;{CURRENT_NURSE.quote}&rdquo;
+            &ldquo;Caring for patients is a work of heart.&rdquo;
           </p>
           <div className="w-7 h-7 rounded-full bg-white text-blue-500 flex items-center justify-center shrink-0 shadow-2xs ml-2">
             <Heart className="w-3.5 h-3.5 fill-blue-500/20 stroke-blue-500" />
@@ -399,65 +398,67 @@ export default function NurseDashboardPage() {
               </div>
 
               <div className="space-y-2">
-                {tasks.map((task) => {
-                  const isCompleted = task.status === 'Completed';
+                {liveTasks.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-slate-400">No nursing tasks due today</div>
+                ) : (
+                  liveTasks.slice(0, 5).map((task) => {
+                    const isCompleted = task.status === 'COMPLETED';
 
-                  return (
-                    <div
-                      key={task.id}
-                      className={`p-2.5 rounded-lg border transition flex items-center justify-between gap-2.5 ${
-                        isCompleted
-                          ? 'bg-slate-50 border-slate-100 opacity-60'
-                          : 'bg-white border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <input
-                          type="checkbox"
-                          checked={isCompleted}
-                          onChange={() => toggleTask(task.id)}
-                          className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer shrink-0"
-                        />
+                    return (
+                      <div
+                        key={task.id}
+                        className={`p-2.5 rounded-lg border transition flex items-center justify-between gap-2.5 ${
+                          isCompleted
+                            ? 'bg-slate-50 border-slate-100 opacity-60'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={isCompleted}
+                            onChange={() => void toggleTask(task.id, task.status)}
+                            className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer shrink-0"
+                          />
 
-                        {/* Priority Pill */}
-                        <span
-                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
-                            task.priority === 'High'
-                              ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                              : task.priority === 'Medium'
-                              ? 'bg-amber-50 text-amber-600 border border-amber-100'
-                              : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                          }`}
-                        >
-                          {task.priority}
-                        </span>
-
-                        {/* Task Description */}
-                        <div className="min-w-0 flex-1">
-                          <div
-                            className={`text-xs font-bold text-slate-800 truncate ${
-                              isCompleted ? 'line-through text-slate-400' : ''
+                          {/* Priority Pill */}
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
+                              task.priority === 'URGENT' || task.priority === 'HIGH'
+                                ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                                : task.priority === 'MEDIUM'
+                                ? 'bg-amber-50 text-amber-600 border border-amber-100'
+                                : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
                             }`}
                           >
-                            {task.title}
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                            {task.dueTime} &nbsp;•&nbsp; Patient: {task.patientName}
+                            {task.priority || 'ROUTINE'}
+                          </span>
+
+                          {/* Task Description */}
+                          <div className="min-w-0 flex-1">
+                            <div
+                              className={`text-xs font-bold text-slate-800 truncate ${
+                                isCompleted ? 'line-through text-slate-400' : ''
+                              }`}
+                            >
+                              {task.title || task.taskType}
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                              {task.dueTime ? new Date(task.dueTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today'}
+                              {task.patientName ? ` • Patient: ${task.patientName}` : ''}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-100">
-                          {task.status}
-                        </span>
-                        <button className="p-1 rounded text-slate-400 hover:text-slate-600">
-                          <MoreVertical className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-100">
+                            {task.status}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -591,65 +592,67 @@ export default function NurseDashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {NURSE_PATIENTS.slice(0, 5).map((p) => {
-                    const statusColor =
-                      p.status === 'In Ward' || p.status === 'In Care'
-                        ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                        : p.status === 'Waiting'
-                        ? 'bg-blue-50 text-blue-600 border-blue-100'
-                        : p.status === 'Critical'
-                        ? 'bg-rose-50 text-rose-600 border-rose-100'
-                        : 'bg-purple-50 text-purple-600 border-purple-100';
+                  {livePatients.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-slate-400">
+                        No registered patients found
+                      </td>
+                    </tr>
+                  ) : (
+                    livePatients.map((p) => {
+                      const name = p.fullName || `${p.firstName} ${p.lastName}`.trim();
+                      const age = p.dateOfBirth
+                        ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
+                        : '—';
 
-                    return (
-                      <tr key={p.id} className="hover:bg-slate-50/70 transition">
-                        <td className="py-2 px-2.5">
-                          <div className="flex items-center gap-2">
-                            <img
-                              src={p.avatar}
-                              alt={p.name}
-                              className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
-                            />
-                            <div>
-                              <div className="font-bold text-slate-800 text-xs">
-                                {p.name}
+                      return (
+                        <tr key={p.id} className="hover:bg-slate-50/70 transition">
+                          <td className="py-2 px-2.5">
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`}
+                                alt={name}
+                                className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
+                              />
+                              <div>
+                                <div className="font-bold text-slate-800 text-xs">
+                                  {name}
+                                </div>
+                                <div className="text-[10px] text-slate-400">{p.pid}</div>
                               </div>
-                              <div className="text-[10px] text-slate-400">{p.pid}</div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-2 px-2.5 text-slate-600">
-                          {p.age} / {p.gender}
-                        </td>
-                        <td className="py-2 px-2.5 text-slate-600 font-medium">
-                          {p.visitReason}
-                        </td>
-                        <td className="py-2 px-2.5">
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}
-                          >
-                            {p.status}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2.5 text-center">
-                          <Link
-                            href={`/nurse/patients?pid=${p.pid}`}
-                            className="p-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 inline-flex items-center justify-center transition"
-                            title="View Patient Chart"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="py-2 px-2.5 text-slate-600">
+                            {age} / {p.gender || '—'}
+                          </td>
+                          <td className="py-2 px-2.5 text-slate-600 font-medium">
+                            {p.bloodType ? `Blood: ${p.bloodType}` : 'General Consultation'}
+                          </td>
+                          <td className="py-2 px-2.5">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-600 border-emerald-100">
+                              Active
+                            </span>
+                          </td>
+                          <td className="py-2 px-2.5 text-center">
+                            <Link
+                              href={`/nurse/patients?pid=${p.pid}`}
+                              className="p-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 inline-flex items-center justify-center transition"
+                              title="View Patient Chart"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
 
             {/* Pagination footer */}
             <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-slate-100 text-[11px] text-slate-500">
-              <span>Showing 1-5 of 48 patients</span>
+              <span>Showing {livePatients.length} of {patientCount} patients</span>
               <div className="flex items-center gap-1">
                 <button className="p-1 rounded hover:bg-slate-100 text-slate-400">
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -692,44 +695,53 @@ export default function NurseDashboardPage() {
               </div>
 
               <div className="space-y-2">
-                {NURSE_APPOINTMENTS.slice(0, 5).map((apt, index) => {
-                  const isOnTime = index < 4;
+                {liveAppointments.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-slate-400">No scheduled appointments</div>
+                ) : (
+                  liveAppointments.slice(0, 5).map((apt, index) => {
+                    const isOnTime = index < 4;
+                    const aptTime = apt.appointmentDate
+                      ? new Date(apt.appointmentDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      : 'Today';
 
-                  return (
-                    <div
-                      key={apt.id}
-                      className="flex items-center justify-between p-2 rounded-lg bg-slate-50/60 border border-slate-200/60 hover:bg-slate-50 transition"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {/* Time indicator pill */}
-                        <div className="text-[10px] font-bold text-slate-500 whitespace-nowrap pl-0.5">
-                          {apt.appointmentTime}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-slate-800 truncate">
-                            {apt.patientName}{' '}
-                            <span className="text-[10px] text-slate-400 font-normal">
-                              ({apt.patientPid})
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {apt.reason}
-                          </div>
-                        </div>
-                      </div>
-
-                      <span
-                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 border ${
-                          isOnTime
-                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                            : 'bg-blue-50 text-blue-600 border-blue-100'
-                        }`}
+                    return (
+                      <div
+                        key={apt.id}
+                        className="flex items-center justify-between p-2 rounded-lg bg-slate-50/60 border border-slate-200/60 hover:bg-slate-50 transition"
                       >
-                        {isOnTime ? 'On Time' : 'Upcoming'}
-                      </span>
-                    </div>
-                  );
-                })}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {/* Time indicator pill */}
+                          <div className="text-[10px] font-bold text-slate-500 whitespace-nowrap pl-0.5">
+                            {aptTime}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-slate-800 truncate">
+                              {apt.patientName || 'Assigned Patient'}{' '}
+                              {apt.patientPid && (
+                                <span className="text-[10px] text-slate-400 font-normal">
+                                  ({apt.patientPid})
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {apt.reason || 'General Consultation'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 border ${
+                            isOnTime
+                              ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                              : 'bg-blue-50 text-blue-600 border-blue-100'
+                          }`}
+                        >
+                          {apt.status || 'Scheduled'}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
 

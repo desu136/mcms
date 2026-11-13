@@ -12,6 +12,10 @@ class NurseModals {
     BuildContext context,
     WidgetRef ref, {
     NursePatient? preselectedPatient,
+    String? queueEntryId,
+    String? preselectedPatientId,
+    String? preselectedPatientName,
+    String? preselectedPatientPid,
   }) {
     showModalBottomSheet<void>(
       context: context,
@@ -19,7 +23,25 @@ class NurseModals {
       backgroundColor: Colors.transparent,
       builder: (ctx) => _RecordVitalsSheet(
         preselectedPatient: preselectedPatient,
+        queueEntryId: queueEntryId,
+        preselectedPatientId: preselectedPatientId,
+        preselectedPatientName: preselectedPatientName,
+        preselectedPatientPid: preselectedPatientPid,
       ),
+    );
+  }
+
+  // ─── Forward to Doctor Sheet ──────────────────────────────────────────────
+  static void showForwardToDoctor(
+    BuildContext context,
+    WidgetRef ref,
+    NurseTriageQueueEntry entry,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ForwardToDoctorSheet(entry: entry),
     );
   }
 
@@ -82,8 +104,18 @@ class NurseModals {
 
 class _RecordVitalsSheet extends ConsumerStatefulWidget {
   final NursePatient? preselectedPatient;
+  final String? queueEntryId;
+  final String? preselectedPatientId;
+  final String? preselectedPatientName;
+  final String? preselectedPatientPid;
 
-  const _RecordVitalsSheet({this.preselectedPatient});
+  const _RecordVitalsSheet({
+    this.preselectedPatient,
+    this.queueEntryId,
+    this.preselectedPatientId,
+    this.preselectedPatientName,
+    this.preselectedPatientPid,
+  });
 
   @override
   ConsumerState<_RecordVitalsSheet> createState() => _RecordVitalsSheetState();
@@ -97,6 +129,9 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
   final _tempCtrl = TextEditingController(text: '36.8');
   final _spo2Ctrl = TextEditingController(text: '98');
   final _respCtrl = TextEditingController(text: '16');
+  final _weightCtrl = TextEditingController(text: '70');
+  final _heightCtrl = TextEditingController(text: '170');
+  final _complaintsCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
   @override
@@ -104,6 +139,7 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
     super.initState();
     final patients = ref.read(nursePatientsProvider);
     _selectedPatientId = widget.preselectedPatient?.id ??
+        widget.preselectedPatientId ??
         (patients.isNotEmpty ? patients.first.id : '');
   }
 
@@ -115,22 +151,46 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
     _tempCtrl.dispose();
     _spo2Ctrl.dispose();
     _respCtrl.dispose();
+    _weightCtrl.dispose();
+    _heightCtrl.dispose();
+    _complaintsCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
   }
 
+  double? _calculateBmi() {
+    final w = double.tryParse(_weightCtrl.text);
+    final h = double.tryParse(_heightCtrl.text);
+    if (w != null && h != null && h > 0) {
+      final hInM = h / 100.0;
+      return double.parse((w / (hInM * hInM)).toStringAsFixed(1));
+    }
+    return null;
+  }
+
   void _saveVitals() {
     final patients = ref.read(nursePatientsProvider);
-    final patient = patients.firstWhere(
-      (p) => p.id == _selectedPatientId,
-      orElse: () => patients.first,
-    );
+    NursePatient? patient;
+    for (final p in patients) {
+      if (p.id == _selectedPatientId) {
+        patient = p;
+        break;
+      }
+    }
+
+    final targetPatientId = patient?.id ?? widget.preselectedPatientId ?? _selectedPatientId;
+    final targetPatientName = patient?.name ?? widget.preselectedPatientName ?? 'Patient';
+    final targetPatientPid = patient?.pid ?? widget.preselectedPatientPid ?? 'PID-000000';
 
     final bp = '${_systolicCtrl.text.trim()}/${_diastolicCtrl.text.trim()}';
     final hr = int.tryParse(_hrCtrl.text) ?? 72;
     final temp = double.tryParse(_tempCtrl.text) ?? 36.8;
     final spo2 = int.tryParse(_spo2Ctrl.text) ?? 98;
     final resp = int.tryParse(_respCtrl.text) ?? 16;
+    final weight = double.tryParse(_weightCtrl.text);
+    final height = double.tryParse(_heightCtrl.text);
+    final bmi = _calculateBmi();
+    final complaints = _complaintsCtrl.text.trim();
     final notes = _notesCtrl.text.trim();
 
     // Determine status
@@ -146,19 +206,27 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
       vitalsStatus = VitalsCondition.elevated;
     }
 
+    final combinedNotes = [
+      if (complaints.isNotEmpty) 'Chief Complaint: $complaints',
+      if (notes.isNotEmpty) 'Observation: $notes',
+    ].join(' | ');
+
     final newRecord = VitalsRecord(
       id: 'vr-${DateTime.now().millisecondsSinceEpoch}',
-      patientId: patient.id,
-      patientName: patient.name,
-      patientPid: patient.pid,
+      patientId: targetPatientId,
+      patientName: targetPatientName,
+      patientPid: targetPatientPid,
       dateTime: 'Today, ${TimeOfDay.now().format(context)}',
       bp: bp,
       hr: hr,
       temp: temp,
       spo2: spo2,
       respRate: resp,
-      recordedBy: 'Sister Aster, RN',
-      notes: notes.isNotEmpty ? notes : 'Routine vitals observation recorded.',
+      weight: weight,
+      height: height,
+      bmi: bmi,
+      recordedBy: '${ref.read(nurseProfileProvider).name}, RN',
+      notes: combinedNotes.isNotEmpty ? combinedNotes : 'Routine vitals observation recorded.',
     );
 
     // Update Vitals history
@@ -166,55 +234,65 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
           (list) => [newRecord, ...list],
         );
 
-    // Update Patient vitals
-    ref.read(nursePatientsProvider.notifier).update((list) {
-      return list.map((p) {
-        if (p.id == patient.id) {
-          return p.copyWith(
-            vitalsStatus: vitalsStatus,
-            vitals: PatientVitals(
-              bp: bp,
-              hr: hr,
-              temp: temp,
-              spo2: spo2,
-              respRate: resp,
-            ),
-          );
-        }
-        return p;
-      }).toList();
-    });
+    // Update Patient vitals if present in list
+    if (patient != null) {
+      ref.read(nursePatientsProvider.notifier).update((list) {
+        return list.map((p) {
+          if (p.id == patient!.id) {
+            return p.copyWith(
+              vitalsStatus: vitalsStatus,
+              vitals: PatientVitals(
+                bp: bp,
+                hr: hr,
+                temp: temp,
+                spo2: spo2,
+                respRate: resp,
+              ),
+            );
+          }
+          return p;
+        }).toList();
+      });
+    }
 
     // Add activity log
     ref.read(nurseActivitiesProvider.notifier).update((list) => [
           NurseActivityLog(
             id: 'act-${DateTime.now().millisecondsSinceEpoch}',
-            title: 'Vitals recorded',
+            title: 'Triage & Vitals recorded',
             time: 'Just now',
-            description: '${patient.name} ($bp, $hr bpm, $spo2%)',
+            description: '$targetPatientName ($bp, $hr bpm, $spo2%)',
             type: 'task',
           ),
           ...list,
         ]);
 
     final nurseProfile = ref.read(nurseProfileProvider);
-    final vitalsPayload = {
-      'patientId': patient.id,
-      'bloodPressureSystolic': sys,
-      'bloodPressureDiastolic': int.tryParse(_diastolicCtrl.text) ?? 80,
+    final vitalsPayload = <String, dynamic>{
+      'patientId': targetPatientId,
+      'systolicBp': sys,
+      'diastolicBp': int.tryParse(_diastolicCtrl.text) ?? 80,
       'heartRate': hr,
       'temperature': temp,
-      'oxygenSaturation': spo2,
+      'spo2': spo2,
       'respiratoryRate': resp,
+      if (weight != null) 'weight': weight,
+      if (height != null) 'height': height,
+      if (bmi != null) 'bmi': bmi,
       'recordedBy': nurseProfile.name,
-      'notes': notes.isNotEmpty ? notes : 'Routine vitals observation recorded.',
+      'notes': combinedNotes.isNotEmpty ? combinedNotes : 'Routine vitals observation recorded.',
     };
-    NurseRepository.recordVitalsViaApi(ref, vitalsPayload);
+
+    unawaited(NurseRepository.recordVitalsViaApi(
+      ref,
+      vitalsPayload,
+      queueId: widget.queueEntryId,
+    ));
 
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Vitals recorded successfully for ${patient.name}'),
+        content: Text('Vitals and triage recorded for $targetPatientName'),
         backgroundColor: const Color(0xFF10B981),
       ),
     );
@@ -223,6 +301,7 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
   @override
   Widget build(BuildContext context) {
     final patients = ref.read(nursePatientsProvider);
+    final currentBmi = _calculateBmi();
 
     return Container(
       decoration: const BoxDecoration(
@@ -269,21 +348,23 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Record Patient Vitals',
+                      const Text(
+                        'Record Patient Vitals & Triage',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF0F172A),
                         ),
                       ),
                       Text(
-                        'Enter current clinical parameters',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        widget.queueEntryId != null
+                            ? 'Reception Triage Queue Session'
+                            : 'Inpatient Clinical Monitoring',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                       ),
                     ],
                   ),
@@ -296,48 +377,76 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
             ),
             const SizedBox(height: 18),
 
-            // Patient Selector
-            const Text(
-              'Select Patient',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF334155),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedPatientId,
-                  isExpanded: true,
-                  icon: const Icon(Icons.arrow_drop_down_rounded),
-                  items: patients.map((p) {
-                    return DropdownMenuItem<String>(
-                      value: p.id,
+            // Patient Selector / Info Card
+            if (widget.preselectedPatientName != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.person_rounded, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 10),
+                    Expanded(
                       child: Text(
-                        '${p.name} (${p.room} • ${p.pid})',
+                        '${widget.preselectedPatientName} (${widget.preselectedPatientPid ?? 'Triage'})',
                         style: const TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF0F172A),
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1E3A8A),
                         ),
                       ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _selectedPatientId = val);
-                  },
+                    ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 14),
+            ] else if (patients.isNotEmpty) ...[
+              const Text(
+                'Select Patient',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF334155),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedPatientId.isNotEmpty ? _selectedPatientId : patients.first.id,
+                    isExpanded: true,
+                    icon: const Icon(Icons.arrow_drop_down_rounded),
+                    items: patients.map((p) {
+                      return DropdownMenuItem<String>(
+                        value: p.id,
+                        child: Text(
+                          '${p.name} (${p.room} • ${p.pid})',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedPatientId = val);
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Blood Pressure Row
             Row(
@@ -381,7 +490,7 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
             ),
             const SizedBox(height: 12),
 
-            // HR & Temp
+            // Heart Rate & Temp
             Row(
               children: [
                 Expanded(
@@ -389,7 +498,7 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Heart Rate (bpm)',
+                        'Heart Rate (BPM)',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -466,9 +575,84 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
             ),
             const SizedBox(height: 12),
 
-            // Notes
+            // Weight & Height & BMI
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Weight (kg)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF475569),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _buildTextField(_weightCtrl, '70',
+                          const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (_) => setState(() {})),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Height (cm)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF475569),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _buildTextField(_heightCtrl, '170',
+                          const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (_) => setState(() {})),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'BMI',
+                        style: TextStyle(fontSize: 10, color: Color(0xFF2563EB), fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        currentBmi != null ? currentBmi.toString() : '—',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1E3A8A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Chief Complaints
             const Text(
-              'Clinical Notes (Optional)',
+              'Chief Complaints & Symptoms',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -476,7 +660,22 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
               ),
             ),
             const SizedBox(height: 6),
-            _buildTextField(_notesCtrl, 'Patient resting comfortably...',
+            _buildTextField(_complaintsCtrl, 'e.g. Headache for 2 days, mild fever...',
+                TextInputType.text,
+                maxLines: 2),
+            const SizedBox(height: 12),
+
+            // Preliminary Observations / Notes
+            const Text(
+              'Preliminary Observations / Clinical Notes',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF475569),
+              ),
+            ),
+            const SizedBox(height: 6),
+            _buildTextField(_notesCtrl, 'Alert, oriented x3, ambulatory...',
                 TextInputType.text,
                 maxLines: 2),
             const SizedBox(height: 20),
@@ -496,9 +695,11 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
                   elevation: 0,
                 ),
                 icon: const Icon(Icons.check_circle_outline_rounded, size: 20),
-                label: const Text(
-                  'Record & Save Vitals',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                label: Text(
+                  widget.queueEntryId != null
+                      ? 'Save Vitals & Forward to Doctor'
+                      : 'Record & Save Vitals',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                 ),
               ),
             ),
@@ -513,11 +714,13 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
     String hint,
     TextInputType type, {
     int maxLines = 1,
+    ValueChanged<String>? onChanged,
   }) {
     return TextField(
       controller: ctrl,
       keyboardType: type,
       maxLines: maxLines,
+      onChanged: onChanged,
       style: const TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w600,
@@ -541,6 +744,229 @@ class _RecordVitalsSheetState extends ConsumerState<_RecordVitalsSheet> {
           borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Forward to Doctor Sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ForwardToDoctorSheet extends ConsumerStatefulWidget {
+  final NurseTriageQueueEntry entry;
+
+  const _ForwardToDoctorSheet({required this.entry});
+
+  @override
+  ConsumerState<_ForwardToDoctorSheet> createState() => _ForwardToDoctorSheetState();
+}
+
+class _ForwardToDoctorSheetState extends ConsumerState<_ForwardToDoctorSheet> {
+  String? _selectedDoctorId;
+  String? _selectedDepartmentId;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDoctorId = widget.entry.doctorId;
+    _selectedDepartmentId = widget.entry.departmentId;
+  }
+
+  Future<void> _forward() async {
+    setState(() => _isSubmitting = true);
+    final success = await NurseRepository.updateQueueStatusViaApi(
+      ref,
+      widget.entry.id,
+      'WAITING_FOR_DOCTOR',
+      doctorId: _selectedDoctorId,
+      departmentId: _selectedDepartmentId,
+    );
+
+    if (mounted) {
+      setState(() => _isSubmitting = false);
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Ticket #${widget.entry.ticketNumber} forwarded to Doctor'
+                : 'Failed to forward ticket',
+          ),
+          backgroundColor: success ? const Color(0xFF10B981) : Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final doctors = ref.watch(nurseDoctorsProvider);
+    final departments = ref.watch(nurseDepartmentsProvider);
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        top: 20,
+        left: 20,
+        right: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFCBD5E1),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3E8FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Color(0xFF7C3AED),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Forward to Doctor',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    Text(
+                      'Ticket #${widget.entry.ticketNumber} • ${widget.entry.patientName}',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: const Color(0xFF7C3AED),
+                  child: Text(
+                    widget.entry.patientName.isNotEmpty ? widget.entry.patientName[0].toUpperCase() : 'P',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.entry.patientName,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      ),
+                      Text(
+                        '${widget.entry.patientPid} • ${widget.entry.gender}, ${widget.entry.age}y • Priority: ${widget.entry.priority}',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text('Department', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            initialValue: _selectedDepartmentId,
+            hint: Text(widget.entry.departmentName),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: const Color(0xFFF8FAFC),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+            items: departments.map((d) {
+              final id = d['id'] as String? ?? '';
+              final name = d['name'] as String? ?? 'Department';
+              return DropdownMenuItem<String>(value: id, child: Text(name));
+            }).toList(),
+            onChanged: (val) => setState(() => _selectedDepartmentId = val),
+          ),
+          const SizedBox(height: 14),
+          const Text('Assign Doctor', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            initialValue: _selectedDoctorId,
+            hint: Text(widget.entry.doctorName ?? 'Select Available Doctor'),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: const Color(0xFFF8FAFC),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+            items: doctors.map((d) {
+              final id = d['id'] as String? ?? '';
+              final name = 'Dr. ${d['firstName'] ?? ''} ${d['lastName'] ?? ''}'.trim();
+              return DropdownMenuItem<String>(value: id, child: Text(name.isNotEmpty ? name : 'Doctor'));
+            }).toList(),
+            onChanged: (val) => setState(() => _selectedDoctorId = val),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: _isSubmitting ? null : _forward,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7C3AED),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              icon: _isSubmitting
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Icon(Icons.send_rounded, size: 20),
+              label: Text(
+                _isSubmitting ? 'Forwarding...' : 'Forward to Doctor (Waiting Room)',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1024,6 +1450,16 @@ class _CollectLabSampleSheet extends ConsumerWidget {
                       ...list,
                     ]);
 
+                unawaited(NurseRepository.collectLabSampleViaApi(
+                  ref,
+                  sample.id,
+                  sample.sampleId,
+                  {
+                    'status': 'COLLECTED',
+                    'collectedAt': DateTime.now().toIso8601String(),
+                  },
+                ));
+
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -1126,6 +1562,16 @@ class _AddTaskSheetState extends ConsumerState<_AddTaskSheet> {
           ),
           ...list,
         ]);
+
+    unawaited(NurseRepository.createNursingTaskViaApi(ref, {
+      'patientId': patient.id,
+      'title': newTask.title,
+      'description': newTask.details ?? '',
+      'category': newTask.type,
+      'priority': newTask.priority.name.toUpperCase(),
+      'dueTime': newTask.dueTime,
+      'status': 'PENDING',
+    }));
 
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(

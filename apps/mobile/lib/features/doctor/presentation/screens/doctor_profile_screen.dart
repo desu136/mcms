@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/doctor_repository.dart';
 
-class DoctorProfileScreen extends StatelessWidget {
+class DoctorProfileScreen extends ConsumerWidget {
   const DoctorProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    const doctor = DoctorRepository.currentDoctor;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final doctor = ref.watch(doctorProfileProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,

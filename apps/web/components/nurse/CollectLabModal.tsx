@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, FlaskConical, Check } from 'lucide-react';
-import { NURSE_PATIENTS } from './nurseMockData';
 import { useAuth } from '@/lib/auth/auth-context';
 import { collectLabSample } from '@/lib/api/clinical';
 import { fetchPatients } from '@/lib/api/patients';
@@ -10,10 +9,10 @@ import { fetchPatients } from '@/lib/api/patients';
 interface CollectLabModalProps {
   isOpen: boolean;
   onClose: () => void;
-  selectedPatientId?: string;
-  labOrderId?: string;
-  sampleId?: string;
-  onCollect?: (data: any) => void;
+  selectedPatientId?: string | undefined;
+  labOrderId?: string | undefined;
+  sampleId?: string | undefined;
+  onCollect?: ((data: any) => void) | undefined;
 }
 
 export default function CollectLabModal({
@@ -26,7 +25,7 @@ export default function CollectLabModal({
 }: CollectLabModalProps) {
   const { accessToken } = useAuth();
   const [patientsList, setPatientsList] = useState<{ id: string; name: string; pid: string }[]>([]);
-  const [patientId, setPatientId] = useState(selectedPatientId || NURSE_PATIENTS[0]!.id);
+  const [patientId, setPatientId] = useState(selectedPatientId || '');
   const [sampleType, setSampleType] = useState('Venous Blood (CBC)');
   const [barcode, setBarcode] = useState(`SMP-${Math.floor(100000 + Math.random() * 900000)}`);
   const [notes, setNotes] = useState('');
@@ -47,19 +46,21 @@ export default function CollectLabModal({
       try {
         const res = await fetchPatients(accessToken, { limit: 50 });
         if (res.data.length > 0) {
-          setPatientsList(
-            res.data.map((p) => ({
-              id: p.id,
-              name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
-              pid: p.pid,
-            })),
-          );
+          const mapped = res.data.map((p) => ({
+            id: p.id,
+            name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+            pid: p.pid,
+          }));
+          setPatientsList(mapped);
+          if (!selectedPatientId && mapped.length > 0) {
+            setPatientId(mapped[0]!.id);
+          }
         }
       } catch (err) {
         console.error('Failed to load patients in CollectLabModal:', err);
       }
     })();
-  }, [accessToken, isOpen]);
+  }, [accessToken, isOpen, selectedPatientId]);
 
   if (!isOpen) return null;
 
@@ -130,17 +131,15 @@ export default function CollectLabModal({
               onChange={(e) => setPatientId(e.target.value)}
               className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
             >
-              {patientsList.length > 0
-                ? patientsList.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.pid})
-                    </option>
-                  ))
-                : NURSE_PATIENTS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.pid}) — Room {p.room}
-                    </option>
-                  ))}
+              {patientsList.length > 0 ? (
+                patientsList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.pid})
+                  </option>
+                ))
+              ) : (
+                <option value="">No patients available</option>
+              )}
             </select>
           </div>
 

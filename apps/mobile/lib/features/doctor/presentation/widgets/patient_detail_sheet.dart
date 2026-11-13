@@ -6,6 +6,7 @@ class PatientDetailSheet extends StatelessWidget {
   final PatientItem patient;
   final VoidCallback? onPrescribe;
   final VoidCallback? onOrderLab;
+  final VoidCallback? onRefer;
   final VoidCallback? onViewRecords;
 
   const PatientDetailSheet({
@@ -13,6 +14,7 @@ class PatientDetailSheet extends StatelessWidget {
     required this.patient,
     this.onPrescribe,
     this.onOrderLab,
+    this.onRefer,
     this.onViewRecords,
   });
 
@@ -203,6 +205,34 @@ class PatientDetailSheet extends StatelessWidget {
                   onPressed: () {
                     Navigator.pop(context);
                     onOrderLab?.call();
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    side: const BorderSide(color: Color(0xFF1E6BFF)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.swap_horiz_rounded,
+                      size: 16, color: Color(0xFF1E6BFF)),
+                  label: const Text(
+                    'Refer Patient',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E6BFF)),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    onRefer?.call();
                   },
                 ),
               ),

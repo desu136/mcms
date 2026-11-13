@@ -22,7 +22,6 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import {
-  NURSE_LAB_SAMPLES,
   NurseLabSample,
 } from '@/components/nurse/nurseMockData';
 import NurseLabSampleDetailsModal from '@/components/nurse/NurseLabSampleDetailsModal';
@@ -32,8 +31,7 @@ import { fetchLabOrders } from '../../../lib/api/clinical';
 import type { LabOrderDTO } from '@mcms/contracts';
 
 // Map LabOrderDTO → NurseLabSample for display
-function mapLabOrderToSample(dto: LabOrderDTO, idx: number): NurseLabSample {
-  const mock = NURSE_LAB_SAMPLES[idx % NURSE_LAB_SAMPLES.length] as NurseLabSample;
+function mapLabOrderToSample(dto: LabOrderDTO): NurseLabSample {
   // Derive status from first sample or order-level status
   const rawStatus = dto.samples[0]?.status ?? dto.status;
   const statusMap: Record<string, NurseLabSample['status']> = {
@@ -48,7 +46,7 @@ function mapLabOrderToSample(dto: LabOrderDTO, idx: number): NurseLabSample {
   const allowedTypes: NurseLabSample['sampleType'][] = ['Blood', 'Urine', 'Stool', 'Swab', 'Sputum'];
   const normalizedType: NurseLabSample['sampleType'] = allowedTypes.find(
     (t) => t.toLowerCase() === (sampleType ?? '').toLowerCase(),
-  ) ?? mock?.sampleType ?? 'Blood';
+  ) ?? 'Blood';
 
   return {
     id: dto.id,
@@ -57,11 +55,11 @@ function mapLabOrderToSample(dto: LabOrderDTO, idx: number): NurseLabSample {
     patientName: dto.patientName,
     patientPid: dto.patientPid,
     patientAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(dto.patientName)}`,
-    room: mock?.room ?? 'Room A',
-    phone: mock?.phone ?? '—',
-    email: mock?.email ?? '—',
-    address: mock?.address ?? 'Addis Ababa, Ethiopia',
-    department: mock?.department ?? 'General',
+    room: 'Triage Room 1',
+    phone: '—',
+    email: '—',
+    address: 'Addis Ababa, Ethiopia',
+    department: 'General Lab',
     testName: dto.results[0]?.testName ?? (dto.samples[0] ? `${normalizedType} Panel` : 'Lab Test'),
     sampleType: normalizedType,
     priority: dto.priority === 'HIGH' ? 'High' : dto.priority === 'URGENT' ? 'Urgent' : 'Normal',
@@ -69,7 +67,7 @@ function mapLabOrderToSample(dto: LabOrderDTO, idx: number): NurseLabSample {
       ? new Date(dto.samples[0].collectedAt).toLocaleString()
       : new Date(dto.orderedAt).toLocaleString(),
     status: statusMap[rawStatus.toUpperCase()] ?? 'Pending',
-    doctor: dto.orderingDoctorName ?? 'Dr. —',
+    doctor: dto.orderingDoctorName ?? 'Attending Doctor',
     ...(dto.clinicalNotes ? { instructions: dto.clinicalNotes } : {}),
     ...(dto.samples[0]?.collectedAt ? { collectedAt: new Date(dto.samples[0].collectedAt).toLocaleString() } : {}),
     ...(dto.samples[0]?.receivedAt ? { deliveredAt: new Date(dto.samples[0].receivedAt).toLocaleString() } : {}),
@@ -78,7 +76,7 @@ function mapLabOrderToSample(dto: LabOrderDTO, idx: number): NurseLabSample {
 
 export default function NurseLabSamplesPage() {
   const { accessToken } = useAuth();
-  const [liveSamples, setLiveSamples] = useState<NurseLabSample[]>(NURSE_LAB_SAMPLES);
+  const [liveSamples, setLiveSamples] = useState<NurseLabSample[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'pending' | 'collected' | 'in_lab' | 'completed' | 'all'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,7 +87,7 @@ export default function NurseLabSamplesPage() {
   const rowsPerPage = 10;
 
   // Selected sample for right sidebar & detail modal
-  const [selectedSample, setSelectedSample] = useState<NurseLabSample>(NURSE_LAB_SAMPLES[0]!);
+  const [selectedSample, setSelectedSample] = useState<NurseLabSample | null>(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [collectModalOpen, setCollectModalOpen] = useState(false);
 
@@ -99,7 +97,7 @@ export default function NurseLabSamplesPage() {
     try {
       const orders = await fetchLabOrders(accessToken);
       if (orders && orders.length > 0) {
-        const mapped = orders.map((dto, idx) => mapLabOrderToSample(dto, idx));
+        const mapped = orders.map((dto) => mapLabOrderToSample(dto));
         setLiveSamples(mapped);
         setSelectedSample(mapped[0]!);
       }
@@ -146,12 +144,13 @@ export default function NurseLabSamplesPage() {
     return filteredSamples.slice(start, start + rowsPerPage);
   }, [filteredSamples, currentPage]);
 
-  const handleOpenDetails = (sample: NurseLabSample) => {
+  const handleOpenDetails = (sample: NurseLabSample | null) => {
+    if (!sample) return;
     setSelectedSample(sample);
     setDetailsModalOpen(true);
   };
 
-  const handleOpenCollect = (sample?: NurseLabSample) => {
+  const handleOpenCollect = (sample?: NurseLabSample | null) => {
     if (sample) setSelectedSample(sample);
     setCollectModalOpen(true);
   };
@@ -436,7 +435,7 @@ export default function NurseLabSamplesPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {paginatedSamples.map((sample) => {
-                    const isSelected = selectedSample.id === sample.id;
+                    const isSelected = selectedSample?.id === sample.id;
                     return (
                       <tr
                         key={sample.id}
@@ -574,6 +573,7 @@ export default function NurseLabSamplesPage() {
         </div>
 
         {/* Right Sidebar Details Panel */}
+        {selectedSample ? (
         <aside className="w-full lg:w-80 xl:w-88 border-t lg:border-t-0 lg:border-l border-slate-200/80 bg-white p-3.5 sm:p-4 space-y-3.5 overflow-y-auto shrink-0">
           {/* Patient Details Header Card */}
           <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
@@ -748,6 +748,11 @@ export default function NurseLabSamplesPage() {
             </div>
           </div>
         </aside>
+        ) : (
+          <aside className="w-full lg:w-80 xl:w-88 border-t lg:border-t-0 lg:border-l border-slate-200/80 bg-white p-3.5 sm:p-4 overflow-y-auto shrink-0 flex items-center justify-center">
+            <p className="text-xs text-slate-400 text-center">Select a sample record to view details</p>
+          </aside>
+        )}
       </div>
 
       {/* Lab Sample Details Modal */}
@@ -765,9 +770,9 @@ export default function NurseLabSamplesPage() {
           setCollectModalOpen(false);
           void loadLabSamples();
         }}
-        selectedPatientId={selectedSample.patientId}
-        labOrderId={selectedSample.id}
-        sampleId={selectedSample.sampleId}
+        selectedPatientId={selectedSample?.patientId}
+        labOrderId={selectedSample?.id}
+        sampleId={selectedSample?.sampleId}
       />
     </div>
   );

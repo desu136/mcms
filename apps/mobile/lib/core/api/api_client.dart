@@ -404,6 +404,19 @@ class MobileApiClient {
     throw Exception('Failed to create lab order: ${response.statusCode}');
   }
 
+  Future<Map<String, dynamic>> collectLabSample(
+      String orderId, String sampleId, Map<String, dynamic> data) async {
+    final response = await _client.post(
+      ApiEndpoints.collectSample(orderId, sampleId),
+      headers: _buildHeaders(),
+      body: jsonEncode(data),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to collect lab sample: ${response.statusCode}');
+  }
+
   // ─── Admissions ────────────────────────────────────────────────────────────
 
   Future<List<dynamic>> getAdmissions({
@@ -486,11 +499,32 @@ class MobileApiClient {
     }
     throw Exception('Failed to fetch departments: ${response.statusCode}');
   }
+
+  Future<List<dynamic>> getRooms({String? departmentId}) async {
+    final q = <String, String>{};
+    if (departmentId != null) q['departmentId'] = departmentId;
+
+    final response = await _client.get(
+      ApiEndpoints.rooms(q),
+      headers: _buildHeaders(),
+    );
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) return decoded;
+      if (decoded is Map<String, dynamic> && decoded['data'] is List) {
+        return decoded['data'] as List<dynamic>;
+      }
+      return [];
+    }
+    throw Exception('Failed to fetch rooms: ${response.statusCode}');
+  }
 }
 
 // ─── Riverpod Provider ───────────────────────────────────────────────────────
 
 final apiClientProvider = Provider<MobileApiClient>((ref) {
+  // Watch authProvider so the client updates immediately upon login / logout
+  ref.watch(authProvider);
   final authService = ref.watch(authServiceProvider);
   final client = MobileApiClient();
   if (authService.accessToken != null) {

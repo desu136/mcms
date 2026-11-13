@@ -388,55 +388,72 @@ class _DoctorHomeBody extends ConsumerWidget {
               const SizedBox(width: 8),
 
               // Date Card
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.border, width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.calendar_month_outlined,
-                      color: Color(0xFF1E6BFF),
-                      size: 16,
-                    ),
-                    SizedBox(width: 6),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Oct 19, 2026',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.textPrimary,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                        Text(
-                          'Monday',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF94A3B8),
-                          ),
+              Builder(
+                builder: (context) {
+                  final now = DateTime.now();
+                  const months = [
+                    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+                  ];
+                  const weekdays = [
+                    'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                    'Friday', 'Saturday', 'Sunday'
+                  ];
+                  final formattedDate =
+                      '${months[now.month - 1]} ${now.day}, ${now.year}';
+                  final formattedWeekday = weekdays[now.weekday - 1];
+
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.border, width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
                         ),
                       ],
                     ),
-                  ],
-                ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.calendar_month_outlined,
+                          color: Color(0xFF1E6BFF),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              formattedDate,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.textPrimary,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            Text(
+                              formattedWeekday,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -596,8 +613,28 @@ class _DoctorHomeBody extends ConsumerWidget {
                     showDivider: apt != appointments.take(5).last,
                     onTap: () {
                       final p = patients.firstWhere(
-                        (item) => item.pid == apt.patientId,
-                        orElse: () => patients.first,
+                        (item) =>
+                            item.pid == apt.patientId || item.id == apt.patientId,
+                        orElse: () => patients.isNotEmpty
+                            ? patients.first
+                            : PatientItem(
+                                id: apt.patientId,
+                                name: apt.patientName,
+                                pid: apt.patientId.isNotEmpty
+                                    ? apt.patientId
+                                    : 'PID-000000',
+                                age: apt.age,
+                                gender: apt.gender,
+                                phone: '—',
+                                email: '—',
+                                address: 'Addis Ababa, Ethiopia',
+                                department: apt.department,
+                                lastVisit: apt.date,
+                                lastVisitReason: apt.reason,
+                                status: 'Active',
+                                avatar: apt.avatar,
+                                totalVisits: 1,
+                              ),
                       );
                       showModalBottomSheet<void>(
                         context: context,
@@ -612,6 +649,7 @@ class _DoctorHomeBody extends ConsumerWidget {
                               backgroundColor: Colors.transparent,
                               builder: (_) => AddPrescriptionSheet(
                                 patients: patients,
+                                initialPatient: p,
                                 onAdd: (item) => ref
                                     .read(doctorProvider.notifier)
                                     .addPrescription(item),
@@ -625,9 +663,21 @@ class _DoctorHomeBody extends ConsumerWidget {
                               backgroundColor: Colors.transparent,
                               builder: (_) => OrderLabSheet(
                                 patients: patients,
+                                initialPatient: p,
                                 onAdd: (item) => ref
                                     .read(doctorProvider.notifier)
                                     .addLabOrder(item),
+                              ),
+                            );
+                          },
+                          onRefer: () {
+                            showModalBottomSheet<void>(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => ReferPatientSheet(
+                                patients: patients,
+                                initialPatient: p,
                               ),
                             );
                           },
@@ -752,6 +802,29 @@ class _DoctorHomeBody extends ConsumerWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: QuickActionButton(
+                        icon: Icons.swap_horiz_rounded,
+                        label: 'Refer Patient',
+                        iconColor: const Color(0xFF0EA5E9),
+                        iconBgColor: const Color(0xFFF0F9FF),
+                        onTap: () {
+                          showModalBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => ReferPatientSheet(
+                              patients: patients,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: QuickActionButton(
                         icon: Icons.description_outlined,
                         label: 'View Patient Records',
                         iconColor: const Color(0xFF10B981),
@@ -792,6 +865,7 @@ class _DoctorHomeBody extends ConsumerWidget {
                         backgroundColor: Colors.transparent,
                         builder: (_) => AddPrescriptionSheet(
                           patients: patients,
+                          initialPatient: currentPatient,
                           onAdd: (item) => ref
                               .read(doctorProvider.notifier)
                               .addPrescription(item),
@@ -805,9 +879,21 @@ class _DoctorHomeBody extends ConsumerWidget {
                         backgroundColor: Colors.transparent,
                         builder: (_) => OrderLabSheet(
                           patients: patients,
+                          initialPatient: currentPatient,
                           onAdd: (item) => ref
                               .read(doctorProvider.notifier)
                               .addLabOrder(item),
+                        ),
+                      );
+                    },
+                    onRefer: () {
+                      showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => ReferPatientSheet(
+                          patients: patients,
+                          initialPatient: currentPatient,
                         ),
                       );
                     },

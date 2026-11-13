@@ -58,7 +58,7 @@ export interface NursePatient {
   };
   nextFollowUp?: string;
   doctor: string;
-  admissionDate: string;
+  admissionDate?: string;
 }
 
 export const NURSE_PATIENTS: NursePatient[] = [

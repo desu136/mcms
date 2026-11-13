@@ -300,6 +300,8 @@ class LabResultItem {
 
 class MedicalRecordItem {
   final String id;
+  final String? patientId;
+  final String? patientName;
   final String visitDate;
   final String visitTime;
   final String visitType;
@@ -311,6 +313,8 @@ class MedicalRecordItem {
 
   const MedicalRecordItem({
     required this.id,
+    this.patientId,
+    this.patientName,
     required this.visitDate,
     required this.visitTime,
     required this.visitType,

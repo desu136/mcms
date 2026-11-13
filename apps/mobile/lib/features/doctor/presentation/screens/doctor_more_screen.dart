@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/storage/sqlite_database.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/doctor_repository.dart';
+import '../widgets/doctor_modals.dart';
 import 'doctor_medical_records_screen.dart';
 import 'doctor_prescriptions_screen.dart';
 import 'doctor_lab_results_screen.dart';
@@ -17,7 +18,7 @@ class DoctorMoreScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    const doctor = DoctorRepository.currentDoctor;
+    final doctor = ref.watch(doctorProfileProvider);
     final state = ref.watch(doctorProvider);
     final unreadMessages =
         state.conversations.fold<int>(0, (sum, c) => sum + c.unreadCount);
@@ -159,6 +160,23 @@ class DoctorMoreScreen extends ConsumerWidget {
                       context,
                       MaterialPageRoute<void>(
                         builder: (_) => const DoctorLabResultsScreen(),
+                      ),
+                    ),
+                  ),
+                  _divider(),
+                  _menuItem(
+                    context,
+                    icon: Icons.swap_horiz_rounded,
+                    iconColor: const Color(0xFF0EA5E9),
+                    iconBg: const Color(0xFFF0F9FF),
+                    title: 'Refer Patient',
+                    subtitle: 'Queue transfer & specialist referrals',
+                    onTap: () => showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => ReferPatientSheet(
+                        patients: state.patients,
                       ),
                     ),
                   ),

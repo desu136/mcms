@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Activity,
   Calendar,
@@ -18,6 +18,11 @@ import {
   FileText,
   AlertTriangle,
   Check,
+  Scale,
+  Ruler,
+  RefreshCw,
+  Clock,
+  Users,
 } from 'lucide-react';
 import {
   LineChart,
@@ -35,86 +40,173 @@ import AdministerMedModal from '../../components/nurse/AdministerMedModal';
 import CollectLabModal from '../../components/nurse/CollectLabModal';
 import AddNoteModal from '../../components/nurse/AddNoteModal';
 import { useAuth } from '../../auth/AuthContext';
-import { recordVitals } from '../../api/clinical';
-import type { CreateVitalReadingRequest } from '@mcms/contracts';
-import {
-  NURSE_PATIENTS,
-  VITALS_HISTORY_DATA,
-  RECENT_VITALS_READINGS,
-  RECENT_NURSE_ALERTS,
-  CURRENT_NURSE,
-  NursePatient,
-} from '../../components/nurse/nurseMockData';
+import { fetchPatients } from '../../api/patients';
+import { fetchPatientVitals, recordVitals } from '../../api/clinical';
+import type { VitalReadingDTO, PatientDTO, CreateVitalReadingRequest } from '@mcms/contracts';
+
+interface FormattedPatientItem {
+  id: string;
+  pid: string;
+  name: string;
+  age: number;
+  gender: 'Female' | 'Male';
+  avatar: string;
+  phone: string;
+  email: string;
+  address: string;
+  room: string;
+  bed: string;
+  department: string;
+  status: string;
+  vitalsStatus: string;
+  latestVitals?: {
+    bp: string;
+    hr: number;
+    temp: number;
+    spo2: number;
+  };
+}
 
 export function VitalsPage() {
   const { accessToken } = useAuth();
-  const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
-  const [activeMetricTab, setActiveMetricTab] = useState<'temp' | 'bp' | 'hr' | 'spo2'>('temp');
-  const [departmentFilter, setDepartmentFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
 
-  // Form state
-  const [tempInput, setTempInput] = useState('36.8');
-  const [tempUnit, setTempUnit] = useState<'C' | 'F'>('C');
-  const [systolicInput, setSystolicInput] = useState('118');
-  const [diastolicInput, setDiastolicInput] = useState('76');
-  const [hrInput, setHrInput] = useState('72');
-  const [rrInput, setRrInput] = useState('16');
-  const [spo2Input, setSpo2Input] = useState('98');
-  const [painLevel, setPainLevel] = useState<number>(1);
-  const [notesInput, setNotesInput] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Patient state
+  const [patients, setPatients] = useState<FormattedPatientItem[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<FormattedPatientItem | null>(null);
+  const [liveVitals, setLiveVitals] = useState<VitalReadingDTO[]>([]);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+  const [isLoadingVitals, setIsLoadingVitals] = useState(false);
+
+  const [activeMetricTab, setActiveMetricTab] = useState<'temp' | 'bp' | 'hr' | 'spo2'>('temp');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
 
-  // Modals
+  // Modals state
   const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
   const [administerModalOpen, setAdministerModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
 
-  const handleSaveObservation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    const payload: CreateVitalReadingRequest = {
-      patientId: selectedPatient.id,
-      temperature: tempInput ? parseFloat(tempInput) : 36.8,
-      systolicBp: systolicInput ? parseInt(systolicInput, 10) : 120,
-      diastolicBp: diastolicInput ? parseInt(diastolicInput, 10) : 80,
-      heartRate: hrInput ? parseInt(hrInput, 10) : 72,
-      spo2: spo2Input ? parseFloat(spo2Input) : 98,
-      ...(rrInput ? { respiratoryRate: parseInt(rrInput, 10) } : {}),
-      ...(notesInput.trim() ? { notes: notesInput.trim() } : {}),
-    };
-
+  // Load live patients
+  const loadPatients = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoadingPatients(true);
     try {
-      await recordVitals(payload, accessToken);
-    } catch {
-      try {
-        await (window as any).electron?.ipcRenderer?.invoke('enqueue-operation', {
-          type: 'RECORD_VITALS',
-          payload,
+      const res = await fetchPatients(accessToken, { limit: 100 });
+      if (res && res.data && res.data.length > 0) {
+        const mapped: FormattedPatientItem[] = res.data.map((p, idx) => {
+          const name = p.fullName || `${p.firstName} ${p.lastName}`.trim();
+          const birthYear = p.dateOfBirth ? new Date(p.dateOfBirth).getFullYear() : 1995;
+          const age = Math.max(0, new Date().getFullYear() - birthYear);
+          return {
+            id: p.id,
+            pid: p.pid || `PID-${p.id.slice(0, 6).toUpperCase()}`,
+            name,
+            age,
+            gender: p.gender?.toUpperCase() === 'MALE' ? 'Male' : 'Female',
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+            phone: p.phoneNumber || '—',
+            email: p.email || '—',
+            address: p.address || 'Addis Ababa, Ethiopia',
+            room: `Ward ${Math.floor(idx / 4) + 1}A`,
+            bed: `Bed 0${(idx % 6) + 1}`,
+            department: 'General Nursing & Triage',
+            status: p.status === 'ACTIVE' ? 'In Care' : 'Completed',
+            vitalsStatus: 'Normal',
+          };
         });
-      } catch {
-        // Fallback
+        setPatients(mapped);
+        setSelectedPatient((prev) => {
+          if (prev) {
+            const found = mapped.find((m) => m.id === prev.id);
+            if (found) return found;
+          }
+          return mapped[0] ?? null;
+        });
+      } else {
+        setPatients([]);
+        setSelectedPatient(null);
       }
+    } catch (err) {
+      console.error('Failed to load patients for vitals page:', err);
     } finally {
-      setIsSubmitting(false);
-      setShowSuccessToast(true);
-      setTimeout(() => setShowSuccessToast(false), 3000);
+      setIsLoadingPatients(false);
     }
+  }, [accessToken]);
+
+  // Load vitals for selected patient
+  const loadVitalsForPatient = useCallback(
+    async (patientId: string) => {
+      if (!accessToken || !patientId) return;
+      setIsLoadingVitals(true);
+      try {
+        const data = await fetchPatientVitals(patientId, accessToken, 20);
+        setLiveVitals(data || []);
+        if (data && data.length > 0) {
+          const latest = data[0]!;
+          setSelectedPatient((prev) => {
+            if (!prev || prev.id !== patientId) return prev;
+            return {
+              ...prev,
+              latestVitals: {
+                bp: `${latest.systolicBp}/${latest.diastolicBp}`,
+                hr: latest.heartRate,
+                temp: latest.temperature,
+                spo2: latest.spo2,
+              },
+            };
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load vitals for patient:', err);
+        setLiveVitals([]);
+      } finally {
+        setIsLoadingVitals(false);
+      }
+    },
+    [accessToken],
+  );
+
+  useEffect(() => {
+    void loadPatients();
+  }, [loadPatients]);
+
+  useEffect(() => {
+    if (selectedPatient?.id) {
+      void loadVitalsForPatient(selectedPatient.id);
+    }
+  }, [selectedPatient?.id, loadVitalsForPatient]);
+
+  const handleActionSuccess = () => {
+    setShowSuccessToast(true);
+    setTimeout(() => setShowSuccessToast(false), 3000);
+    if (selectedPatient?.id) {
+      void loadVitalsForPatient(selectedPatient.id);
+    }
+    void loadPatients();
   };
 
-  const filteredPatients = NURSE_PATIENTS.filter((p) => {
-    const matchesSearch =
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.pid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.room.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDept = departmentFilter === 'All' || p.department.includes(departmentFilter);
-    const matchesStatus = statusFilter === 'All' || p.vitalsStatus === statusFilter;
-    return matchesSearch && matchesDept && matchesStatus;
+  const filteredPatients = patients.filter((p) => {
+    const q = searchQuery.toLowerCase();
+    return !q || p.name.toLowerCase().includes(q) || p.pid.toLowerCase().includes(q) || p.room.toLowerCase().includes(q);
   });
+
+  // Chart telemetry formatting
+  const chartData = useMemo(() => {
+    if (!liveVitals || liveVitals.length === 0) return [];
+    return liveVitals
+      .slice()
+      .reverse()
+      .map((v) => ({
+        time: new Date(v.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        temp: v.temperature,
+        bp: v.systolicBp,
+        systolic: v.systolicBp,
+        diastolic: v.diastolicBp,
+        hr: v.heartRate,
+        spo2: v.spo2,
+      }));
+  }, [liveVitals]);
 
   const headerContent = (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -129,13 +221,21 @@ export function VitalsPage() {
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
-        <div className="bg-white border border-gray-200/80 rounded-lg px-2.5 py-1 text-xs text-gray-600 flex items-center gap-1.5 shadow-xs">
-          <Calendar size={13} className="text-blue-600" />
-          <span className="font-medium text-[11px]">Ward 3A · Cardiology</span>
-        </div>
+        <button
+          onClick={() => {
+            void loadPatients();
+            if (selectedPatient?.id) void loadVitalsForPatient(selectedPatient.id);
+          }}
+          disabled={isLoadingPatients || isLoadingVitals}
+          className="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors shadow-2xs cursor-pointer"
+          title="Refresh Data"
+        >
+          <RefreshCw size={13} className={isLoadingPatients || isLoadingVitals ? 'animate-spin text-blue-600' : ''} />
+        </button>
         <button
           onClick={() => setVitalsModalOpen(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+          disabled={!selectedPatient}
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
         >
           <Activity size={13} />
           <span>New Reading</span>
@@ -147,40 +247,36 @@ export function VitalsPage() {
   const kpisContent = (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
       <NurseStatCard
-        title="Patients Observed"
-        value={18}
-        iconName="users"
-        trendText="100% of shift target"
-        trendDirection="up"
-        trendIsPositive={true}
-        colorTheme="blue"
+        label="Patients in Ward"
+        value={String(patients.length)}
+        color="blue"
+        trend="Active registry"
+        trendUp={true}
+        icon={Users}
       />
       <NurseStatCard
-        title="Normal Readings"
-        value={15}
-        iconName="check"
-        trendText="83% within range"
-        trendDirection="up"
-        trendIsPositive={true}
-        colorTheme="green"
+        label="Biometric Logs"
+        value={String(liveVitals.length)}
+        color="green"
+        trend="Recorded for patient"
+        trendUp={true}
+        icon={Check}
       />
       <NurseStatCard
-        title="Elevated Attention"
-        value={3}
-        iconName="alert"
-        trendText="Requires recheck in 2h"
-        trendDirection="up"
-        trendIsPositive={false}
-        colorTheme="orange"
+        label="Last Heart Rate"
+        value={selectedPatient?.latestVitals ? `${selectedPatient.latestVitals.hr} bpm` : '—'}
+        color="purple"
+        trend="Resting pulse"
+        trendUp={true}
+        icon={Heart}
       />
       <NurseStatCard
-        title="Critical Alerts"
-        value={1}
-        iconName="heart"
-        trendText="Dr. Fitsum notified"
-        trendDirection="down"
-        trendIsPositive={false}
-        colorTheme="red"
+        label="Last SpO₂"
+        value={selectedPatient?.latestVitals ? `${selectedPatient.latestVitals.spo2}%` : '—'}
+        color="cyan"
+        trend="Oxygen saturation"
+        trendUp={true}
+        icon={Wind}
       />
     </div>
   );
@@ -188,76 +284,97 @@ export function VitalsPage() {
   const rightPanelContent = (
     <div className="space-y-3">
       {/* Patient Profile Card */}
-      <div className="bg-white rounded-xl border border-gray-200/80 p-3.5 shadow-2xs">
-        <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-gray-100">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Selected Patient</span>
-          <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-            Room {selectedPatient.room} · Bed {selectedPatient.bed}
-          </span>
-        </div>
+      {selectedPatient ? (
+        <div className="bg-white rounded-xl border border-gray-200/80 p-3.5 shadow-2xs">
+          <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-gray-100">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Selected Patient</span>
+            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+              {selectedPatient.room} · {selectedPatient.bed}
+            </span>
+          </div>
 
-        <div className="flex items-center gap-3">
-          <img
-            src={selectedPatient.avatar}
-            alt={selectedPatient.name}
-            className="w-11 h-11 rounded-full object-cover ring-2 ring-blue-100"
-          />
-          <div className="min-w-0 flex-1">
-            <h3 className="font-bold text-sm text-gray-900 truncate leading-tight">{selectedPatient.name}</h3>
-            <p className="text-[11px] text-gray-400 font-mono mt-0.5">{selectedPatient.pid}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              {selectedPatient.age}y · {selectedPatient.gender} · {selectedPatient.department}
-            </p>
+          <div className="flex items-center gap-3">
+            <img
+              src={selectedPatient.avatar}
+              alt={selectedPatient.name}
+              className="w-11 h-11 rounded-full object-cover ring-2 ring-blue-100"
+            />
+            <div className="min-w-0 flex-1">
+              <h3 className="font-bold text-sm text-gray-900 truncate leading-tight">{selectedPatient.name}</h3>
+              <p className="text-[11px] text-gray-400 font-mono mt-0.5">{selectedPatient.pid}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                {selectedPatient.age}y · {selectedPatient.gender} · {selectedPatient.department}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-1 text-xs text-gray-500">
+            <div className="flex items-center gap-2">
+              <Phone size={12} className="text-gray-400" />
+              <span className="text-[11px]">{selectedPatient.phone}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <MapPin size={12} className="text-gray-400" />
+              <span className="text-[11px] truncate">{selectedPatient.address}</span>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="grid grid-cols-2 gap-1.5 mt-3 pt-2.5 border-t border-gray-100">
+            <button
+              onClick={() => setAdministerModalOpen(true)}
+              className="p-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <Pill size={12} className="text-purple-600" />
+              <span>Medication</span>
+            </button>
+            <button
+              onClick={() => setNoteModalOpen(true)}
+              className="p-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <FileText size={12} className="text-blue-600" />
+              <span>Add Note</span>
+            </button>
           </div>
         </div>
-
-        <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-1 text-xs text-gray-500">
-          <div className="flex items-center gap-2">
-            <Phone size={12} className="text-gray-400" />
-            <span className="text-[11px]">{selectedPatient.phone}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <MapPin size={12} className="text-gray-400" />
-            <span className="text-[11px] truncate">{selectedPatient.address}</span>
-          </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200/80 p-4 text-center text-gray-400 text-xs">
+          Select a patient to inspect biometrics.
         </div>
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-1.5 mt-3 pt-2.5 border-t border-gray-100">
-          <button
-            onClick={() => setAdministerModalOpen(true)}
-            className="p-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer"
-          >
-            <Pill size={12} className="text-purple-600" />
-            <span>Medication</span>
-          </button>
-          <button
-            onClick={() => setNoteModalOpen(true)}
-            className="p-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer"
-          >
-            <FileText size={12} className="text-blue-600" />
-            <span>Add Note</span>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Observation History Table */}
       <div className="bg-white rounded-xl border border-gray-200/80 p-3.5 shadow-2xs">
         <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">Observation Logs</h4>
-        <div className="space-y-1.5 text-xs">
-          {RECENT_VITALS_READINGS.slice(0, 4).map((r, i) => (
-            <div key={i} className="p-2 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-gray-800 text-[11px]">{r.dateTime}</span>
-                <span className="text-[10px] text-gray-400 block">By: {CURRENT_NURSE.name}</span>
+        {isLoadingVitals ? (
+          <div className="py-6 text-center text-gray-400 text-xs">
+            <RefreshCw size={14} className="animate-spin text-blue-600 mx-auto mb-1" />
+            Loading vitals history...
+          </div>
+        ) : liveVitals.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-4">No recorded vitals on file.</p>
+        ) : (
+          <div className="space-y-1.5 text-xs max-h-60 overflow-y-auto">
+            {liveVitals.slice(0, 6).map((r) => (
+              <div key={r.id} className="p-2 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-gray-800 text-[11px]">
+                    {new Date(r.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <span className="text-[10px] text-gray-400 block">
+                    {new Date(r.recordedAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="font-bold text-gray-700 text-xs">{r.systolicBp}/{r.diastolicBp} mmHg</span>
+                  <span className="text-[10px] text-gray-400 block">
+                    {r.heartRate} bpm · {r.temperature}°C · {r.spo2}%
+                  </span>
+                </div>
               </div>
-              <div className="text-right">
-                <span className="font-bold text-gray-700 text-xs">{r.bp}</span>
-                <span className="text-[10px] text-gray-400 block">{r.hr} bpm · {r.temp}°C</span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -268,7 +385,7 @@ export function VitalsPage() {
       {showSuccessToast && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2 rounded-xl text-xs flex items-center gap-2 shadow-xs animate-in fade-in">
           <Check size={14} className="text-emerald-600" />
-          <span>Vitals recorded successfully for {selectedPatient.name}</span>
+          <span>Vitals recorded successfully for {selectedPatient?.name}</span>
         </div>
       )}
 
@@ -276,8 +393,10 @@ export function VitalsPage() {
       <div className="bg-white rounded-xl border border-gray-200/80 p-3.5 shadow-2xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-gray-100">
           <div>
-            <h3 className="font-bold text-sm text-gray-800">24-Hour Biometric Trends</h3>
-            <p className="text-xs text-gray-400">Telemetry observation trend for {selectedPatient.name}</p>
+            <h3 className="font-bold text-sm text-gray-800">Biometric Trend Graph</h3>
+            <p className="text-xs text-gray-400">
+              {selectedPatient ? `Telemetry observation trend for ${selectedPatient.name}` : 'Select a patient'}
+            </p>
           </div>
 
           <div className="flex items-center gap-1 bg-gray-100/80 p-0.5 rounded-lg">
@@ -296,30 +415,36 @@ export function VitalsPage() {
         </div>
 
         <div className="h-44 sm:h-52 w-full pt-3">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={VITALS_HISTORY_DATA}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-              <XAxis dataKey="time" stroke="#94A3B8" fontSize={11} tickLine={false} />
-              <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} domain={['dataMin - 2', 'dataMax + 2']} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0F172A',
-                  borderColor: '#1E293B',
-                  borderRadius: '8px',
-                  color: '#FFF',
-                  fontSize: '11px',
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey={activeMetricTab}
-                stroke="#2563EB"
-                strokeWidth={2.5}
-                dot={{ r: 3, fill: '#2563EB' }}
-                activeDot={{ r: 5 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          {chartData.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-gray-400 text-xs">
+              No trend data available. Record vitals to see chart graph.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                <XAxis dataKey="time" stroke="#94A3B8" fontSize={11} tickLine={false} />
+                <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} domain={['dataMin - 2', 'dataMax + 2']} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#0F172A',
+                    borderColor: '#1E293B',
+                    borderRadius: '8px',
+                    color: '#FFF',
+                    fontSize: '11px',
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey={activeMetricTab}
+                  stroke="#2563EB"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#2563EB' }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
@@ -328,7 +453,7 @@ export function VitalsPage() {
         <div className="p-3 sm:p-3.5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div>
             <h3 className="font-bold text-sm text-gray-800">Ward Vitals Monitoring Board</h3>
-            <p className="text-xs text-gray-400">Click a row to select patient telemetry</p>
+            <p className="text-xs text-gray-400">Click a patient row to inspect biometric telemetry</p>
           </div>
 
           <div className="relative w-full sm:w-60">
@@ -349,7 +474,7 @@ export function VitalsPage() {
               <tr className="bg-gray-50/80 border-b border-gray-100 text-[10px] font-bold uppercase tracking-wider text-gray-400">
                 <th className="py-2.5 px-3">Patient</th>
                 <th className="py-2.5 px-3">Room</th>
-                <th className="py-2.5 px-3">Blood Pressure</th>
+                <th className="py-2.5 px-3">Latest BP</th>
                 <th className="py-2.5 px-3">Heart Rate</th>
                 <th className="py-2.5 px-3">Temp</th>
                 <th className="py-2.5 px-3">SpO₂</th>
@@ -357,44 +482,59 @@ export function VitalsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredPatients.map((p) => {
-                const isSelected = selectedPatient.id === p.id;
-                return (
-                  <tr
-                    key={p.id}
-                    onClick={() => setSelectedPatient(p)}
-                    className={`hover:bg-blue-50/40 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/50' : ''}`}
-                  >
-                    <td className="py-2 px-3">
-                      <div className="flex items-center gap-2">
-                        <img src={p.avatar} alt={p.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
-                        <div>
-                          <span className="font-bold text-gray-800 block leading-tight">{p.name}</span>
-                          <span className="text-[10px] text-gray-400 font-mono">{p.pid}</span>
+              {isLoadingPatients ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-gray-400">
+                    <RefreshCw size={20} className="animate-spin text-blue-600 mx-auto mb-1" />
+                    Loading patients...
+                  </td>
+                </tr>
+              ) : filteredPatients.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-gray-400">
+                    No patients found.
+                  </td>
+                </tr>
+              ) : (
+                filteredPatients.map((p) => {
+                  const isSelected = selectedPatient?.id === p.id;
+                  return (
+                    <tr
+                      key={p.id}
+                      onClick={() => setSelectedPatient(p)}
+                      className={`hover:bg-blue-50/40 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/50' : ''}`}
+                    >
+                      <td className="py-2 px-3">
+                        <div className="flex items-center gap-2">
+                          <img src={p.avatar} alt={p.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                          <div>
+                            <span className="font-bold text-gray-800 block leading-tight">{p.name}</span>
+                            <span className="text-[10px] text-gray-400 font-mono">{p.pid}</span>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="py-2 px-3 font-medium text-gray-700">Room {p.room}</td>
-                    <td className="py-2 px-3 font-mono font-bold text-gray-800">{p.vitals.bp}</td>
-                    <td className="py-2 px-3 text-gray-700">{p.vitals.hr} bpm</td>
-                    <td className="py-2 px-3 text-gray-700">{p.vitals.temp}°C</td>
-                    <td className="py-2 px-3 text-gray-700">{p.vitals.spo2}%</td>
-                    <td className="py-2 px-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          p.vitalsStatus === 'Normal'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : p.vitalsStatus === 'Critical'
-                            ? 'bg-rose-100 text-rose-700'
-                            : 'bg-amber-100 text-amber-700'
-                        }`}
-                      >
-                        {p.vitalsStatus}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+                      </td>
+                      <td className="py-2 px-3 font-medium text-gray-700">{p.room}</td>
+                      <td className="py-2 px-3 font-mono font-bold text-gray-800">
+                        {p.latestVitals ? p.latestVitals.bp : '—'}
+                      </td>
+                      <td className="py-2 px-3 text-gray-700">
+                        {p.latestVitals ? `${p.latestVitals.hr} bpm` : '—'}
+                      </td>
+                      <td className="py-2 px-3 text-gray-700">
+                        {p.latestVitals ? `${p.latestVitals.temp}°C` : '—'}
+                      </td>
+                      <td className="py-2 px-3 text-gray-700">
+                        {p.latestVitals ? `${p.latestVitals.spo2}%` : '—'}
+                      </td>
+                      <td className="py-2 px-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                          {p.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -404,22 +544,23 @@ export function VitalsPage() {
       <RecordVitalsModal
         isOpen={vitalsModalOpen}
         onClose={() => setVitalsModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        onSave={handleActionSuccess}
+        selectedPatientId={selectedPatient?.id}
       />
       <AdministerMedModal
         isOpen={administerModalOpen}
         onClose={() => setAdministerModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
       />
       <CollectLabModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
       />
       <AddNoteModal
         isOpen={noteModalOpen}
         onClose={() => setNoteModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
       />
     </NursePageShell>
   );

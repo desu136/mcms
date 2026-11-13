@@ -98,6 +98,9 @@ class ApiEndpoints {
   static Uri labOrderById(String id) =>
       Uri.parse('${AppEnv.apiBaseUrl}/lab-orders/${Uri.encodeComponent(id)}');
 
+  static Uri collectSample(String orderId, String sampleId) => Uri.parse(
+      '${AppEnv.apiBaseUrl}/lab-orders/${Uri.encodeComponent(orderId)}/samples/${Uri.encodeComponent(sampleId)}/collect');
+
   // ─── Clinical: Admissions ─────────────────────────────────────────────────
   static Uri admissions([Map<String, String>? queryParams]) {
     final base = Uri.parse('${AppEnv.apiBaseUrl}/admissions');
@@ -122,6 +125,13 @@ class ApiEndpoints {
 
   static Uri departments([Map<String, String>? queryParams]) {
     final base = Uri.parse('${AppEnv.apiBaseUrl}/clinic-admin/departments');
+    return queryParams != null && queryParams.isNotEmpty
+        ? base.replace(queryParameters: queryParams)
+        : base;
+  }
+
+  static Uri rooms([Map<String, String>? queryParams]) {
+    final base = Uri.parse('${AppEnv.apiBaseUrl}/clinic-admin/rooms');
     return queryParams != null && queryParams.isNotEmpty
         ? base.replace(queryParameters: queryParams)
         : base;
