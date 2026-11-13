@@ -207,11 +207,12 @@ class _NurseChatDetailScreenState
     if (text.isEmpty) return;
 
     final convId = widget.conversation.id;
+    final currentNurse = ref.read(nurseProfileProvider);
     final newMsg = NurseChatMessage(
       id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
       conversationId: convId,
       sender: 'nurse',
-      senderName: 'Aster Mulu, RN',
+      senderName: '${currentNurse.name}, RN',
       text: text,
       time: TimeOfDay.now().format(context),
     );

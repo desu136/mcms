@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   MessageSquare,
   Search,
@@ -21,41 +21,178 @@ import {
   Activity,
   ChevronRight,
 } from 'lucide-react';
-import {
-  NURSE_CONVERSATIONS,
+import type {
   NurseConversation,
-  INITIAL_CHAT_MESSAGES,
   ChatMessage,
-  NURSE_PATIENTS,
+  NursePatient,
 } from '@/components/nurse/nurseMockData';
 import NursePatientDetailsModal from '@/components/nurse/NursePatientDetailsModal';
 import AddNoteModal from '@/components/nurse/AddNoteModal';
+import { useAuth } from '@/lib/auth/auth-context';
+import { fetchPatients } from '@/lib/api/patients';
+import { fetchDoctors } from '@/lib/api/staff';
+
+const FALLBACK_CONV: NurseConversation = {
+  id: 'conv-triage',
+  name: 'Triage Coordination Desk',
+  role: 'Nurse',
+  category: 'staff',
+  avatar: 'https://images.unsplash.com/photo-1594824813575-d143c683b7b2?auto=format&fit=crop&q=80&w=256',
+  isOnline: true,
+  lastMessage: 'Station online and ready for incoming patients.',
+  time: 'Just now',
+  unreadCount: 0,
+  currentDept: 'Emergency & Triage',
+  currentDoctor: 'Staff Coordination',
+};
+
+const DEFAULT_MESSAGES: Record<string, ChatMessage[]> = {
+  'conv-triage': [
+    {
+      id: 'msg-init-1',
+      conversationId: 'conv-triage',
+      sender: 'other',
+      senderName: 'Clinical Desk',
+      text: 'Welcome to Nursing Messages. Patient triage inquiries and doctor consultation handoffs will appear here.',
+      time: '08:00 AM',
+      read: true,
+    },
+  ],
+};
 
 export default function NurseMessagesPage() {
+  const { accessToken, user } = useAuth();
   const [tab, setTab] = useState<'all' | 'patient' | 'staff'>('all');
   const [search, setSearch] = useState('');
-  const [activeConv, setActiveConv] = useState<NurseConversation>(NURSE_CONVERSATIONS[0]!);
-  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>(INITIAL_CHAT_MESSAGES);
+  const [conversations, setConversations] = useState<NurseConversation[]>([FALLBACK_CONV]);
+  const [activeConv, setActiveConv] = useState<NurseConversation>(FALLBACK_CONV);
+  const [livePatients, setLivePatients] = useState<NursePatient[]>([]);
+  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>(DEFAULT_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
 
-  // Filter conversations
-  const filteredConvs = NURSE_CONVERSATIONS.filter((c) => {
-    if (tab === 'patient' && c.category !== 'patient') return false;
-    if (tab === 'staff' && c.category !== 'staff') return false;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      return (
-        c.name.toLowerCase().includes(q) ||
-        c.role.toLowerCase().includes(q) ||
-        c.lastMessage.toLowerCase().includes(q)
-      );
+  const loadDirectory = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const [patRes, docRes] = await Promise.allSettled([
+        fetchPatients(accessToken, { limit: 20 }),
+        fetchDoctors(accessToken),
+      ]);
+
+      const convList: NurseConversation[] = [];
+      const nursePatList: NursePatient[] = [];
+
+      if (patRes.status === 'fulfilled' && patRes.value.data) {
+        patRes.value.data.forEach((p) => {
+          const name = p.fullName || `${p.firstName} ${p.lastName}`.trim();
+          const age = p.dateOfBirth
+            ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
+            : 32;
+
+          convList.push({
+            id: `conv-p-${p.id}`,
+            name,
+            role: 'Patient',
+            category: 'patient',
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+            isOnline: true,
+            lastMessage: `Checked in for assessment. PID: ${p.pid}`,
+            time: 'Today',
+            unreadCount: 0,
+            pid: p.pid,
+            age,
+            gender: p.gender === 'MALE' ? 'Male' : 'Female',
+            phone: p.phoneNumber || '—',
+            email: p.email || '—',
+            address: p.address || 'Addis Ababa',
+            currentRoom: 'Triage Room 1',
+            currentDoctor: 'Dr. Fitsum Alemu',
+            currentDept: 'General Practice',
+          });
+
+          nursePatList.push({
+            id: p.id,
+            pid: p.pid,
+            name,
+            age,
+            gender: (p.gender === 'MALE' ? 'Male' : 'Female') as 'Female' | 'Male',
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+            phone: p.phoneNumber || '—',
+            email: p.email || '—',
+            address: p.address || 'Addis Ababa, Ethiopia',
+            room: 'Triage Room 1',
+            bed: 'Bed 1',
+            department: 'General Triage',
+            visitReason: 'General consultation and vitals check',
+            status: 'In Care',
+            vitalsStatus: 'Normal',
+            vitals: {
+              bp: '120/80',
+              hr: 74,
+              temp: 36.8,
+              spo2: 98,
+            },
+            doctor: 'Dr. Assigned',
+            admissionDate: 'Today',
+          });
+        });
+      }
+
+      if (docRes.status === 'fulfilled' && Array.isArray(docRes.value)) {
+        docRes.value.forEach((d) => {
+          convList.push({
+            id: `conv-d-${d.id}`,
+            name: d.displayName || 'Doctor',
+            role: 'Doctor',
+            category: 'staff',
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(d.displayName || 'doc')}`,
+            isOnline: true,
+            lastMessage: 'Patient triage vitals received. Ready for consultation.',
+            time: 'Today',
+            unreadCount: 0,
+            currentDept: d.specialty || d.departmentName || 'Clinical Medicine',
+            currentDoctor: d.displayName,
+          });
+        });
+      }
+
+      if (convList.length > 0) {
+        setConversations(convList);
+        setActiveConv(convList[0]!);
+      }
+      setLivePatients(nursePatList);
+    } catch (err) {
+      console.error('Failed to load message contacts:', err);
     }
-    return true;
-  });
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadDirectory();
+  }, [loadDirectory]);
+
+  // Filter conversations
+  const filteredConvs = useMemo(() => {
+    return conversations.filter((c) => {
+      if (tab === 'patient' && c.category !== 'patient') return false;
+      if (tab === 'staff' && c.category !== 'staff') return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        return (
+          c.name.toLowerCase().includes(q) ||
+          c.role.toLowerCase().includes(q) ||
+          c.lastMessage.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [conversations, tab, search]);
+
+  const patientCount = useMemo(() => conversations.filter((c) => c.category === 'patient').length, [conversations]);
+  const staffCount = useMemo(() => conversations.filter((c) => c.category === 'staff').length, [conversations]);
 
   const currentMessages = chatMessages[activeConv.id] || [];
+  const senderNurse = user?.displayName || 'Nurse';
 
   const handleSendMessage = () => {
     if (!inputText.trim()) return;
@@ -64,7 +201,7 @@ export default function NurseMessagesPage() {
       id: `msg-${Date.now()}`,
       conversationId: activeConv.id,
       sender: 'nurse',
-      senderName: 'Aster Mulu (Nurse)',
+      senderName: `${senderNurse} (Nurse)`,
       text: inputText.trim(),
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       read: true,
@@ -83,7 +220,10 @@ export default function NurseMessagesPage() {
     }
   };
 
-  const matchedPatient = NURSE_PATIENTS.find((p) => p.name === activeConv.name) || NURSE_PATIENTS[0]!;
+  const matchedPatient: NursePatient | null =
+    livePatients.find((p) => p.name === activeConv.name || p.pid === activeConv.pid) ||
+    livePatients[0] ||
+    null;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#F4F7FC] overflow-hidden">
@@ -126,7 +266,7 @@ export default function NurseMessagesPage() {
                   : 'text-slate-600 hover:bg-slate-200/60'
               }`}
             >
-              All (12)
+              All ({conversations.length})
             </button>
             <button
               onClick={() => setTab('patient')}
@@ -136,7 +276,7 @@ export default function NurseMessagesPage() {
                   : 'text-slate-600 hover:bg-slate-200/60'
               }`}
             >
-              Patients (8)
+              Patients ({patientCount})
             </button>
             <button
               onClick={() => setTab('staff')}
@@ -146,7 +286,7 @@ export default function NurseMessagesPage() {
                   : 'text-slate-600 hover:bg-slate-200/60'
               }`}
             >
-              Staff (4)
+              Staff ({staffCount})
             </button>
           </div>
 
@@ -378,7 +518,7 @@ export default function NurseMessagesPage() {
             <div className="flex flex-col items-center text-center p-3 bg-slate-50/70 rounded-2xl border border-slate-200/70">
               <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 ring-2 ring-white shadow-xs mb-2 bg-slate-100">
                 <img
-                  src={activeConv.avatar || matchedPatient.avatar}
+                  src={activeConv.avatar || matchedPatient?.avatar || ''}
                   alt={activeConv.name}
                   className="w-full h-full object-cover"
                 />
@@ -524,7 +664,7 @@ export default function NurseMessagesPage() {
       <AddNoteModal
         isOpen={noteModalOpen}
         onClose={() => setNoteModalOpen(false)}
-        selectedPatientId={matchedPatient.id}
+        selectedPatientId={matchedPatient?.id}
       />
     </div>
   );

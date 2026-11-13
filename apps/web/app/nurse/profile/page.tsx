@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User,
   Settings,
@@ -28,14 +28,39 @@ import {
   Pill,
 } from 'lucide-react';
 import {
-  CURRENT_NURSE,
-  NURSE_PROFILE_DATA,
-  NURSE_RECENT_ACTIVITIES,
   NurseProfileInfo,
 } from '@/components/nurse/nurseMockData';
+import { useAuth } from '@/lib/auth/auth-context';
 
 export default function NurseProfilePage() {
-  const [profile, setProfile] = useState<NurseProfileInfo>(NURSE_PROFILE_DATA);
+  const { user } = useAuth();
+  const [profile, setProfile] = useState<NurseProfileInfo>({
+    fullName: user?.displayName || 'Staff Nurse',
+    dateOfBirth: 'Mar 15, 1996',
+    gender: 'Female',
+    nationality: 'Ethiopian',
+    address: 'Addis Ababa, Ethiopia',
+    emergencyContact: '+251 911 000 001',
+    relationship: 'Family Member',
+    languages: 'Amharic, English',
+    role: user?.role || 'Staff Nurse',
+    licenseNumber: 'ETH-RN-48921',
+    qualification: 'B.Sc. in Nursing',
+    yearsOfExperience: '5+ Years',
+    specialization: 'Triage & Inpatient Care',
+    department: 'General Nursing & Triage',
+  });
+
+  useEffect(() => {
+    if (user) {
+      setProfile((prev) => ({
+        ...prev,
+        fullName: user.displayName || prev.fullName,
+        role: user.role || prev.role,
+      }));
+    }
+  }, [user]);
+
   const [isEditing, setIsEditing] = useState(false);
   const [notifications, setNotifications] = useState({
     messages: true,
@@ -44,6 +69,32 @@ export default function NurseProfilePage() {
     system: false,
   });
   const [selectedDay, setSelectedDay] = useState<'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'>('Mon');
+
+  const userAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user?.displayName || user?.email || 'nurse')}`;
+
+  const recentActivities = [
+    {
+      id: 'act-1',
+      title: 'Signed into Nurse Portal',
+      time: 'Just now',
+      description: 'Active session started on Clinical Workstation.',
+      type: 'profile',
+    },
+    {
+      id: 'act-2',
+      title: 'Triage Assessment Completed',
+      time: '15m ago',
+      description: 'Recorded patient vitals and updated queue status.',
+      type: 'task',
+    },
+    {
+      id: 'act-3',
+      title: 'Prescription Verification',
+      time: '1h ago',
+      description: 'Verified eMAR medication administration.',
+      type: 'medication',
+    },
+  ];
 
   const handleInputChange = (field: keyof NurseProfileInfo, value: string) => {
     setProfile((prev) => ({ ...prev, [field]: value }));
@@ -88,8 +139,8 @@ export default function NurseProfilePage() {
             {/* Avatar with camera badge */}
             <div className="relative mb-3">
               <img
-                src={CURRENT_NURSE.avatar}
-                alt={CURRENT_NURSE.name}
+                src={userAvatar}
+                alt={profile.fullName}
                 className="w-28 h-28 rounded-full object-cover ring-4 ring-blue-50 shadow-md"
               />
               <button
@@ -418,7 +469,7 @@ export default function NurseProfilePage() {
             </div>
 
             <div className="space-y-3.5 text-xs">
-              {NURSE_RECENT_ACTIVITIES.map((act) => {
+              {recentActivities.map((act) => {
                 const getIcon = () => {
                   if (act.type === 'profile') return <User size={14} className="text-blue-600" />;
                   if (act.type === 'task') return <CheckCircle2 size={14} className="text-emerald-600" />;

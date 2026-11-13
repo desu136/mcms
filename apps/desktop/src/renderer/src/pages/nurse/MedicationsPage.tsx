@@ -18,11 +18,7 @@ import {
   History,
   ClipboardList,
 } from 'lucide-react';
-import {
-  NURSE_MEDICATIONS,
-  NurseMedicationRecord,
-  NURSE_MEDICATION_ALERTS,
-} from '../../components/nurse/nurseMockData';
+import { NurseMedicationRecord } from '../../components/nurse/nurseMockData';
 import { NurseStatCard } from '../../components/nurse/NurseStatCard';
 import NurseMedicationDetailsModal from '../../components/nurse/NurseMedicationDetailsModal';
 import AdministerMedModal from '../../components/nurse/AdministerMedModal';
@@ -39,11 +35,11 @@ function mapDTOToRecord(dto: MedicationAdminDTO): NurseMedicationRecord {
   else if (dtoStatus === 'REFILL_DUE') uiStatus = 'Refill Due';
 
   const validRoute = (['Oral', 'Subcutaneous', 'Intravenous', 'Intramuscular', 'Inhalation', 'Topical'] as const).find(
-    (r) => r.toLowerCase() === (dto.route || '').toLowerCase()
+    (r) => r.toLowerCase() === (dto.route || '').toLowerCase(),
   ) ?? 'Oral';
 
   const validSchedule = (['BID', 'TID', 'QID', 'Daily', 'Before Meals', 'PRN', 'Every 8 hrs'] as const).find(
-    (s) => s.toLowerCase() === (dto.schedule || '').toLowerCase()
+    (s) => s.toLowerCase() === (dto.schedule || '').toLowerCase(),
   ) ?? 'Daily';
 
   return {
@@ -51,11 +47,11 @@ function mapDTOToRecord(dto: MedicationAdminDTO): NurseMedicationRecord {
     patientId: dto.patientId,
     patientName: dto.patientName,
     patientPid: `PID-${dto.patientId.slice(0, 6).toUpperCase()}`,
-    patientAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(dto.patientName)}&background=EFF6FF&color=2563EB&size=64`,
+    patientAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(dto.patientName)}`,
     age: 35,
     gender: 'Female',
-    phone: '+251 911 000 000',
-    email: `${dto.patientName.toLowerCase().replace(/\s+/g, '.')}@mcms.local`,
+    phone: '—',
+    email: '—',
     address: 'Addis Ababa, Ethiopia',
     room: 'Ward 3A',
     department: 'Cardiology',
@@ -91,6 +87,7 @@ export function MedicationsPage() {
   const [medForAdminister, setMedForAdminister] = useState<NurseMedicationRecord | null>(null);
 
   const loadMeds = useCallback(async () => {
+    if (!accessToken) return;
     setLoading(true);
     setError(null);
     try {
@@ -98,15 +95,21 @@ export function MedicationsPage() {
       if (Array.isArray(data) && data.length > 0) {
         const mapped = data.map(mapDTOToRecord);
         setMeds(mapped);
-        if (!selectedMed) setSelectedMed(mapped[0]!);
+        setSelectedMed((prev) => {
+          if (prev) {
+            const found = mapped.find((m) => m.id === prev.id);
+            if (found) return found;
+          }
+          return mapped[0] ?? null;
+        });
       } else {
-        setMeds(NURSE_MEDICATIONS);
-        if (!selectedMed) setSelectedMed(NURSE_MEDICATIONS[0]!);
+        setMeds([]);
+        setSelectedMed(null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load medications');
-      setMeds(NURSE_MEDICATIONS);
-      if (!selectedMed) setSelectedMed(NURSE_MEDICATIONS[0]!);
+      setMeds([]);
+      setSelectedMed(null);
     } finally {
       setLoading(false);
     }
@@ -116,7 +119,7 @@ export function MedicationsPage() {
     void loadMeds();
   }, [loadMeds]);
 
-  const handleAdminister = async (med: NurseMedicationRecord) => {
+  const handleAdministerDirect = async (med: NurseMedicationRecord) => {
     try {
       await administerMedication(
         med.id,
@@ -130,7 +133,9 @@ export function MedicationsPage() {
           type: 'ADMINISTER_MEDICATION',
           payload: { medId: med.id, status: 'ADMINISTERED', administeredAt: new Date().toISOString() },
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     setAdministerModalOpen(false);
   };
@@ -173,6 +178,33 @@ export function MedicationsPage() {
     setAdministerModalOpen(true);
   };
 
+  // Derive eMAR safety alerts from live meds
+  const dynamicAlerts = useMemo(() => {
+    const alerts: { patientName: string; details: string; severity: 'high' | 'medium' }[] = [];
+    meds.forEach((m) => {
+      if (m.status === 'Missed') {
+        alerts.push({
+          patientName: m.patientName,
+          details: `Missed dose of ${m.medicationName} (${m.dose}). Verification required.`,
+          severity: 'high',
+        });
+      } else if (m.status === 'Refill Due') {
+        alerts.push({
+          patientName: m.patientName,
+          details: `Refill due for ${m.medicationName} before next clinical shift.`,
+          severity: 'medium',
+        });
+      } else if (m.route === 'Intravenous' && m.status === 'Pending') {
+        alerts.push({
+          patientName: m.patientName,
+          details: `IV administration scheduled: ${m.medicationName} (${m.dose}). Check infusion line.`,
+          severity: 'medium',
+        });
+      }
+    });
+    return alerts.slice(0, 4);
+  }, [meds]);
+
   return (
     <div className="h-full flex overflow-hidden bg-[#F4F7FC]">
       {/* Main Content Area */}
@@ -190,10 +222,6 @@ export function MedicationsPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <div className="bg-white border border-gray-200/80 rounded-lg px-2.5 py-1 text-xs text-gray-600 flex items-center gap-1.5 shadow-xs">
-              <Clock size={13} className="text-purple-600" />
-              <span className="font-medium text-[11px]">Shift Round: 08:00 - 16:00</span>
-            </div>
             <button
               onClick={() => void loadMeds()}
               disabled={loading}
@@ -208,40 +236,36 @@ export function MedicationsPage() {
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
           <NurseStatCard
-            title="Scheduled Today"
-            value={meds.length}
-            iconName="calendar"
-            trendText="total doses"
-            trendDirection="up"
-            trendIsPositive={true}
+            label="Scheduled Today"
+            value={String(meds.length)}
+            icon={Calendar}
+            trend="Total doses on file"
+            trendUp={true}
             color="purple"
           />
           <NurseStatCard
-            title="Administered"
-            value={meds.filter((m) => m.status === 'Administered').length}
-            iconName="check"
-            trendText="verified given"
-            trendDirection="up"
-            trendIsPositive={true}
-            color="emerald"
+            label="Administered"
+            value={String(meds.filter((m) => m.status === 'Administered').length)}
+            icon={CheckCircle2}
+            trend="Verified given"
+            trendUp={true}
+            color="green"
           />
           <NurseStatCard
-            title="Pending Due"
-            value={meds.filter((m) => m.status === 'Pending' || m.status === 'Due Soon').length}
-            iconName="clock"
-            trendText="next rounds"
-            trendDirection="up"
-            trendIsPositive={false}
+            label="Pending / Due"
+            value={String(meds.filter((m) => m.status === 'Pending' || m.status === 'Due Soon').length)}
+            icon={Clock}
+            trend="Awaiting rounds"
+            trendUp={false}
             color="amber"
           />
           <NurseStatCard
-            title="Missed / Refill"
-            value={meds.filter((m) => m.status === 'Missed' || m.status === 'Refill Due').length}
-            iconName="alert"
-            trendText="requires action"
-            trendDirection="down"
-            trendIsPositive={false}
-            color="rose"
+            label="Missed / Refill"
+            value={String(meds.filter((m) => m.status === 'Missed' || m.status === 'Refill Due').length)}
+            icon={AlertTriangle}
+            trend="Requires intervention"
+            trendUp={false}
+            color="red"
           />
         </div>
 
@@ -316,80 +340,95 @@ export function MedicationsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {paginatedMeds.map((med) => {
-                  const isSelected = selectedMed?.id === med.id;
-                  return (
-                    <tr
-                      key={med.id}
-                      onClick={() => setSelectedMed(med)}
-                      className={`hover:bg-purple-50/40 transition-colors cursor-pointer ${
-                        isSelected ? 'bg-purple-50/60' : ''
-                      }`}
-                    >
-                      <td className="py-2 px-3">
-                        <div className="flex items-center gap-2">
-                          <img
-                            src={med.patientAvatar}
-                            alt={med.patientName}
-                            className="w-7 h-7 rounded-full object-cover shrink-0"
-                          />
-                          <div>
-                            <span className="font-bold text-gray-800 block leading-tight">{med.patientName}</span>
-                            <span className="text-[10px] text-gray-400 font-mono">
-                              {med.patientPid} · {med.room}
-                            </span>
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-gray-400">
+                      <RotateCw size={24} className="animate-spin text-purple-600 mx-auto mb-2" />
+                      Loading eMAR records...
+                    </td>
+                  </tr>
+                ) : paginatedMeds.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-gray-400">
+                      No medication records found.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedMeds.map((med) => {
+                    const isSelected = selectedMed?.id === med.id;
+                    return (
+                      <tr
+                        key={med.id}
+                        onClick={() => setSelectedMed(med)}
+                        className={`hover:bg-purple-50/40 transition-colors cursor-pointer ${
+                          isSelected ? 'bg-purple-50/60' : ''
+                        }`}
+                      >
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={med.patientAvatar}
+                              alt={med.patientName}
+                              className="w-7 h-7 rounded-full object-cover shrink-0"
+                            />
+                            <div>
+                              <span className="font-bold text-gray-800 block leading-tight">{med.patientName}</span>
+                              <span className="text-[10px] text-gray-400 font-mono">
+                                {med.patientPid} · {med.room}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3">
-                        <span className="font-bold text-gray-800 block">{med.medicationName}</span>
-                        <span className="text-[10px] text-gray-400">{med.condition}</span>
-                      </td>
-                      <td className="py-2 px-3">
-                        <span className="font-semibold text-gray-700">{med.dose}</span>
-                        <span className="text-[10px] text-purple-600 block">{med.route}</span>
-                      </td>
-                      <td className="py-2 px-3">
-                        <span className="font-medium text-gray-700">{med.schedule}</span>
-                        <span className="text-[10px] text-gray-400 block">Due: {med.nextDue}</span>
-                      </td>
-                      <td className="py-2 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            med.status === 'Administered'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : med.status === 'Due Soon' || med.status === 'Pending'
-                              ? 'bg-amber-100 text-amber-700'
-                              : med.status === 'Missed'
-                              ? 'bg-rose-100 text-rose-700'
-                              : 'bg-purple-100 text-purple-700'
-                          }`}
-                        >
-                          {med.status}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => handleOpenDetails(med)}
-                            className="p-1 rounded-md hover:bg-gray-100 text-gray-500 transition-colors cursor-pointer"
-                            title="View Details"
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="font-bold text-gray-800 block">{med.medicationName}</span>
+                          <span className="text-[10px] text-gray-400">{med.condition}</span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="font-semibold text-gray-700">{med.dose}</span>
+                          <span className="text-[10px] text-purple-600 block">{med.route}</span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="font-medium text-gray-700">{med.schedule}</span>
+                          <span className="text-[10px] text-gray-400 block">Due: {med.nextDue}</span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              med.status === 'Administered'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : med.status === 'Due Soon' || med.status === 'Pending'
+                                ? 'bg-amber-100 text-amber-700'
+                                : med.status === 'Missed'
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-purple-100 text-purple-700'
+                            }`}
                           >
-                            <Eye size={13} />
-                          </button>
-                          {med.status !== 'Administered' && (
+                            {med.status}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                             <button
-                              onClick={() => handleOpenAdminister(med)}
-                              className="px-2 py-0.5 rounded-md bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                              onClick={() => handleOpenDetails(med)}
+                              className="p-1 rounded-md hover:bg-gray-100 text-gray-500 transition-colors cursor-pointer"
+                              title="View Details"
                             >
-                              Administer
+                              <Eye size={13} />
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            {med.status !== 'Administered' && (
+                              <button
+                                onClick={() => handleOpenAdminister(med)}
+                                className="px-2 py-0.5 rounded-md bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                              >
+                                Administer
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -452,12 +491,14 @@ export function MedicationsPage() {
                 </div>
               </div>
 
-              <button
-                onClick={() => handleOpenAdminister(selectedMed)}
-                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
-              >
-                Verify & Administer
-              </button>
+              {selectedMed.status !== 'Administered' && (
+                <button
+                  onClick={() => handleOpenAdminister(selectedMed)}
+                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  Verify & Administer
+                </button>
+              )}
             </div>
           ) : (
             <p className="text-xs text-gray-400 py-3 text-center">Select a medication to view details</p>
@@ -468,15 +509,19 @@ export function MedicationsPage() {
         <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800 mb-2">eMAR Safety Alerts</h3>
           <div className="space-y-2 text-xs">
-            {NURSE_MEDICATION_ALERTS.map((alert, i) => (
-              <div key={i} className="p-2 rounded-lg bg-amber-50 border border-amber-200/70 text-amber-900">
-                <div className="flex items-center gap-1.5 font-bold text-[11px]">
-                  <AlertCircle size={13} className="text-amber-600" />
-                  <span>{alert.patientName}</span>
+            {dynamicAlerts.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-2">No active safety warnings.</p>
+            ) : (
+              dynamicAlerts.map((alert, i) => (
+                <div key={i} className="p-2 rounded-lg bg-amber-50 border border-amber-200/70 text-amber-900">
+                  <div className="flex items-center gap-1.5 font-bold text-[11px]">
+                    <AlertCircle size={13} className="text-amber-600" />
+                    <span>{alert.patientName}</span>
+                  </div>
+                  <p className="text-[10px] text-amber-800 mt-1">{alert.details}</p>
                 </div>
-                <p className="text-[10px] text-amber-800 mt-1">{alert.details}</p>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </aside>
@@ -494,6 +539,7 @@ export function MedicationsPage() {
       <AdministerMedModal
         isOpen={administerModalOpen}
         onClose={() => setAdministerModalOpen(false)}
+        onAdminister={() => void loadMeds()}
         selectedPatientId={medForAdminister?.patientId}
       />
     </div>

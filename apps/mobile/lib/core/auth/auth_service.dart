@@ -14,6 +14,9 @@ class AuthUser {
   final String lastName;
   final String role;
   final List<String> roles;
+  final String? department;
+  final String? phoneNumber;
+  final String? licenseNumber;
 
   const AuthUser({
     required this.id,
@@ -23,6 +26,9 @@ class AuthUser {
     this.lastName = '',
     required this.role,
     this.roles = const [],
+    this.department,
+    this.phoneNumber,
+    this.licenseNumber,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -46,6 +52,9 @@ class AuthUser {
       lastName: lName,
       role: roleStr,
       roles: rolesList,
+      department: json['department'] as String?,
+      phoneNumber: json['phoneNumber'] as String?,
+      licenseNumber: json['licenseNumber'] as String?,
     );
   }
 
@@ -57,6 +66,9 @@ class AuthUser {
         'lastName': lastName,
         'role': role,
         'roles': roles,
+        'department': department,
+        'phoneNumber': phoneNumber,
+        'licenseNumber': licenseNumber,
       };
 
   String get initials {

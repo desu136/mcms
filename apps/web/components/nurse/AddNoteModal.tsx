@@ -1,14 +1,24 @@
-﻿'use client';
+'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, FileText, Check } from 'lucide-react';
-import { NURSE_PATIENTS, CURRENT_NURSE } from './nurseMockData';
+import { useAuth } from '@/lib/auth/auth-context';
+import { fetchPatients } from '@/lib/api/patients';
 
 interface AddNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  selectedPatientId?: string;
-  onAddNote?: (data: any) => void;
+  selectedPatientId?: string | undefined;
+  onAddNote?: ((data: {
+    id: string;
+    patientName: string;
+    patientPid: string;
+    title: string;
+    category: string;
+    timestamp: string;
+    author: string;
+    text: string;
+  }) => void) | undefined;
 }
 
 export default function AddNoteModal({
@@ -17,19 +27,55 @@ export default function AddNoteModal({
   selectedPatientId,
   onAddNote,
 }: AddNoteModalProps) {
-  const [patientId, setPatientId] = useState(selectedPatientId || NURSE_PATIENTS[0]!.id);
+  const { accessToken, user } = useAuth();
+  const [patientsList, setPatientsList] = useState<{ id: string; name: string; pid: string }[]>([]);
+  const [patientId, setPatientId] = useState(selectedPatientId || '');
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<'Education' | 'Care' | 'Medication' | 'Vitals'>('Care');
   const [text, setText] = useState('');
   const [isSaved, setIsSaved] = useState(false);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+
+  // Update patient selection when prop changes
+  useEffect(() => {
+    if (selectedPatientId) setPatientId(selectedPatientId);
+  }, [selectedPatientId]);
+
+  // Load real patients when modal opens
+  useEffect(() => {
+    if (!accessToken || !isOpen) return;
+    setIsLoadingPatients(true);
+    void (async () => {
+      try {
+        const res = await fetchPatients(accessToken, { limit: 100 });
+        const mapped = res.data.map((p) => ({
+          id: p.id,
+          name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+          pid: p.pid,
+        }));
+        setPatientsList(mapped);
+        // If no patient pre-selected, default to first
+        if (!selectedPatientId && mapped.length > 0) {
+          setPatientId(mapped[0]!.id);
+        }
+      } catch (err) {
+        console.error('Failed to load patients in AddNoteModal:', err);
+      } finally {
+        setIsLoadingPatients(false);
+      }
+    })();
+  }, [accessToken, isOpen, selectedPatientId]);
 
   if (!isOpen) return null;
+
+  const nurseName = user?.displayName || 'Nurse';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaved(true);
+
     if (onAddNote) {
-      const patient = NURSE_PATIENTS.find((p) => p.id === patientId);
+      const patient = patientsList.find((p) => p.id === patientId);
       onAddNote({
         id: `note-${Date.now()}`,
         patientName: patient?.name || 'Unknown Patient',
@@ -37,12 +83,16 @@ export default function AddNoteModal({
         title,
         category,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        author: `${CURRENT_NURSE.name} (Nurse)`,
+        author: `${nurseName} (Nurse)`,
         text,
       });
     }
+
     setTimeout(() => {
       setIsSaved(false);
+      setTitle('');
+      setText('');
+      setCategory('Care');
       onClose();
     }, 800);
   };
@@ -74,17 +124,28 @@ export default function AddNoteModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Select Patient *</label>
-            <select
-              value={patientId}
-              onChange={(e) => setPatientId(e.target.value)}
-              className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
-            >
-              {NURSE_PATIENTS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.pid}) â€” Room {p.room}
-                </option>
-              ))}
-            </select>
+            {isLoadingPatients ? (
+              <div className="w-full text-xs text-slate-400 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50">
+                Loading patients…
+              </div>
+            ) : (
+              <select
+                value={patientId}
+                onChange={(e) => setPatientId(e.target.value)}
+                required
+                className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+              >
+                {patientsList.length === 0 ? (
+                  <option value="">No patients available</option>
+                ) : (
+                  patientsList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.pid})
+                    </option>
+                  ))
+                )}
+              </select>
+            )}
           </div>
 
           <div>
@@ -133,11 +194,13 @@ export default function AddNoteModal({
 
           <button
             type="submit"
-            disabled={isSaved}
+            disabled={isSaved || !patientId || isLoadingPatients}
             className={`w-full py-3 rounded-xl text-xs font-bold text-white transition flex items-center justify-center gap-2 shadow-md ${
               isSaved
                 ? 'bg-emerald-600'
-                : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'
+                : patientId && !isLoadingPatients
+                ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'
+                : 'bg-slate-300 cursor-not-allowed'
             }`}
           >
             {isSaved ? (

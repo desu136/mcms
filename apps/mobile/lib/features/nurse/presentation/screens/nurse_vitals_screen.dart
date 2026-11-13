@@ -292,17 +292,37 @@ class _NurseVitalsScreenState extends ConsumerState<NurseVitalsScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFF1F5F9)),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+              child: Column(
                 children: [
-                  _metricItem('Blood Pressure', record.bp, 'mmHg',
-                      color: bpColor),
-                  _metricItem('Pulse', '${record.hr}', 'bpm'),
-                  _metricItem('Temp', '${record.temp}', '°C'),
-                  _metricItem('SpO2', '${record.spo2}', '%',
-                      color: record.spo2 < 95
-                          ? const Color(0xFFEF4444)
-                          : const Color(0xFF0F172A)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _metricItem('Blood Pressure', record.bp, 'mmHg',
+                          color: bpColor),
+                      _metricItem('Pulse', '${record.hr}', 'bpm'),
+                      _metricItem('Temp', '${record.temp}', '°C'),
+                      _metricItem('SpO2', '${record.spo2}', '%',
+                          color: record.spo2 < 95
+                              ? const Color(0xFFEF4444)
+                              : const Color(0xFF0F172A)),
+                      _metricItem('Resp', '${record.respRate}', '/min'),
+                    ],
+                  ),
+                  if (record.weight != null || record.bmi != null) ...[
+                    const Divider(height: 16, color: Color(0xFFE2E8F0)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        if (record.weight != null)
+                          _metricItem('Weight', '${record.weight}', 'kg'),
+                        if (record.height != null)
+                          _metricItem('Height', '${record.height}', 'cm'),
+                        if (record.bmi != null)
+                          _metricItem('BMI', '${record.bmi}', 'kg/m²',
+                              color: const Color(0xFF2563EB)),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -86,26 +86,33 @@ class _NurseTasksScreenState extends ConsumerState<NurseTasksScreen> {
             child: RefreshIndicator(
               onRefresh: () => NurseRepository.loadFromApi(ref),
               child: filtered.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.task_alt_rounded,
-                            size: 48,
-                            color: Colors.blueGrey.shade300,
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.2),
+                        Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.task_alt_rounded,
+                                size: 48,
+                                color: Colors.blueGrey.shade300,
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No tasks in this category',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'No tasks in this category',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     )
                   : ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),

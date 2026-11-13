@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/api/api_client.dart';
 import '../../data/doctor_models.dart';
 import '../../data/doctor_repository.dart';
 
@@ -195,9 +196,10 @@ class _DoctorMessagesScreenState extends ConsumerState<DoctorMessagesScreen> {
                         onPressed: () {
                           final text = _msgController.text.trim();
                           if (text.isNotEmpty) {
+                            final myDoc = ref.read(doctorProfileProvider);
                             ref
                                 .read(doctorProvider.notifier)
-                                .sendMessage(current.id, text);
+                                .sendMessage(current.id, text, senderName: myDoc.name);
                             _msgController.clear();
                           }
                         },
@@ -223,10 +225,24 @@ class _DoctorMessagesScreenState extends ConsumerState<DoctorMessagesScreen> {
           child: Container(color: AppTheme.border, height: 1),
         ),
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: conversations.length,
-        itemBuilder: (context, index) {
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await ref
+              .read(doctorProvider.notifier)
+              .loadFromApi(ref.read(apiClientProvider));
+        },
+        child: conversations.isEmpty
+            ? const Center(
+                child: Text(
+                  'No conversations yet',
+                  style: TextStyle(color: Color(0xFF94A3B8)),
+                ),
+              )
+            : ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                itemCount: conversations.length,
+                itemBuilder: (context, index) {
           final c = conversations[index];
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -315,6 +331,7 @@ class _DoctorMessagesScreenState extends ConsumerState<DoctorMessagesScreen> {
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 }

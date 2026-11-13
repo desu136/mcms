@@ -5,6 +5,7 @@ import '../../../../core/api/api_client.dart';
 import '../../data/doctor_repository.dart';
 import '../widgets/patient_detail_sheet.dart';
 import '../widgets/doctor_modals.dart';
+import 'doctor_medical_records_screen.dart';
 
 class DoctorPatientsScreen extends ConsumerStatefulWidget {
   const DoctorPatientsScreen({super.key});
@@ -129,6 +130,7 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
                                     backgroundColor: Colors.transparent,
                                     builder: (_) => AddPrescriptionSheet(
                                       patients: patients,
+                                      initialPatient: p,
                                       onAdd: (item) => ref
                                           .read(doctorProvider.notifier)
                                           .addPrescription(item),
@@ -142,9 +144,30 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
                                     backgroundColor: Colors.transparent,
                                     builder: (_) => OrderLabSheet(
                                       patients: patients,
+                                      initialPatient: p,
                                       onAdd: (item) => ref
                                           .read(doctorProvider.notifier)
                                           .addLabOrder(item),
+                                    ),
+                                  );
+                                },
+                                onRefer: () {
+                                  showModalBottomSheet<void>(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (_) => ReferPatientSheet(
+                                      patients: patients,
+                                      initialPatient: p,
+                                    ),
+                                  );
+                                },
+                                onViewRecords: () {
+                                  Navigator.push<void>(
+                                    context,
+                                    MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          const DoctorMedicalRecordsScreen(),
                                     ),
                                   );
                                 },

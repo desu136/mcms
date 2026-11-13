@@ -23,19 +23,16 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import {
-  NURSE_MEDICATIONS,
   NurseMedicationRecord,
-  NURSE_MEDICATION_ALERTS,
 } from '@/components/nurse/nurseMockData';
 import NurseMedicationDetailsModal from '@/components/nurse/NurseMedicationDetailsModal';
 import AdministerMedModal from '@/components/nurse/AdministerMedModal';
 import { useAuth } from '@/lib/auth/auth-context';
 import { fetchMedAdmins } from '@/lib/api/clinical';
-import type { MedicationAdminDTO } from '@mcms/contracts';
 
 export default function NurseMedicationsPage() {
   const { accessToken } = useAuth();
-  const [liveMeds, setLiveMeds] = useState<NurseMedicationRecord[]>(NURSE_MEDICATIONS);
+  const [liveMeds, setLiveMeds] = useState<NurseMedicationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'records' | 'pending' | 'missed' | 'refills'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,7 +42,7 @@ export default function NurseMedicationsPage() {
   const rowsPerPage = 10;
 
   // Selected patient for right sidebar & detail modal
-  const [selectedMed, setSelectedMed] = useState<NurseMedicationRecord>(NURSE_MEDICATIONS[0]!);
+  const [selectedMed, setSelectedMed] = useState<NurseMedicationRecord | null>(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [administerModalOpen, setAdministerModalOpen] = useState(false);
   const [medForAdminister, setMedForAdminister] = useState<NurseMedicationRecord | null>(null);
@@ -55,44 +52,39 @@ export default function NurseMedicationsPage() {
     setIsLoading(true);
     try {
       const data = await fetchMedAdmins(accessToken);
-      if (data && data.length > 0) {
-        const statusMap: Record<string, NurseMedicationRecord['status']> = {
-          ADMINISTERED: 'Administered',
-          PENDING: 'Pending',
-          DUE_SOON: 'Due Soon',
-          MISSED: 'Missed',
-          REFILL_DUE: 'Refill Due',
-        };
-        const mapped: NurseMedicationRecord[] = data.map((dto, idx) => {
-          const mock = NURSE_MEDICATIONS[idx % NURSE_MEDICATIONS.length] as NurseMedicationRecord;
-          return {
-            id: dto.id,
-            patientId: dto.patientId,
-            patientName: dto.patientName || mock?.patientName || 'Assigned Patient',
-            patientPid: `PID-${dto.patientId.slice(0, 6).toUpperCase()}`,
-            patientAvatar: mock?.patientAvatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=160',
-            age: mock?.age ?? 35,
-            gender: mock?.gender ?? 'Female',
-            room: mock?.room ?? 'Room 3A-01',
-            phone: mock?.phone ?? '—',
-            email: mock?.email ?? '—',
-            address: mock?.address ?? 'Addis Ababa',
-            department: mock?.department ?? 'General',
-            medicationName: dto.medicationName,
-            condition: mock?.condition ?? 'General care',
-            dose: dto.dose,
-            route: (dto.route as any) || 'Oral',
-            schedule: (dto.schedule as any) || 'BID',
-            nextDue: dto.scheduledTime ? new Date(dto.scheduledTime).toLocaleString() : (mock?.nextDue ?? 'Today'),
-            status: statusMap[dto.status.toUpperCase()] || 'Pending',
-            prescribingDoctor: mock?.prescribingDoctor ?? 'Dr. Fitsum Alemu',
-            instructions: dto.instructions || mock?.instructions || 'As prescribed',
-            ...(dto.administeredAt ? { lastAdministered: new Date(dto.administeredAt).toLocaleString() } : {}),
-          };
-        });
-        setLiveMeds(mapped);
-        setSelectedMed(mapped[0]!);
-      }
+      const statusMap: Record<string, NurseMedicationRecord['status']> = {
+        ADMINISTERED: 'Administered',
+        PENDING: 'Pending',
+        DUE_SOON: 'Due Soon',
+        MISSED: 'Missed',
+        REFILL_DUE: 'Refill Due',
+      };
+      const mapped: NurseMedicationRecord[] = (data ?? []).map((dto) => ({
+        id: dto.id,
+        patientId: dto.patientId,
+        patientName: dto.patientName || 'Assigned Patient',
+        patientPid: `PID-${dto.patientId.slice(0, 6).toUpperCase()}`,
+        patientAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(dto.patientName || dto.patientId)}`,
+        age: 0,
+        gender: 'Female' as const,
+        room: '—',
+        phone: '—',
+        email: '—',
+        address: '—',
+        department: 'General',
+        medicationName: dto.medicationName,
+        condition: 'General care',
+        dose: dto.dose,
+        route: (dto.route as NurseMedicationRecord['route']) || 'Oral',
+        schedule: (dto.schedule as NurseMedicationRecord['schedule']) || 'BID',
+        nextDue: dto.scheduledTime ? new Date(dto.scheduledTime).toLocaleString() : 'Today',
+        status: statusMap[dto.status.toUpperCase()] || 'Pending',
+        prescribingDoctor: '—',
+        instructions: dto.instructions || 'As prescribed',
+        ...(dto.administeredAt ? { lastAdministered: new Date(dto.administeredAt).toLocaleString() } : {}),
+      }));
+      setLiveMeds(mapped);
+      if (mapped.length > 0) setSelectedMed(mapped[0]!);
     } catch (err) {
       console.error('Failed to load medication records:', err);
     } finally {
@@ -139,13 +131,14 @@ export default function NurseMedicationsPage() {
     return filteredMeds.slice(start, start + rowsPerPage);
   }, [filteredMeds, currentPage]);
 
-  const handleOpenDetails = (med: NurseMedicationRecord) => {
+  const handleOpenDetails = (med: NurseMedicationRecord | null) => {
+    if (!med) return;
     setSelectedMed(med);
     setDetailsModalOpen(true);
   };
 
   const handleOpenAdminister = (med?: NurseMedicationRecord) => {
-    setMedForAdminister(med || selectedMed);
+    setMedForAdminister(med || selectedMed || null);
     setAdministerModalOpen(true);
   };
 
@@ -420,7 +413,7 @@ export default function NurseMedicationsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {paginatedMeds.map((med) => {
-                    const isSelected = selectedMed.id === med.id;
+                    const isSelected = selectedMed?.id === med.id;
                     return (
                       <tr
                         key={med.id}
@@ -546,6 +539,7 @@ export default function NurseMedicationsPage() {
         </div>
 
         {/* Right Sidebar Details Panel */}
+        {selectedMed ? (
         <aside className="w-full lg:w-80 xl:w-88 border-t lg:border-t-0 lg:border-l border-slate-200/80 bg-white p-3.5 sm:p-4 space-y-3.5 overflow-y-auto shrink-0">
           {/* Patient Medication Details Header */}
           <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
@@ -691,33 +685,44 @@ export default function NurseMedicationsPage() {
             </div>
 
             <div className="space-y-2">
-              {NURSE_MEDICATION_ALERTS.map((alert) => (
-                <div
-                  key={alert.id}
-                  className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 flex items-start justify-between gap-2 text-xs"
-                >
-                  <div>
-                    <p className="font-bold text-slate-900">{alert.title}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      {alert.patientName} • {alert.details}
-                    </p>
-                  </div>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                      alert.type === 'missed'
-                        ? 'bg-rose-100 text-rose-700'
-                        : alert.type === 'refill'
-                        ? 'bg-purple-100 text-purple-700'
-                        : 'bg-amber-100 text-amber-700'
-                    }`}
+              {liveMeds
+                .filter((m) => m.status === 'Missed' || m.status === 'Refill Due' || m.status === 'Due Soon')
+                .slice(0, 4)
+                .map((med) => (
+                  <div
+                    key={med.id}
+                    className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 flex items-start justify-between gap-2 text-xs"
                   >
-                    {alert.badge}
-                  </span>
-                </div>
-              ))}
+                    <div>
+                      <p className="font-bold text-slate-900">{med.medicationName}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {med.patientName} • {med.status === 'Missed' ? 'Missed dose' : med.status === 'Refill Due' ? 'Refill needed' : 'Due soon'}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                        med.status === 'Missed'
+                          ? 'bg-rose-100 text-rose-700'
+                          : med.status === 'Refill Due'
+                          ? 'bg-purple-100 text-purple-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}
+                    >
+                      {med.status}
+                    </span>
+                  </div>
+                ))}
+              {liveMeds.filter((m) => m.status === 'Missed' || m.status === 'Refill Due' || m.status === 'Due Soon').length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-2">No active alerts</p>
+              )}
             </div>
           </div>
         </aside>
+        ) : (
+          <aside className="w-full lg:w-80 xl:w-88 border-t lg:border-t-0 lg:border-l border-slate-200/80 bg-white p-3.5 sm:p-4 overflow-y-auto shrink-0 flex items-center justify-center">
+            <p className="text-xs text-slate-400 text-center">Select a medication record to view details</p>
+          </aside>
+        )}
       </div>
 
       {/* Medication Details Modal */}
@@ -735,7 +740,7 @@ export default function NurseMedicationsPage() {
           setAdministerModalOpen(false);
           void loadMedAdmins();
         }}
-        selectedPatientId={medForAdminister?.patientId || selectedMed.patientId}
+        selectedPatientId={medForAdminister?.patientId || selectedMed?.patientId}
       />
     </div>
   );

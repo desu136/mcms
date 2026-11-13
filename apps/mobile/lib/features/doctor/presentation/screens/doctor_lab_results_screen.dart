@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/api/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/doctor_repository.dart';
 import '../widgets/doctor_modals.dart';
@@ -42,15 +43,22 @@ class DoctorLabResultsScreen extends ConsumerWidget {
           child: Container(color: AppTheme.border, height: 1),
         ),
       ),
-      body: labResults.isEmpty
-          ? const Center(
-              child: Text('No lab results found',
-                  style: TextStyle(color: Color(0xFF94A3B8))),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: labResults.length,
-              itemBuilder: (context, index) {
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await ref
+              .read(doctorProvider.notifier)
+              .loadFromApi(ref.read(apiClientProvider));
+        },
+        child: labResults.isEmpty
+            ? const Center(
+                child: Text('No lab results found',
+                    style: TextStyle(color: Color(0xFF94A3B8))),
+              )
+            : ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                itemCount: labResults.length,
+                itemBuilder: (context, index) {
                 final lab = labResults[index];
                 Color badgeBg, badgeFg, badgeBorder;
                 if (lab.status == 'Completed') {
@@ -170,6 +178,7 @@ class DoctorLabResultsScreen extends ConsumerWidget {
                 );
               },
             ),
+      ),
     );
   }
 }

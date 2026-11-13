@@ -13,6 +13,7 @@ import 'nurse_medications_screen.dart';
 import 'nurse_more_screen.dart';
 import 'nurse_lab_samples_screen.dart';
 import 'nurse_profile_screen.dart';
+import 'nurse_appointments_screen.dart';
 
 class NurseDashboardScreen extends ConsumerStatefulWidget {
   final MobileDatabaseService dbService;
@@ -214,6 +215,20 @@ class _NurseDashboardScreenState
   }
 
   void _showNotificationsSheet(BuildContext context) {
+    final queue = ref.read(nurseTriageQueueProvider);
+    final waitingTriage = queue
+        .where((q) =>
+            q.status == 'WAITING_FOR_TRIAGE' || q.status == 'TRIAGE_IN_PROGRESS')
+        .toList();
+    final urgentLabs = ref
+        .read(nurseLabSamplesProvider)
+        .where((s) => s.priority == SamplePriority.urgent)
+        .toList();
+    final dueMeds = ref
+        .read(nurseMedicationsProvider)
+        .where((m) => m.status == MedStatus.dueSoon)
+        .toList();
+
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
@@ -244,21 +259,31 @@ class _NurseDashboardScreenState
               ],
             ),
             const Divider(),
-            _alertTile(
-              'High Blood Pressure Alert',
-              'Samuel Girma (Room 2B-03) reported BP 142/88 mmHg',
-              const Color(0xFFEF4444),
-            ),
-            _alertTile(
-              'STAT Lab Ordered',
-              'Dr. Fitsum ordered STAT ABG for Getachew (1B-05)',
-              const Color(0xFF9333EA),
-            ),
-            _alertTile(
-              'Medication Due in 15 mins',
-              'Amoxicillin IV drip due for Samuel Girma',
-              const Color(0xFFF59E0B),
-            ),
+            if (waitingTriage.isEmpty && urgentLabs.isEmpty && dueMeds.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Text(
+                    'No active alerts at this time.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                  ),
+                ),
+              ),
+            ...waitingTriage.map((q) => _alertTile(
+                  'Triage Queue (${q.priority.toUpperCase()})',
+                  '${q.patientName} (${q.ticketNumber}) waiting for vital triage.',
+                  const Color(0xFFEF4444),
+                )),
+            ...urgentLabs.map((l) => _alertTile(
+                  'STAT Lab Ordered',
+                  '${l.testName} requested for ${l.patientName} (${l.room})',
+                  const Color(0xFF9333EA),
+                )),
+            ...dueMeds.map((m) => _alertTile(
+                  'Medication Due Soon',
+                  '${m.medicationName} (${m.dose}) for ${m.patientName}',
+                  const Color(0xFFF59E0B),
+                )),
           ],
         ),
       ),
@@ -314,17 +339,20 @@ class _NurseHomeBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final nurse = ref.watch(nurseProfileProvider);
     final patients = ref.watch(nursePatientsProvider);
     final meds = ref.watch(nurseMedicationsProvider);
     final labSamples = ref.watch(nurseLabSamplesProvider);
     final tasks = ref.watch(nurseTasksProvider);
+    final queue = ref.watch(nurseTriageQueueProvider);
 
     final dueMeds =
         meds.where((m) => m.status == MedStatus.dueSoon).toList();
     final urgentLabs =
         labSamples.where((s) => s.priority == SamplePriority.urgent).length;
-    final vitalsDue = patients
-        .where((p) => p.vitalsStatus == VitalsCondition.critical)
+    final waitingTriage = queue
+        .where((q) =>
+            q.status == 'WAITING_FOR_TRIAGE' || q.status == 'TRIAGE_IN_PROGRESS')
         .length;
 
     return RefreshIndicator(
@@ -336,6 +364,77 @@ class _NurseHomeBody extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Triage Queue Alert (if incoming patients waiting)
+            if (waitingTriage > 0) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFD97706),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.people_alt_rounded,
+                          color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$waitingTriage Patients Waiting in Triage Queue',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                          const Text(
+                            'Incoming from Receptionist. Begin vital triage now.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFFB45309),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                const NurseAppointmentsScreen(initialTab: 0),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFD97706),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        elevation: 0,
+                      ),
+                      child: const Text('Triage',
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+
             // Shift Banner
             Container(
               padding: const EdgeInsets.all(14),
@@ -369,22 +468,24 @@ class _NurseHomeBody extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Morning Shift: 07:00 – 15:00',
+                        const Text(
+                          'Active Nursing Shift',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
                           ),
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
-                          'Ward 3A • Lead Doctor: Dr. Fitsum Alemu',
-                          style: TextStyle(
+                          nurse.department.isNotEmpty
+                              ? nurse.department
+                              : 'General Inpatient Care Station',
+                          style: const TextStyle(
                             fontSize: 11,
                             color: Color(0xFFDBEAFE),
                           ),
@@ -424,7 +525,7 @@ class _NurseHomeBody extends ConsumerWidget {
                     icon: Icons.people_alt_rounded,
                     iconColor: const Color(0xFF2563EB),
                     iconBgColor: const Color(0xFFEFF6FF),
-                    subtitle: 'Ward 3A beds occupied',
+                    subtitle: '${patients.length} admitted patients',
                     onTap: () => onNavigateTab(1),
                   ),
                 ),
@@ -447,13 +548,20 @@ class _NurseHomeBody extends ConsumerWidget {
               children: [
                 Expanded(
                   child: NurseKpiCard(
-                    title: 'Vitals Alert',
-                    value: '$vitalsDue',
-                    icon: Icons.monitor_heart_rounded,
-                    iconColor: const Color(0xFFEF4444),
-                    iconBgColor: const Color(0xFFFEF2F2),
-                    subtitle: 'Requires immediate vitals',
-                    onTap: () => onNavigateTab(2),
+                    title: 'Triage Queue',
+                    value: '$waitingTriage',
+                    icon: Icons.people_outline_rounded,
+                    iconColor: const Color(0xFFD97706),
+                    iconBgColor: const Color(0xFFFEF3C7),
+                    subtitle: 'From Receptionist',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              const NurseAppointmentsScreen(initialTab: 0),
+                        ),
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -488,50 +596,69 @@ class _NurseHomeBody extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                _actionBtn(
-                  context,
-                  icon: Icons.monitor_heart_rounded,
-                  label: 'Log Vitals',
-                  color: const Color(0xFF2563EB),
-                  bg: const Color(0xFFEFF6FF),
-                  onTap: () => NurseModals.showRecordVitals(context, ref),
-                ),
-                const SizedBox(width: 8),
-                _actionBtn(
-                  context,
-                  icon: Icons.medication_rounded,
-                  label: 'eMAR Meds',
-                  color: const Color(0xFFF59E0B),
-                  bg: const Color(0xFFFFFBEB),
-                  onTap: () => onNavigateTab(3),
-                ),
-                const SizedBox(width: 8),
-                _actionBtn(
-                  context,
-                  icon: Icons.colorize_rounded,
-                  label: 'Lab Draw',
-                  color: const Color(0xFF9333EA),
-                  bg: const Color(0xFFFAF5FF),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const NurseLabSamplesScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-                _actionBtn(
-                  context,
-                  icon: Icons.add_task_rounded,
-                  label: 'New Task',
-                  color: const Color(0xFF10B981),
-                  bg: const Color(0xFFECFDF5),
-                  onTap: () => NurseModals.showAddTask(context, ref),
-                ),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _actionBtn(
+                    context,
+                    icon: Icons.people_alt_rounded,
+                    label: 'Triage Queue',
+                    color: const Color(0xFFD97706),
+                    bg: const Color(0xFFFEF3C7),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              const NurseAppointmentsScreen(initialTab: 0),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _actionBtn(
+                    context,
+                    icon: Icons.monitor_heart_rounded,
+                    label: 'Log Vitals',
+                    color: const Color(0xFF2563EB),
+                    bg: const Color(0xFFEFF6FF),
+                    onTap: () => NurseModals.showRecordVitals(context, ref),
+                  ),
+                  const SizedBox(width: 8),
+                  _actionBtn(
+                    context,
+                    icon: Icons.medication_rounded,
+                    label: 'eMAR Meds',
+                    color: const Color(0xFFF59E0B),
+                    bg: const Color(0xFFFFFBEB),
+                    onTap: () => onNavigateTab(3),
+                  ),
+                  const SizedBox(width: 8),
+                  _actionBtn(
+                    context,
+                    icon: Icons.colorize_rounded,
+                    label: 'Lab Draw',
+                    color: const Color(0xFF9333EA),
+                    bg: const Color(0xFFFAF5FF),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const NurseLabSamplesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _actionBtn(
+                    context,
+                    icon: Icons.add_task_rounded,
+                    label: 'New Task',
+                    color: const Color(0xFF10B981),
+                    bg: const Color(0xFFECFDF5),
+                    onTap: () => NurseModals.showAddTask(context, ref),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 20),
 
@@ -603,9 +730,34 @@ class _NurseHomeBody extends ConsumerWidget {
                 ),
               ],
             ),
-            ...tasks.take(3).map(
-                  (t) => _taskMiniCard(context, ref, t),
+            if (tasks.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.task_alt_rounded,
+                        color: Color(0xFF10B981), size: 20),
+                    SizedBox(width: 10),
+                    Text(
+                      'No pending care tasks scheduled.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...tasks.take(3).map(
+                    (t) => _taskMiniCard(context, ref, t),
+                  ),
           ],
         ),
       ),
@@ -620,23 +772,26 @@ class _NurseHomeBody extends ConsumerWidget {
     required Color bg,
     required VoidCallback onTap,
   }) {
-    return Expanded(
+    return SizedBox(
+      width: 86,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: color.withValues(alpha: 0.2)),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, color: color, size: 22),
               const SizedBox(height: 4),
               Text(
                 label,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -667,7 +822,22 @@ class _NurseHomeBody extends ConsumerWidget {
           children: [
             CircleAvatar(
               radius: 18,
-              backgroundImage: NetworkImage(med.patientAvatar),
+              backgroundColor: const Color(0xFF2563EB),
+              backgroundImage: med.patientAvatar.isNotEmpty
+                  ? NetworkImage(med.patientAvatar)
+                  : null,
+              child: med.patientAvatar.isEmpty
+                  ? Text(
+                      med.patientName.isNotEmpty
+                          ? med.patientName[0].toUpperCase()
+                          : 'P',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                  : null,
             ),
             const SizedBox(width: 10),
             Expanded(

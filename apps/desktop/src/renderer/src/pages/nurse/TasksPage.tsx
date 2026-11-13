@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   ClipboardList,
   CheckCircle2,
@@ -17,53 +17,37 @@ import {
   BookOpen,
   SlidersHorizontal,
   Eye,
+  RefreshCw,
 } from 'lucide-react';
 import { NurseStatCard } from '../../components/nurse/NurseStatCard';
-import { NURSE_PATIENTS, NursePatient } from '../../components/nurse/nurseMockData';
+import { NursePatient } from '../../components/nurse/nurseMockData';
 import NursePatientDetailsModal from '../../components/nurse/NursePatientDetailsModal';
 import { useAuth } from '../../auth/AuthContext';
 import { fetchNursingTasks, updateNursingTask } from '../../api/clinical';
-import type { NursingTaskDTO } from '@mcms/contracts';
+import { fetchPatients } from '../../api/patients';
+import type { NursingTaskDTO, PatientDTO } from '@mcms/contracts';
 
 const PRIORITY_STYLES: Record<string, string> = {
-  High:   'bg-red-100 text-red-600',
+  High: 'bg-red-100 text-red-600',
   Medium: 'bg-yellow-100 text-yellow-700',
-  Low:    'bg-green-100 text-green-600',
+  Low: 'bg-green-100 text-green-600',
 };
 
 const STATUS_STYLES: Record<string, string> = {
-  Pending:     'bg-orange-100 text-orange-700',
+  Pending: 'bg-orange-100 text-orange-700',
   'In Progress': 'bg-blue-100 text-blue-700',
-  Scheduled:   'bg-purple-100 text-purple-700',
-  Completed:   'bg-green-100 text-green-700',
+  Scheduled: 'bg-purple-100 text-purple-700',
+  Completed: 'bg-green-100 text-green-700',
 };
 
 const TYPE_CONFIGS: Record<string, { bg: string; text: string; Icon: React.ElementType }> = {
-  Medication:  { bg: 'bg-blue-100',   text: 'text-blue-700',   Icon: Pill },
-  'Vital Signs': { bg: 'bg-green-100',  text: 'text-green-700',  Icon: Activity },
-  'Wound Care':  { bg: 'bg-purple-100', text: 'text-purple-700', Icon: Heart },
-  'Lab Sample':  { bg: 'bg-cyan-100',   text: 'text-cyan-700',   Icon: FlaskConical },
-  Education:   { bg: 'bg-yellow-100', text: 'text-yellow-700', Icon: BookOpen },
+  Medication: { bg: 'bg-blue-100', text: 'text-blue-700', Icon: Pill },
+  'Vital Signs': { bg: 'bg-green-100', text: 'text-green-700', Icon: Activity },
+  'Wound Care': { bg: 'bg-purple-100', text: 'text-purple-700', Icon: Heart },
+  'Lab Sample': { bg: 'bg-cyan-100', text: 'text-cyan-700', Icon: FlaskConical },
+  Education: { bg: 'bg-yellow-100', text: 'text-yellow-700', Icon: BookOpen },
 };
 
-const CATEGORY_TABS = [
-  { key: 'all',        label: 'All Tasks',   count: 48 },
-  { key: 'Medication', label: 'Medications', count: 16 },
-  { key: 'Vital Signs',label: 'Vital Signs', count: 14 },
-  { key: 'Wound Care', label: 'Wound Care',  count: 7  },
-  { key: 'Lab Sample', label: 'Lab Samples', count: 5  },
-  { key: 'Education',  label: 'Other',       count: 6  },
-];
-
-const PROGRESS_CATEGORIES = [
-  { label: 'Medications', done: 10, total: 16, color: 'bg-blue-500' },
-  { label: 'Vital Signs', done: 6,  total: 14, color: 'bg-green-500' },
-  { label: 'Wound Care',  done: 2,  total: 7,  color: 'bg-purple-500' },
-  { label: 'Lab Samples', done: 2,  total: 5,  color: 'bg-cyan-500' },
-  { label: 'Other',       done: 0,  total: 6,  color: 'bg-gray-400' },
-];
-
-// Map DTO priority/status to UI display labels
 function mapPriority(p: string): string {
   if (p === 'HIGH') return 'High';
   if (p === 'MEDIUM') return 'Medium';
@@ -96,19 +80,29 @@ export function TasksPage() {
   const [selectedStatus, setSelectedStatus] = useState('All Statuses');
   const [currentPage, setCurrentPage] = useState(1);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
+  const [selectedPatient, setSelectedPatient] = useState<NursePatient | null>(null);
   const rowsPerPage = 10;
 
   const [tasks, setTasks] = useState<NursingTaskDTO[]>([]);
+  const [patients, setPatients] = useState<PatientDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadTasks = useCallback(async () => {
+    if (!accessToken) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchNursingTasks(accessToken);
-      setTasks(data);
+      const [taskData, patientRes] = await Promise.allSettled([
+        fetchNursingTasks(accessToken),
+        fetchPatients(accessToken, { limit: 100 }),
+      ]);
+      if (taskData.status === 'fulfilled' && Array.isArray(taskData.value)) {
+        setTasks(taskData.value);
+      }
+      if (patientRes.status === 'fulfilled' && patientRes.value?.data) {
+        setPatients(patientRes.value.data);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load tasks');
     } finally {
@@ -130,14 +124,65 @@ export function TasksPage() {
           type: 'COMPLETE_NURSING_TASK',
           payload: { taskId, status: 'COMPLETED' },
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   };
 
   const handleOpenDetails = (patientName: string) => {
-    const p = NURSE_PATIENTS.find((np) => np.name === patientName) || NURSE_PATIENTS[0]!;
-    setSelectedPatient(p);
-    setDetailsOpen(true);
+    const found = patients.find(
+      (p) =>
+        (p.fullName || `${p.firstName} ${p.lastName}`).trim().toLowerCase() === patientName.trim().toLowerCase(),
+    );
+    if (found) {
+      const name = found.fullName || `${found.firstName} ${found.lastName}`.trim();
+      const birthYear = found.dateOfBirth ? new Date(found.dateOfBirth).getFullYear() : 1995;
+      const age = Math.max(0, new Date().getFullYear() - birthYear);
+      setSelectedPatient({
+        id: found.id,
+        pid: found.pid || `PID-${found.id.slice(0, 6).toUpperCase()}`,
+        name,
+        age,
+        gender: found.gender?.toUpperCase() === 'MALE' ? 'Male' : 'Female',
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+        phone: found.phoneNumber || '—',
+        email: found.email || '—',
+        address: found.address || 'Addis Ababa, Ethiopia',
+        room: 'Ward 3A',
+        bed: 'Bed 01',
+        department: 'General Nursing & Triage',
+        visitReason: 'Nursing Care',
+        status: 'In Care',
+        vitalsStatus: 'Normal',
+        vitals: { bp: '—', hr: 0, temp: 0, spo2: 0 },
+        doctor: 'Attending Physician',
+        admissionDate: found.createdAt ? new Date(found.createdAt).toLocaleDateString() : 'Today',
+      });
+      setDetailsOpen(true);
+    } else {
+      setSelectedPatient({
+        id: 'patient-custom',
+        pid: 'PID-TASK',
+        name: patientName,
+        age: 30,
+        gender: 'Female',
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(patientName)}`,
+        phone: '—',
+        email: '—',
+        address: 'Addis Ababa, Ethiopia',
+        room: 'Ward 3A',
+        bed: 'Bed 01',
+        department: 'General Nursing & Triage',
+        visitReason: 'Nursing Care & Tasks',
+        status: 'In Care',
+        vitalsStatus: 'Normal',
+        vitals: { bp: '—', hr: 0, temp: 0, spo2: 0 },
+        doctor: 'Attending Physician',
+        admissionDate: 'Today',
+      });
+      setDetailsOpen(true);
+    }
   };
 
   const filtered = tasks.filter((t) => {
@@ -148,7 +193,8 @@ export function TasksPage() {
     const matchQ =
       !q ||
       t.patientName.toLowerCase().includes(q) ||
-      t.title.toLowerCase().includes(q);
+      t.title.toLowerCase().includes(q) ||
+      (t.details || '').toLowerCase().includes(q);
     const matchTab = activeTab === 'all' || uiType === activeTab;
     const matchPriority = selectedPriority === 'All Priorities' || uiPriority === selectedPriority;
     const matchStatus = selectedStatus === 'All Statuses' || uiStatus === selectedStatus;
@@ -157,7 +203,52 @@ export function TasksPage() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const paginated = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+  // Dynamic category tabs
+  const categoryTabs = useMemo(() => {
+    const medCount = tasks.filter((t) => t.taskType === 'MEDICATION').length;
+    const vitalsCount = tasks.filter((t) => t.taskType === 'VITAL_SIGNS').length;
+    const woundCount = tasks.filter((t) => t.taskType === 'WOUND_CARE').length;
+    const labCount = tasks.filter((t) => t.taskType === 'LAB_SAMPLE').length;
+    const otherCount = tasks.filter(
+      (t) => !['MEDICATION', 'VITAL_SIGNS', 'WOUND_CARE', 'LAB_SAMPLE'].includes(t.taskType),
+    ).length;
+
+    return [
+      { key: 'all', label: 'All Tasks', count: tasks.length },
+      { key: 'Medication', label: 'Medications', count: medCount },
+      { key: 'Vital Signs', label: 'Vital Signs', count: vitalsCount },
+      { key: 'Wound Care', label: 'Wound Care', count: woundCount },
+      { key: 'Lab Sample', label: 'Lab Samples', count: labCount },
+      { key: 'Education', label: 'Other', count: otherCount },
+    ];
+  }, [tasks]);
+
+  // Dynamic progress categories
+  const progressCategories = useMemo(() => {
+    const categories = [
+      { key: 'MEDICATION', label: 'Medications', color: 'bg-blue-500' },
+      { key: 'VITAL_SIGNS', label: 'Vital Signs', color: 'bg-green-500' },
+      { key: 'WOUND_CARE', label: 'Wound Care', color: 'bg-purple-500' },
+      { key: 'LAB_SAMPLE', label: 'Lab Samples', color: 'bg-cyan-500' },
+    ];
+    return categories.map((cat) => {
+      const catTasks = tasks.filter((t) => t.taskType === cat.key);
+      const done = catTasks.filter((t) => t.status === 'COMPLETED').length;
+      return {
+        label: cat.label,
+        done,
+        total: catTasks.length,
+        color: cat.color,
+      };
+    });
+  }, [tasks]);
+
+  // Overall KPIs
   const completedCount = tasks.filter((t) => t.status === 'COMPLETED').length;
+  const pendingCount = tasks.filter((t) => t.status === 'PENDING').length;
+  const inProgressCount = tasks.filter((t) => t.status === 'IN_PROGRESS').length;
+  const highPriorityCount = tasks.filter((t) => t.priority === 'HIGH' && t.status !== 'COMPLETED').length;
   const totalCount = tasks.length;
   const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
@@ -174,40 +265,69 @@ export function TasksPage() {
             <div>
               <h1 className="text-lg sm:text-xl font-bold text-gray-900">Nursing Tasks</h1>
               <p className="text-xs text-gray-400 mt-0.5">
-                Manage and complete your nursing tasks, medication administration, and patient care.
+                Manage and complete your nursing shift tasks, medication rounds, and biometric orders.
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 shadow-xs">
-              <span className="text-[11px] text-gray-500">Oct 19, 2026</span>
-              <div className="flex gap-0.5 ml-1">
-                <button className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 cursor-pointer">
-                  <ChevronLeft size={11} />
-                </button>
-                <button className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 cursor-pointer">
-                  <ChevronRight size={11} />
-                </button>
-              </div>
-            </div>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 shadow-xs transition-colors cursor-pointer">
-              <CheckSquare size={13} className="text-blue-600" /> Mark All as Read
+            <button
+              onClick={() => void loadTasks()}
+              disabled={loading}
+              className="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors shadow-2xs cursor-pointer"
+              title="Refresh Tasks"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin text-blue-600' : ''} />
             </button>
           </div>
         </div>
 
         {/* KPIs */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
-          <NurseStatCard icon={<ClipboardList size={18} className="text-blue-600" />} iconBg="bg-blue-50" label="Total Tasks" value="48" trend="+12% vs. yesterday" trendUp />
-          <NurseStatCard icon={<Clock size={18} className="text-orange-500" />} iconBg="bg-orange-50" label="Pending" value="21" trend="+8% vs. yesterday" trendUp />
-          <NurseStatCard icon={<CheckCircle2 size={18} className="text-green-600" />} iconBg="bg-green-50" label="Completed" value="20" trend="+15% vs. yesterday" trendUp />
-          <NurseStatCard icon={<Activity size={18} className="text-blue-500" />} iconBg="bg-blue-50" label="In Progress" value="5" trend="-38% vs. yesterday" trendUp={false} />
-          <NurseStatCard icon={<AlertTriangle size={18} className="text-red-500" />} iconBg="bg-red-50" label="Overdue" value="7" trend="-22% vs. yesterday" trendUp={false} />
+          <NurseStatCard
+            icon={ClipboardList}
+            color="blue"
+            label="Total Shift Tasks"
+            value={String(totalCount)}
+            trend="Shift assigned"
+            trendUp={true}
+          />
+          <NurseStatCard
+            icon={Clock}
+            color="orange"
+            label="Pending Action"
+            value={String(pendingCount)}
+            trend="Awaiting execution"
+            trendUp={pendingCount === 0}
+          />
+          <NurseStatCard
+            icon={CheckCircle2}
+            color="green"
+            label="Completed"
+            value={String(completedCount)}
+            trend={`${pct}% completed`}
+            trendUp={true}
+          />
+          <NurseStatCard
+            icon={Activity}
+            color="purple"
+            label="In Progress"
+            value={String(inProgressCount)}
+            trend="Actively executing"
+            trendUp={true}
+          />
+          <NurseStatCard
+            icon={AlertTriangle}
+            color="red"
+            label="High Priority"
+            value={String(highPriorityCount)}
+            trend="Needs immediate care"
+            trendUp={highPriorityCount === 0}
+          />
         </div>
 
         {/* Category Tabs */}
         <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 shadow-xs w-fit flex-wrap">
-          {CATEGORY_TABS.map((tab) => (
+          {categoryTabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => {
@@ -225,28 +345,27 @@ export function TasksPage() {
 
         {/* Table */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden relative">
-          {loading && (
-            <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          )}
-          {error && (
-            <div className="p-3 text-xs text-red-600 bg-red-50">{error}</div>
-          )}
+          {error && <div className="p-3 text-xs text-red-600 bg-red-50">{error}</div>}
           <div className="p-2.5 sm:p-3 border-b border-gray-100 flex flex-wrap items-center gap-2.5">
             <div className="relative flex-1 min-w-[200px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search tasks by patient name, task, or room..."
+                placeholder="Search tasks by patient name, title, or details..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <select
               value={selectedPriority}
-              onChange={(e) => setSelectedPriority(e.target.value)}
+              onChange={(e) => {
+                setSelectedPriority(e.target.value);
+                setCurrentPage(1);
+              }}
               className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option>All Priorities</option>
@@ -256,7 +375,10 @@ export function TasksPage() {
             </select>
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              onChange={(e) => {
+                setSelectedStatus(e.target.value);
+                setCurrentPage(1);
+              }}
               className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option>All Statuses</option>
@@ -265,104 +387,121 @@ export function TasksPage() {
               <option>Scheduled</option>
               <option>Completed</option>
             </select>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer">
-              <Filter size={13} /> Filter
-            </button>
           </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  <th className="w-8 px-3 py-2.5">
-                    <input type="checkbox" className="rounded border-gray-300" />
-                  </th>
                   <th className="px-3 py-2.5 text-left">Patient</th>
                   <th className="px-3 py-2.5 text-left">Task</th>
                   <th className="px-3 py-2.5 text-left">Type</th>
                   <th className="px-3 py-2.5 text-left">Priority</th>
                   <th className="px-3 py-2.5 text-left">Due Time</th>
                   <th className="px-3 py-2.5 text-left">Status</th>
-                  <th className="px-3 py-2.5 text-left">Actions</th>
+                  <th className="px-3 py-2.5 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {paginated.map((task) => {
-                  const uiType = mapTaskType(task.taskType);
-                  const uiStatus = mapStatus(task.status);
-                  const uiPriority = mapPriority(task.priority);
-                  const cfg = TYPE_CONFIGS[uiType] || { bg: 'bg-gray-100', text: 'text-gray-600', Icon: ClipboardList };
-                  const TypeIcon = cfg.Icon;
-                  return (
-                    <tr key={task.id} className="hover:bg-blue-50/30 transition-colors">
-                      <td className="px-3 py-2">
-                        <input type="checkbox" className="rounded border-gray-300" />
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                            {task.patientName.charAt(0)}
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-gray-400">
+                      <RefreshCw size={24} className="animate-spin text-blue-600 mx-auto mb-2" />
+                      Loading nursing tasks...
+                    </td>
+                  </tr>
+                ) : paginated.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-gray-400">
+                      No tasks found matching filter criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  paginated.map((task) => {
+                    const uiType = mapTaskType(task.taskType);
+                    const uiStatus = mapStatus(task.status);
+                    const uiPriority = mapPriority(task.priority);
+                    const cfg = TYPE_CONFIGS[uiType] || { bg: 'bg-gray-100', text: 'text-gray-600', Icon: ClipboardList };
+                    const TypeIcon = cfg.Icon;
+                    return (
+                      <tr key={task.id} className="hover:bg-blue-50/30 transition-colors">
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+                              {task.patientName.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-800 text-xs leading-tight">{task.patientName}</p>
+                              <p className="text-[10px] text-gray-400">{task.assignedToName ?? 'Staff Nurse'}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium text-gray-800 text-xs leading-tight">{task.patientName}</p>
-                            <p className="text-[10px] text-gray-400">
-                              {task.assignedToName ?? '—'}
-                            </p>
+                        </td>
+                        <td className="px-3 py-2">
+                          <p className="font-medium text-gray-800 text-xs">{task.title}</p>
+                          <p className="text-[10px] text-gray-400 truncate max-w-[160px]">{task.details}</p>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${cfg.bg} ${cfg.text}`}
+                          >
+                            <TypeIcon size={10} />
+                            {uiType}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                              PRIORITY_STYLES[uiPriority] || 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {uiPriority}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                          <div>{task.dueTime}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                              STATUS_STYLES[uiStatus] || 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {uiStatus}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleOpenDetails(task.patientName)}
+                              className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-50 text-blue-500 transition-colors cursor-pointer"
+                              title="View Patient Details"
+                            >
+                              <Eye size={13} />
+                            </button>
+                            {task.status !== 'COMPLETED' && (
+                              <button
+                                onClick={() => void handleCompleteTask(task.id)}
+                                className="px-2 py-1 rounded-md bg-green-50 hover:bg-green-100 text-green-700 font-medium text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Mark Complete"
+                              >
+                                <CheckCircle2 size={12} />
+                                <span>Done</span>
+                              </button>
+                            )}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <p className="font-medium text-gray-800 text-xs">{task.title}</p>
-                        <p className="text-[10px] text-gray-400 truncate max-w-[150px]">{task.details}</p>
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${cfg.bg} ${cfg.text}`}>
-                          <TypeIcon size={10} />
-                          {uiType}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${PRIORITY_STYLES[uiPriority] || 'bg-gray-100 text-gray-600'}`}>
-                          {uiPriority}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                        <div>{task.dueTime}</div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_STYLES[uiStatus] || 'bg-gray-100 text-gray-600'}`}>
-                          {uiStatus}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleOpenDetails(task.patientName)}
-                            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-50 text-blue-500 transition-colors cursor-pointer"
-                            title="View Patient Details"
-                          >
-                            <Eye size={13} />
-                          </button>
-                          <button
-                            onClick={() => void handleCompleteTask(task.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-green-50 text-green-500 transition-colors cursor-pointer"
-                            title="Complete"
-                          >
-                            <CheckCircle2 size={13} />
-                          </button>
-                          <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 transition-colors cursor-pointer" title="More">
-                            <MoreVertical size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
+
           <div className="px-3.5 py-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
             <span>
-              Showing {(currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filtered.length)} of {filtered.length} tasks
+              Showing {filtered.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}–
+              {Math.min(currentPage * rowsPerPage, filtered.length)} of {filtered.length} tasks
             </span>
             <div className="flex items-center gap-1">
               <button
@@ -398,59 +537,9 @@ export function TasksPage() {
       {/* Right panel */}
       <aside className="w-72 xl:w-80 border-l border-gray-200 bg-white overflow-y-auto p-3 space-y-3 shrink-0">
         <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="flex items-center gap-1.5">
-              <SlidersHorizontal size={15} className="text-blue-600" />
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800">Task Filters</h3>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {[
-              { label: 'Department', options: ['All Departments', 'Cardiology', 'Internal Medicine', 'Wound Care'] },
-              { label: 'Task Type',  options: ['All Task Types', 'Medication', 'Vital Signs', 'Wound Care', 'Lab Sample'] },
-              { label: 'Priority',   options: ['All Priorities', 'High', 'Medium', 'Low'] },
-              { label: 'Status',     options: ['All Statuses', 'Pending', 'In Progress', 'Scheduled', 'Completed'] },
-            ].map(({ label, options }) => (
-              <div key={label}>
-                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block mb-0.5">{label}</label>
-                <select className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  {options.map((o) => (
-                    <option key={o}>{o}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800 mb-2">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-1.5">
-            {[
-              { icon: Activity,     label: 'Record Vitals',    color: 'text-blue-600',   bg: 'bg-blue-50' },
-              { icon: Pill,         label: 'Administer Med',   color: 'text-purple-600', bg: 'bg-purple-50' },
-              { icon: FlaskConical, label: 'Collect Sample',   color: 'text-cyan-600',   bg: 'bg-cyan-50' },
-              { icon: BookOpen,     label: 'Add Patient Note', color: 'text-green-600',  bg: 'bg-green-50' },
-              { icon: ClipboardList,label: 'View Record',      color: 'text-orange-600', bg: 'bg-orange-50' },
-              { icon: CheckSquare,  label: 'View All Tasks',   color: 'text-indigo-600', bg: 'bg-indigo-50' },
-            ].map(({ icon: Icon, label, color, bg }) => (
-              <button
-                key={label}
-                className={`flex flex-col items-center gap-1.5 p-2 rounded-lg border border-gray-100 hover:border-blue-200 hover:shadow-xs transition-all cursor-pointer ${bg}`}
-              >
-                <div className="w-7 h-7 rounded-md flex items-center justify-center bg-white shadow-2xs">
-                  <Icon size={13} className={color} />
-                </div>
-                <span className="text-[11px] font-medium text-gray-700 text-center leading-tight">{label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
           <div className="flex items-center gap-1.5 mb-2.5">
             <ClipboardList size={15} className="text-blue-600" />
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800">Task Progress</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800">Shift Task Progress</h3>
           </div>
           <div className="flex items-center gap-3 mb-3">
             <div className="relative w-14 h-14 shrink-0">
@@ -479,8 +568,8 @@ export function TasksPage() {
             </div>
           </div>
           <div className="space-y-2">
-            {PROGRESS_CATEGORIES.map((cat) => {
-              const catPct = Math.round((cat.done / cat.total) * 100);
+            {progressCategories.map((cat) => {
+              const catPct = cat.total > 0 ? Math.round((cat.done / cat.total) * 100) : 0;
               return (
                 <div key={cat.label}>
                   <div className="flex items-center justify-between text-[11px] mb-0.5">
@@ -499,11 +588,13 @@ export function TasksPage() {
         </div>
       </aside>
 
-      <NursePatientDetailsModal
-        patient={selectedPatient}
-        isOpen={detailsOpen}
-        onClose={() => setDetailsOpen(false)}
-      />
+      {selectedPatient && (
+        <NursePatientDetailsModal
+          patient={selectedPatient}
+          isOpen={detailsOpen}
+          onClose={() => setDetailsOpen(false)}
+        />
+      )}
     </div>
   );
 }

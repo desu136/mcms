@@ -1,52 +1,80 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   CalendarDays,
   Eye,
-  Pencil,
   MoreVertical,
   ChevronLeft,
   ChevronRight,
-  UserCheck,
-  RefreshCcw,
-  FileText,
   Filter,
   Search,
+  RefreshCw,
+  Clock,
+  Heart,
+  ArrowRight,
+  Activity,
+  AlertTriangle,
+  User,
+  Users,
+  CheckCircle2,
+  Calendar,
 } from 'lucide-react';
 import { NurseStatCard } from '../../components/nurse/NurseStatCard';
-import { NURSE_APPOINTMENTS, NURSE_PATIENTS, NursePatient } from '../../components/nurse/nurseMockData';
+import { NursePatient } from '../../components/nurse/nurseMockData';
 import NursePatientDetailsModal from '../../components/nurse/NursePatientDetailsModal';
+import RecordVitalsModal from '../../components/nurse/RecordVitalsModal';
+import { useAuth } from '../../auth/AuthContext';
+import { fetchAppointments, fetchQueue, updateQueueEntry } from '../../api/appointments';
+import { fetchPatients } from '../../api/patients';
+import { fetchDoctors, fetchDepartments } from '../../api/staff';
+import type { AppointmentDTO, QueueEntryDTO, PatientDTO, DoctorDTO, ClinicDepartmentDTO } from '@mcms/contracts';
 
-const STATUS_STYLES: Record<string, string> = {
-  'Checked In':  'bg-green-100 text-green-700',
-  'Waiting':     'bg-yellow-100 text-yellow-700',
-  'In Progress': 'bg-blue-100 text-blue-700',
-  'Scheduled':   'bg-purple-100 text-purple-700',
-  'Cancelled':   'bg-red-100 text-red-700',
-  'Completed':   'bg-gray-100 text-gray-600',
-  'On Time':     'bg-emerald-100 text-emerald-700',
-  'Upcoming':    'bg-sky-100 text-sky-700',
+interface ExtendedQueueItem {
+  id: string;
+  ticketNumber: string;
+  patientId: string;
+  patientName: string;
+  patientPid: string;
+  age: number;
+  gender: string;
+  departmentName: string;
+  doctorName?: string | null;
+  priority: 'ROUTINE' | 'URGENT' | 'EMERGENCY';
+  status: string;
+  checkInTime: string;
+  waitMinutes: number;
+}
+
+const QUEUE_STATUS_STYLES: Record<string, string> = {
+  WAITING_FOR_TRIAGE: 'bg-amber-100 text-amber-800 border-amber-200',
+  TRIAGE_IN_PROGRESS: 'bg-blue-100 text-blue-800 border-blue-200',
+  WAITING_FOR_DOCTOR: 'bg-purple-100 text-purple-800 border-purple-200',
+  IN_CONSULTATION: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+  COMPLETED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  CANCELLED: 'bg-gray-100 text-gray-700 border-gray-200',
 };
 
-const TABS = [
-  { key: 'all',       label: 'All',       count: 48 },
-  { key: 'today',     label: 'Today',     count: 12 },
-  { key: 'upcoming',  label: 'Upcoming',  count: 24 },
-  { key: 'completed', label: 'Completed', count: 36 },
-  { key: 'cancelled', label: 'Cancelled', count: 4  },
-];
+const APPT_STATUS_STYLES: Record<string, string> = {
+  SCHEDULED: 'bg-blue-100 text-blue-800',
+  CONFIRMED: 'bg-emerald-100 text-emerald-800',
+  CHECKED_IN: 'bg-amber-100 text-amber-800',
+  COMPLETED: 'bg-gray-100 text-gray-700',
+  CANCELLED: 'bg-rose-100 text-rose-800',
+  NO_SHOW: 'bg-gray-200 text-gray-600',
+};
 
 function MiniCalendar() {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 9, 19));
-  const today = 19;
+  const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const monthName = currentDate.toLocaleString('default', { month: 'long' });
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date().getDate();
+  const isCurrentMonth = new Date().getMonth() === month && new Date().getFullYear() === year;
+
   const days: (number | null)[] = [];
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let d = 1; d <= daysInMonth; d++) days.push(d);
-  const hasAppt = [8, 10, 14, 19, 21, 25, 28];
 
   return (
     <div>
@@ -80,13 +108,12 @@ function MiniCalendar() {
             {day !== null ? (
               <button
                 className={`w-6 h-6 text-[11px] rounded-full flex items-center justify-center font-medium transition-colors relative cursor-pointer ${
-                  day === today ? 'bg-blue-600 text-white shadow-2xs font-bold' : 'text-gray-700 hover:bg-blue-50'
+                  day === today && isCurrentMonth
+                    ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                    : 'text-gray-700 hover:bg-blue-50'
                 }`}
               >
                 {day}
-                {hasAppt.includes(day) && day !== today && (
-                  <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-blue-400" />
-                )}
               </button>
             ) : (
               <div className="w-6 h-6" />
@@ -98,53 +125,218 @@ function MiniCalendar() {
   );
 }
 
-const TODAYS_SCHEDULE = [
-  { time: '08:00 AM', patient: 'Aster Mulu',       reason: 'Follow-up',          status: 'In Care',     dot: 'bg-green-500' },
-  { time: '09:30 AM', patient: 'Samuel Girma',     reason: 'Diabetes Follow-up', status: 'Waiting',     dot: 'bg-yellow-500' },
-  { time: '10:00 AM', patient: 'Lidya Kebede',     reason: 'Wound Check',        status: 'In Progress', dot: 'bg-blue-500' },
-  { time: '11:00 AM', patient: 'Getachew Tadesse', reason: 'Routine Check',      status: 'Scheduled',   dot: 'bg-purple-500' },
-  { time: '01:00 PM', patient: 'Betlehem Abebe',   reason: 'Vaccination',        status: 'Scheduled',   dot: 'bg-purple-500' },
-];
-
-const SCHED_STATUS: Record<string, string> = {
-  'In Care':     'bg-green-100 text-green-700',
-  'Waiting':     'bg-yellow-100 text-yellow-700',
-  'In Progress': 'bg-blue-100 text-blue-700',
-  'Scheduled':   'bg-purple-100 text-purple-700',
-};
-
 export function AppointmentsPage() {
-  const [activeTab, setActiveTab] = useState('all');
+  const { accessToken } = useAuth();
+
+  // Mode: 'queue' (Nursing Triage Queue) vs 'appointments' (Scheduled Appointments)
+  const [viewMode, setViewMode] = useState<'queue' | 'appointments'>('queue');
+
+  // Live Queue Data
+  const [queueEntries, setQueueEntries] = useState<ExtendedQueueItem[]>([]);
+  const [isLoadingQueue, setIsLoadingQueue] = useState(false);
+
+  // Live Appointments Data
+  const [liveAppointments, setLiveAppointments] = useState<AppointmentDTO[]>([]);
+  const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
+
+  // Filter & Search
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDept, setSelectedDept] = useState('All Departments');
-  const [selectedStatus, setSelectedStatus] = useState('All Statuses');
+  const [selectedPriority, setSelectedPriority] = useState('All');
+  const [selectedStatus, setSelectedStatus] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
   const rowsPerPage = 10;
 
-  const handleOpenDetails = (patientPid: string, patientName: string) => {
-    const p = NURSE_PATIENTS.find((np) => np.pid === patientPid || np.name === patientName) || NURSE_PATIENTS[0]!;
-    setSelectedPatient(p);
-    setDetailsOpen(true);
+  // Metadata
+  const [patients, setPatients] = useState<PatientDTO[]>([]);
+  const [doctors, setDoctors] = useState<DoctorDTO[]>([]);
+  const [departments, setDepartments] = useState<ClinicDepartmentDTO[]>([]);
+
+  // Modals
+  const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
+  const [selectedPatientForVitals, setSelectedPatientForVitals] = useState<string>('');
+  const [selectedQueueEntryId, setSelectedQueueEntryId] = useState<string | undefined>();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedPatientForDetails, setSelectedPatientForDetails] = useState<NursePatient | null>(null);
+
+  // Load Metadata
+  const loadMetadata = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const [pRes, dRes, deptRes] = await Promise.allSettled([
+        fetchPatients(accessToken, { limit: 100 }),
+        fetchDoctors(accessToken),
+        fetchDepartments(accessToken),
+      ]);
+      if (pRes.status === 'fulfilled' && pRes.value.data) setPatients(pRes.value.data);
+      if (dRes.status === 'fulfilled' && Array.isArray(dRes.value)) setDoctors(dRes.value);
+      if (deptRes.status === 'fulfilled' && Array.isArray(deptRes.value)) setDepartments(deptRes.value);
+    } catch (e) {
+      console.error('Failed to load clinic metadata:', e);
+    }
+  }, [accessToken]);
+
+  // Load Live Queue Entries
+  const loadQueue = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoadingQueue(true);
+    try {
+      const rawQueue = await fetchQueue(accessToken);
+      const mapped: ExtendedQueueItem[] = rawQueue.map((q) => {
+        const checkIn = new Date(q.checkInTime);
+        const waitMins = Math.max(0, Math.floor((Date.now() - checkIn.getTime()) / 60000));
+        return {
+          id: q.id,
+          ticketNumber: q.ticketNumber,
+          patientId: q.patientId,
+          patientName: q.patientName || 'Patient',
+          patientPid: q.patientPid || 'PID-000000',
+          age: (q as any).patientAge || 30,
+          gender: (q as any).patientGender || 'Female',
+          departmentName: (q as any).departmentName || (q.departmentId ? `Dept ${q.departmentId}` : 'General OPD'),
+          doctorName: (q as any).doctorName || (q.assignedDoctorId ? `Dr. ${q.assignedDoctorId}` : null),
+          priority: q.priority as 'ROUTINE' | 'URGENT' | 'EMERGENCY',
+          status: q.status,
+          checkInTime: checkIn.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          waitMinutes: waitMins,
+        };
+      });
+      setQueueEntries(mapped);
+    } catch (e) {
+      console.error('Failed to load queue in nurse desktop:', e);
+    } finally {
+      setIsLoadingQueue(false);
+    }
+  }, [accessToken]);
+
+  // Load Live Appointments
+  const loadAppointments = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoadingAppointments(true);
+    try {
+      const data = await fetchAppointments(accessToken);
+      setLiveAppointments(data || []);
+    } catch (err) {
+      console.error('Failed to load appointments for nurse desktop:', err);
+    } finally {
+      setIsLoadingAppointments(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadMetadata();
+    void loadQueue();
+    void loadAppointments();
+  }, [loadMetadata, loadQueue, loadAppointments]);
+
+  const handleStartTriage = (patientId: string, queueId?: string) => {
+    setSelectedPatientForVitals(patientId);
+    setSelectedQueueEntryId(queueId);
+    setVitalsModalOpen(true);
   };
 
-  const filtered = NURSE_APPOINTMENTS.filter((a) => {
-    const q = searchQuery.toLowerCase();
+  const handleForwardToDoctor = async (queueId: string) => {
+    try {
+      await updateQueueEntry(queueId, { status: 'WAITING_FOR_DOCTOR' }, accessToken);
+      await loadQueue();
+    } catch (e) {
+      console.error('Failed to forward patient to doctor:', e);
+    }
+  };
+
+  const handleOpenPatientDetails = (patientId: string, fallbackName?: string) => {
+    const found = patients.find((p) => p.id === patientId);
+    if (found) {
+      const name = found.fullName || `${found.firstName} ${found.lastName}`.trim();
+      const birthYear = found.dateOfBirth ? new Date(found.dateOfBirth).getFullYear() : 1995;
+      const age = Math.max(0, new Date().getFullYear() - birthYear);
+      setSelectedPatientForDetails({
+        id: found.id,
+        pid: found.pid || `PID-${found.id.slice(0, 6).toUpperCase()}`,
+        name,
+        age,
+        gender: found.gender?.toUpperCase() === 'MALE' ? 'Male' : 'Female',
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+        phone: found.phoneNumber || '—',
+        email: found.email || '—',
+        address: found.address || 'Addis Ababa, Ethiopia',
+        room: 'Triage Room 1',
+        bed: 'Counter 01',
+        department: 'Outpatient Triage',
+        visitReason: found.allergies ? `Allergies: ${found.allergies}` : 'Clinical Triage',
+        status: 'In Care',
+        vitalsStatus: 'Normal',
+        vitals: { bp: '—', hr: 0, temp: 0, spo2: 0 },
+        doctor: 'Attending Physician',
+        admissionDate: found.createdAt ? new Date(found.createdAt).toLocaleDateString() : 'Today',
+      });
+      setDetailsOpen(true);
+    } else if (fallbackName) {
+      setSelectedPatientForDetails({
+        id: patientId,
+        pid: `PID-${patientId.slice(0, 6).toUpperCase()}`,
+        name: fallbackName,
+        age: 30,
+        gender: 'Female',
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(fallbackName)}`,
+        phone: '—',
+        email: '—',
+        address: 'Addis Ababa, Ethiopia',
+        room: 'Triage Room 1',
+        bed: 'Counter 01',
+        department: 'Outpatient Triage',
+        visitReason: 'Clinical Triage',
+        status: 'In Care',
+        vitalsStatus: 'Normal',
+        vitals: { bp: '—', hr: 0, temp: 0, spo2: 0 },
+        doctor: 'Attending Physician',
+        admissionDate: 'Today',
+      });
+      setDetailsOpen(true);
+    }
+  };
+
+  // Filter Queue Entries
+  const filteredQueue = queueEntries.filter((q) => {
+    const query = searchQuery.toLowerCase();
     const matchQ =
-      !q ||
-      a.patientName.toLowerCase().includes(q) ||
-      a.patientPid.toLowerCase().includes(q) ||
-      a.reason.toLowerCase().includes(q);
-    const matchDept = selectedDept === 'All Departments' || a.department === selectedDept;
-    const matchStatus = selectedStatus === 'All Statuses' || a.status === selectedStatus;
-    return matchQ && matchDept && matchStatus;
+      !query ||
+      q.patientName.toLowerCase().includes(query) ||
+      q.patientPid.toLowerCase().includes(query) ||
+      q.ticketNumber.toLowerCase().includes(query);
+    const matchPri = selectedPriority === 'All' || q.priority === selectedPriority;
+    const matchStat = selectedStatus === 'All' || q.status.toLowerCase() === selectedStatus.toLowerCase();
+    return matchQ && matchPri && matchStat;
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
-  const paginated = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
-  const departments = ['All Departments', ...Array.from(new Set(NURSE_APPOINTMENTS.map((a) => a.department)))];
-  const statuses = ['All Statuses', ...Object.keys(STATUS_STYLES)];
+  // Filter Appointments
+  const filteredAppointments = liveAppointments.filter((a) => {
+    const query = searchQuery.toLowerCase();
+    const patientName = a.patientName || '';
+    const doctorName = a.doctorName || '';
+    const reason = a.reason || '';
+    const matchQ =
+      !query ||
+      patientName.toLowerCase().includes(query) ||
+      doctorName.toLowerCase().includes(query) ||
+      reason.toLowerCase().includes(query);
+    const matchStat = selectedStatus === 'All' || a.status.toLowerCase() === selectedStatus.toLowerCase();
+    return matchQ && matchStat;
+  });
+
+  const activeCount = viewMode === 'queue' ? filteredQueue.length : filteredAppointments.length;
+  const totalPages = Math.max(1, Math.ceil(activeCount / rowsPerPage));
+  const paginatedQueue = filteredQueue.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+  const paginatedAppointments = filteredAppointments.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+  // KPIs
+  const waitingForTriageCount = queueEntries.filter(
+    (q) => q.status === 'WAITING_FOR_TRIAGE' || q.status === 'WAITING' || q.status === 'CHECKED_IN',
+  ).length;
+  const urgentCount = queueEntries.filter(
+    (q) => (q.priority === 'URGENT' || q.priority === 'EMERGENCY') && q.status !== 'COMPLETED',
+  ).length;
+  const waitingForDoctorCount = queueEntries.filter((q) => q.status === 'WAITING_FOR_DOCTOR').length;
+  const apptsTodayCount = liveAppointments.length;
 
   return (
     <div className="h-full flex overflow-hidden bg-[#F4F7FC]">
@@ -157,24 +349,49 @@ export function AppointmentsPage() {
               <CalendarDays size={18} className="text-white" />
             </div>
             <div>
-              <h1 className="text-lg sm:text-xl font-bold text-gray-900">Appointments</h1>
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900">Triage Queue & Appointments</h1>
               <p className="text-xs text-gray-400 mt-0.5">
-                View and manage your patient appointments, update status, and provide nursing care.
+                Manage incoming outpatient triage queues, record vital signs, and monitor clinic bookings.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-xs">
-            <CalendarDays size={14} className="text-blue-600" />
-            <div className="text-right">
-              <p className="text-[11px] text-gray-400">Oct 19, 2026</p>
-              <p className="text-[11px] font-medium text-gray-700">Monday</p>
-            </div>
-            <div className="flex gap-0.5 ml-1.5">
-              <button className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 cursor-pointer">
-                <ChevronLeft size={11} />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                void loadQueue();
+                void loadAppointments();
+              }}
+              disabled={isLoadingQueue || isLoadingAppointments}
+              className="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors shadow-2xs cursor-pointer"
+              title="Refresh Queue"
+            >
+              <RefreshCw
+                size={14}
+                className={isLoadingQueue || isLoadingAppointments ? 'animate-spin text-blue-600' : ''}
+              />
+            </button>
+            <div className="flex bg-gray-200/80 p-0.5 rounded-lg border border-gray-300/50">
+              <button
+                onClick={() => {
+                  setViewMode('queue');
+                  setCurrentPage(1);
+                }}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                  viewMode === 'queue' ? 'bg-white text-blue-600 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Triage Queue ({queueEntries.length})
               </button>
-              <button className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 cursor-pointer">
-                <ChevronRight size={11} />
+              <button
+                onClick={() => {
+                  setViewMode('appointments');
+                  setCurrentPage(1);
+                }}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                  viewMode === 'appointments' ? 'bg-white text-blue-600 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Appointments ({liveAppointments.length})
               </button>
             </div>
           </div>
@@ -182,130 +399,286 @@ export function AppointmentsPage() {
 
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-          <NurseStatCard icon={<CalendarDays size={18} className="text-blue-600" />} iconBg="bg-blue-50" label="Total Appointments" value="48" trend="+12% vs. last week" trendUp />
-          <NurseStatCard icon={<CalendarDays size={18} className="text-cyan-600" />} iconBg="bg-cyan-50" label="Today's Appointments" value="12" trend="+20% vs. last week" trendUp />
-          <NurseStatCard icon={<UserCheck size={18} className="text-green-600" />} iconBg="bg-green-50" label="Completed" value="36" trend="+8% vs. last week" trendUp />
-          <NurseStatCard icon={<RefreshCcw size={18} className="text-red-500" />} iconBg="bg-red-50" label="Cancelled" value="4" trend="-33% vs. last week" trendUp={false} />
+          <NurseStatCard
+            icon={Users}
+            color="amber"
+            label="Waiting for Triage"
+            value={String(waitingForTriageCount)}
+            trend="Ready for vital sign intake"
+            trendUp={waitingForTriageCount === 0}
+          />
+          <NurseStatCard
+            icon={AlertTriangle}
+            color="red"
+            label="Urgent / Emergency"
+            value={String(urgentCount)}
+            trend="High priority attention"
+            trendUp={urgentCount === 0}
+          />
+          <NurseStatCard
+            icon={ArrowRight}
+            color="purple"
+            label="With / Waiting Doctor"
+            value={String(waitingForDoctorCount)}
+            trend="Triaged & forwarded"
+            trendUp={true}
+          />
+          <NurseStatCard
+            icon={Calendar}
+            color="blue"
+            label="Total Booked"
+            value={String(apptsTodayCount)}
+            trend="Scheduled encounters"
+            trendUp={true}
+          />
         </div>
 
-        {/* Tab filters */}
-        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 shadow-xs w-fit flex-wrap">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
-                activeTab === tab.key ? 'bg-blue-600 text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              {tab.label} ({tab.count})
-            </button>
-          ))}
-        </div>
-
-        {/* Table */}
+        {/* Table / List Container */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
+          {/* Search & Filter Bar */}
           <div className="p-2.5 sm:p-3 border-b border-gray-100 flex flex-wrap items-center gap-2.5">
             <div className="relative flex-1 min-w-[200px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by patient name, ID, or reason..."
+                placeholder={
+                  viewMode === 'queue'
+                    ? 'Search by ticket #, patient name, PID...'
+                    : 'Search by patient name, doctor, or reason...'
+                }
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <select
-              value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {departments.map((d) => (
-                <option key={d}>{d}</option>
-              ))}
-            </select>
+            {viewMode === 'queue' && (
+              <select
+                value={selectedPriority}
+                onChange={(e) => {
+                  setSelectedPriority(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="All">All Priorities</option>
+                <option value="ROUTINE">Routine</option>
+                <option value="URGENT">Urgent</option>
+                <option value="EMERGENCY">Emergency</option>
+              </select>
+            )}
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              onChange={(e) => {
+                setSelectedStatus(e.target.value);
+                setCurrentPage(1);
+              }}
               className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {statuses.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
+              <option value="All">All Statuses</option>
+              {viewMode === 'queue' ? (
+                <>
+                  <option value="WAITING_FOR_TRIAGE">Waiting for Triage</option>
+                  <option value="TRIAGE_IN_PROGRESS">Triage In Progress</option>
+                  <option value="WAITING_FOR_DOCTOR">Waiting for Doctor</option>
+                  <option value="IN_CONSULTATION">In Consultation</option>
+                  <option value="COMPLETED">Completed</option>
+                </>
+              ) : (
+                <>
+                  <option value="SCHEDULED">Scheduled</option>
+                  <option value="CONFIRMED">Confirmed</option>
+                  <option value="CHECKED_IN">Checked In</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </>
+              )}
             </select>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer">
-              <Filter size={13} /> Filter
-            </button>
           </div>
+
+          {/* Table View */}
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  <th className="w-8 px-3 py-2.5">
-                    <input type="checkbox" className="rounded border-gray-300" />
-                  </th>
-                  <th className="px-3 py-2.5 text-left">Patient</th>
-                  <th className="px-3 py-2.5 text-left">Age / Gender</th>
-                  <th className="px-3 py-2.5 text-left">Department</th>
-                  <th className="px-3 py-2.5 text-left">Reason</th>
-                  <th className="px-3 py-2.5 text-left">Appointment Time</th>
-                  <th className="px-3 py-2.5 text-left">Status</th>
-                  <th className="px-3 py-2.5 text-left">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {paginated.map((apt) => (
-                  <tr key={apt.id} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="px-3 py-2">
-                      <input type="checkbox" className="rounded border-gray-300" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2.5">
-                        <img src={apt.avatar} alt={apt.patientName} className="w-8 h-8 rounded-full object-cover shrink-0" />
-                        <div>
-                          <p className="font-medium text-gray-800 text-xs leading-tight">{apt.patientName}</p>
-                          <p className="text-[10px] text-gray-400">{apt.patientPid}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-gray-600">{apt.age} / {apt.gender}</td>
-                    <td className="px-3 py-2 text-gray-600">{apt.department}</td>
-                    <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{apt.reason}</td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                      <div>{apt.date}</div>
-                      <div className="text-[10px] text-gray-400">{apt.appointmentTime}</div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_STYLES[apt.status] || 'bg-gray-100 text-gray-600'}`}>
-                        {apt.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleOpenDetails(apt.patientPid, apt.patientName)}
-                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-50 text-blue-500 transition-colors cursor-pointer"
-                          title="View Patient Details"
-                        >
-                          <Eye size={13} />
-                        </button>
-                        <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 cursor-pointer">
-                          <Pencil size={13} />
-                        </button>
-                        <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 cursor-pointer">
-                          <MoreVertical size={13} />
-                        </button>
-                      </div>
-                    </td>
+            {viewMode === 'queue' ? (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    <th className="px-3 py-2.5 text-left">Ticket</th>
+                    <th className="px-3 py-2.5 text-left">Patient</th>
+                    <th className="px-3 py-2.5 text-left">Priority</th>
+                    <th className="px-3 py-2.5 text-left">Wait Time</th>
+                    <th className="px-3 py-2.5 text-left">Department / Doctor</th>
+                    <th className="px-3 py-2.5 text-left">Status</th>
+                    <th className="px-3 py-2.5 text-center">Triage Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {isLoadingQueue ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-gray-400">
+                        <RefreshCw size={24} className="animate-spin text-blue-600 mx-auto mb-2" />
+                        Loading queue entries...
+                      </td>
+                    </tr>
+                  ) : paginatedQueue.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-gray-400">
+                        No active queue entries found.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedQueue.map((item) => (
+                      <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
+                        <td className="px-3 py-2">
+                          <span className="font-mono font-bold text-xs bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
+                            {item.ticketNumber}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <div>
+                              <p className="font-medium text-gray-800 text-xs leading-tight">{item.patientName}</p>
+                              <p className="text-[10px] text-gray-400">{item.patientPid}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              item.priority === 'EMERGENCY'
+                                ? 'bg-red-100 text-red-700 animate-pulse'
+                                : item.priority === 'URGENT'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-blue-100 text-blue-700'
+                            }`}
+                          >
+                            {item.priority}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                          <div className="flex items-center gap-1 text-[11px]">
+                            <Clock size={12} className="text-gray-400" />
+                            <span>{item.waitMinutes} mins</span>
+                          </div>
+                          <div className="text-[10px] text-gray-400">Since {item.checkInTime}</div>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">
+                          <div>{item.departmentName}</div>
+                          {item.doctorName && <div className="text-[10px] text-gray-400">{item.doctorName}</div>}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                              QUEUE_STATUS_STYLES[item.status] || 'bg-gray-100 text-gray-600 border-gray-200'
+                            }`}
+                          >
+                            {item.status.replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleStartTriage(item.patientId, item.id)}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-semibold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
+                              title="Record Vitals & Triage"
+                            >
+                              <Activity size={12} />
+                              <span>Triage</span>
+                            </button>
+                            {item.status !== 'WAITING_FOR_DOCTOR' && item.status !== 'IN_CONSULTATION' && item.status !== 'COMPLETED' && (
+                              <button
+                                onClick={() => void handleForwardToDoctor(item.id)}
+                                className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded text-[11px] font-medium flex items-center gap-1 transition-all cursor-pointer"
+                                title="Forward to Doctor"
+                              >
+                                <ArrowRight size={11} />
+                                <span>Forward</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleOpenPatientDetails(item.patientId, item.patientName)}
+                              className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 cursor-pointer"
+                              title="Patient History"
+                            >
+                              <Eye size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    <th className="px-3 py-2.5 text-left">Patient</th>
+                    <th className="px-3 py-2.5 text-left">Doctor</th>
+                    <th className="px-3 py-2.5 text-left">Date & Time</th>
+                    <th className="px-3 py-2.5 text-left">Type / Reason</th>
+                    <th className="px-3 py-2.5 text-left">Status</th>
+                    <th className="px-3 py-2.5 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {isLoadingAppointments ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-gray-400">
+                        <RefreshCw size={24} className="animate-spin text-blue-600 mx-auto mb-2" />
+                        Loading appointments...
+                      </td>
+                    </tr>
+                  ) : paginatedAppointments.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-gray-400">
+                        No scheduled appointments found.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedAppointments.map((apt) => (
+                      <tr key={apt.id} className="hover:bg-blue-50/30 transition-colors">
+                        <td className="px-3 py-2">
+                          <p className="font-medium text-gray-800 text-xs leading-tight">{apt.patientName}</p>
+                          <p className="text-[10px] text-gray-400">{apt.patientPid || 'Patient ID'}</p>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{apt.doctorName || 'Attending Physician'}</td>
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                          <div>{new Date(apt.appointmentDate).toLocaleDateString()}</div>
+                          <div className="text-[10px] text-gray-400">{apt.startTime} - {apt.endTime}</div>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{apt.reason || apt.type}</td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                              APPT_STATUS_STYLES[apt.status] || 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {apt.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button
+                            onClick={() => handleStartTriage(apt.patientId)}
+                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded text-[11px] font-medium transition-colors cursor-pointer"
+                          >
+                            Pre-Triage
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
+
+          {/* Pagination */}
           <div className="px-3.5 py-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
             <span>
-              Showing {(currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filtered.length)} of {filtered.length} appointments
+              Showing {activeCount === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}–
+              {Math.min(currentPage * rowsPerPage, activeCount)} of {activeCount} entries
             </span>
             <div className="flex items-center gap-1">
               <button
@@ -346,64 +719,58 @@ export function AppointmentsPage() {
               <CalendarDays size={15} className="text-blue-600" />
               <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800">Calendar View</h3>
             </div>
-            <button className="text-[11px] text-blue-600 font-medium hover:underline cursor-pointer">View Full</button>
+            <span className="text-[11px] text-gray-400 font-medium">Live Schedule</span>
           </div>
           <MiniCalendar />
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800 mb-2">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-1.5">
-            {[
-              { icon: UserCheck, label: 'Mark as Checked In', color: 'text-green-600', bg: 'bg-green-50' },
-              { icon: RefreshCcw, label: 'Update Status', color: 'text-blue-600', bg: 'bg-blue-50' },
-              { icon: FileText, label: 'Add Nursing Note', color: 'text-purple-600', bg: 'bg-purple-50' },
-              { icon: Eye, label: 'View Patient Record', color: 'text-cyan-600', bg: 'bg-cyan-50' },
-            ].map(({ icon: Icon, label, color, bg }) => (
-              <button
-                key={label}
-                className={`flex flex-col items-center gap-1.5 p-2 rounded-lg border border-gray-100 hover:border-blue-200 hover:shadow-xs transition-all cursor-pointer ${bg}`}
-              >
-                <div className="w-7 h-7 rounded-md flex items-center justify-center bg-white shadow-2xs">
-                  <Icon size={13} className={color} />
-                </div>
-                <span className="text-[11px] font-medium text-gray-700 text-center leading-tight">{label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <CalendarDays size={15} className="text-blue-600" />
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800">Today's Schedule</h3>
-            </div>
-            <button className="text-[11px] text-blue-600 font-medium hover:underline cursor-pointer">View All</button>
-          </div>
-          <div className="space-y-2">
-            {TODAYS_SCHEDULE.map((item, idx) => (
-              <div key={idx} className="flex items-start gap-2.5">
-                <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${item.dot}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1">
-                    <p className="text-xs font-medium text-gray-800 truncate">{item.patient}</p>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${SCHED_STATUS[item.status] || 'bg-gray-100 text-gray-600'}`}>
-                      {item.status}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-gray-400">{item.time} · {item.reason}</p>
-                </div>
+          <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800 mb-2">Triage Quick Protocol</h3>
+          <div className="space-y-2 text-xs text-gray-600">
+            <div className="flex items-start gap-2 p-2 bg-blue-50/60 rounded-lg border border-blue-100">
+              <Activity size={14} className="text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-gray-800">1. Record Vital Signs</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">Capture BP, Pulse, Temp, SpO₂, RR, and weight/height.</p>
               </div>
-            ))}
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-purple-50/60 rounded-lg border border-purple-100">
+              <Heart size={14} className="text-purple-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-gray-800">2. Determine Priority</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">Evaluate emergency conditions and triage urgency.</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-emerald-50/60 rounded-lg border border-emerald-100">
+              <ArrowRight size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-gray-800">3. Forward to Doctor</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">Pass patient into Doctor workstation consultation queue.</p>
+              </div>
+            </div>
           </div>
         </div>
       </aside>
 
-      <NursePatientDetailsModal
-        patient={selectedPatient}
-        isOpen={detailsOpen}
-        onClose={() => setDetailsOpen(false)}
+      {/* Patient Details Modal */}
+      {selectedPatientForDetails && (
+        <NursePatientDetailsModal
+          patient={selectedPatientForDetails}
+          isOpen={detailsOpen}
+          onClose={() => setDetailsOpen(false)}
+        />
+      )}
+
+      {/* Triage / Record Vitals Modal */}
+      <RecordVitalsModal
+        isOpen={vitalsModalOpen}
+        onClose={() => setVitalsModalOpen(false)}
+        onSave={() => {
+          void loadQueue();
+          void loadAppointments();
+        }}
+        selectedPatientId={selectedPatientForVitals}
+        queueEntryId={selectedQueueEntryId}
       />
     </div>
   );

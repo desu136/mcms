@@ -1,8 +1,8 @@
-'use client';
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Pill, Check, AlertCircle } from 'lucide-react';
-import { NURSE_PATIENTS } from './nurseMockData';
+import { useAuth } from '../../auth/AuthContext';
+import { createMedAdmin } from '../../api/clinical';
+import { fetchPatients } from '../../api/patients';
 
 interface AdministerMedModalProps {
   isOpen: boolean;
@@ -11,24 +11,71 @@ interface AdministerMedModalProps {
   onAdminister?: ((data: any) => void) | undefined;
 }
 
-export default function AdministerMedModal({
+export function AdministerMedModal({
   isOpen,
   onClose,
   selectedPatientId,
   onAdminister,
 }: AdministerMedModalProps) {
-  const [patientId, setPatientId] = useState(selectedPatientId || NURSE_PATIENTS[0]!.id);
+  const { accessToken } = useAuth();
+  const [patientsList, setPatientsList] = useState<{ id: string; name: string; pid: string }[]>([]);
+  const [patientId, setPatientId] = useState(selectedPatientId || '');
   const [medication, setMedication] = useState('Amoxicillin 500mg');
   const [dosage, setDosage] = useState('1 Tablet Oral');
   const [route, setRoute] = useState<'Oral' | 'IV' | 'IM' | 'Subcutaneous'>('Oral');
   const [verifiedFiveRights, setVerifiedFiveRights] = useState(true);
   const [note, setNote] = useState('');
   const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (selectedPatientId) setPatientId(selectedPatientId);
+  }, [selectedPatientId]);
+
+  useEffect(() => {
+    if (!accessToken || !isOpen) return;
+    void (async () => {
+      try {
+        const res = await fetchPatients(accessToken, { limit: 50 });
+        if (res.data.length > 0) {
+          const mapped = res.data.map((p) => ({
+            id: p.id,
+            name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+            pid: p.pid,
+          }));
+          setPatientsList(mapped);
+          if (!selectedPatientId && mapped.length > 0) {
+            setPatientId(mapped[0]!.id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load patients in AdministerMedModal:', err);
+      }
+    })();
+  }, [accessToken, isOpen, selectedPatientId]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
+    if (accessToken && patientId) {
+      try {
+        await createMedAdmin(
+          {
+            patientId,
+            medicationName: medication,
+            dose: dosage,
+            route,
+            ...(note.trim() ? { instructions: note.trim() } : {}),
+          },
+          accessToken,
+        );
+      } catch (err) {
+        console.error('Failed to record med administration in API:', err);
+      }
+    }
+    setIsSaving(false);
     setIsSaved(true);
     if (onAdminister) {
       onAdminister({
@@ -79,11 +126,15 @@ export default function AdministerMedModal({
               onChange={(e) => setPatientId(e.target.value)}
               className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 bg-white"
             >
-              {NURSE_PATIENTS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.pid}) â€” Room {p.room}
-                </option>
-              ))}
+              {patientsList.length > 0 ? (
+                patientsList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.pid})
+                  </option>
+                ))
+              ) : (
+                <option value="">No patients available</option>
+              )}
             </select>
           </div>
 
@@ -138,11 +189,11 @@ export default function AdministerMedModal({
 
           <button
             type="submit"
-            disabled={isSaved || !verifiedFiveRights}
+            disabled={isSaved || !verifiedFiveRights || isSaving || !patientId}
             className={`w-full py-3 rounded-xl text-xs font-bold text-white transition flex items-center justify-center gap-2 shadow-md ${
               isSaved
                 ? 'bg-emerald-600'
-                : verifiedFiveRights
+                : verifiedFiveRights && patientId
                 ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/30'
                 : 'bg-slate-300 cursor-not-allowed'
             }`}
@@ -152,6 +203,8 @@ export default function AdministerMedModal({
                 <Check className="w-4 h-4" />
                 Medication Administered!
               </>
+            ) : isSaving ? (
+              'Administering...'
             ) : (
               'Confirm Administration'
             )}
@@ -161,3 +214,4 @@ export default function AdministerMedModal({
     </div>
   );
 }
+export default AdministerMedModal;

@@ -1,28 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   CalendarDays,
   Clock,
   Activity,
   Heart,
   Thermometer,
-  Droplets,
   Eye,
   Pill,
   FlaskConical,
   ChevronRight,
-  ChevronLeft,
   FileText,
-  UserCheck,
   Sparkles,
   HeartPulse,
 } from 'lucide-react';
-import {
-  CURRENT_NURSE,
-  NURSE_PATIENTS,
-  NURSE_APPOINTMENTS,
-  NURSE_TASKS,
-  NursePatient,
-} from '../../components/nurse/nurseMockData';
+import type { NursePatient } from '../../components/nurse/nurseMockData';
 import { NursePageShell } from '../../components/nurse/NursePageShell';
 import { NurseStatCard } from '../../components/nurse/NurseStatCard';
 import NursePatientDetailsModal from '../../components/nurse/NursePatientDetailsModal';
@@ -33,41 +24,102 @@ import AddNoteModal from '../../components/nurse/AddNoteModal';
 import { useAuth } from '../../auth/AuthContext';
 import { fetchNursingTasks, fetchMedications } from '../../api/clinical';
 import { fetchPatients } from '../../api/patients';
+import { fetchQueue } from '../../api/appointments';
+import type { PatientDTO, NursingTaskDTO, QueueEntryDTO, MedicationAdminDTO } from '@mcms/contracts';
 
 export interface DashboardPageProps {
   onNavigateTab?: (tab: string) => void;
 }
 
+function mapPatientDtoToNursePatient(p: PatientDTO): NursePatient {
+  const name = p.fullName || `${p.firstName} ${p.lastName}`.trim();
+  const birthYear = p.dateOfBirth ? new Date(p.dateOfBirth).getFullYear() : 1995;
+  const age = Math.max(0, new Date().getFullYear() - birthYear);
+  return {
+    id: p.id,
+    pid: p.pid || `PID-${p.id.slice(0, 6).toUpperCase()}`,
+    name,
+    age,
+    gender: (p.gender?.toUpperCase() === 'MALE' ? 'Male' : 'Female'),
+    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+    phone: p.phoneNumber || '—',
+    email: p.email || '—',
+    address: p.address || 'Addis Ababa, Ethiopia',
+    room: 'Ward 3A',
+    bed: 'Bed 01',
+    department: 'General Nursing & Triage',
+    visitReason: p.allergies ? `Allergies: ${p.allergies}` : 'Clinical observation & triage',
+    status: 'In Care',
+    vitalsStatus: 'Normal',
+    vitals: {
+      bp: '120/80',
+      hr: 72,
+      temp: 36.8,
+      spo2: 98,
+    },
+    doctor: 'Attending Physician',
+    admissionDate: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : 'Today',
+  };
+}
+
 export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
   const { accessToken, user } = useAuth();
-  const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
+  const [patients, setPatients] = useState<NursePatient[]>([]);
+  const [tasks, setTasks] = useState<NursingTaskDTO[]>([]);
+  const [meds, setMeds] = useState<MedicationAdminDTO[]>([]);
+  const [queue, setQueue] = useState<QueueEntryDTO[]>([]);
+  const [patientTotal, setPatientTotal] = useState<number>(0);
+  const [selectedPatient, setSelectedPatient] = useState<NursePatient | null>(null);
+
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
   const [administerModalOpen, setAdministerModalOpen] = useState(false);
   const [labModalOpen, setLabModalOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
 
-  const [liveTaskCount, setLiveTaskCount] = useState<number | null>(null);
-  const [liveMedCount, setLiveMedCount] = useState<number | null>(null);
-  const [livePatientCount, setLivePatientCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      const [tasksRes, medsRes, patientsRes] = await Promise.allSettled([
+  const loadData = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const [tasksRes, medsRes, patientsRes, queueRes] = await Promise.allSettled([
         fetchNursingTasks(accessToken),
         fetchMedications(accessToken),
         fetchPatients(accessToken, { limit: 50 }),
+        fetchQueue(accessToken),
       ]);
-      if (tasksRes.status === 'fulfilled' && Array.isArray(tasksRes.value)) setLiveTaskCount(tasksRes.value.length);
-      if (medsRes.status === 'fulfilled' && Array.isArray(medsRes.value)) setLiveMedCount(medsRes.value.length);
-      if (patientsRes.status === 'fulfilled' && patientsRes.value?.total) setLivePatientCount(patientsRes.value.total);
-    })();
-  }, [accessToken]);
+
+      if (tasksRes.status === 'fulfilled' && Array.isArray(tasksRes.value)) {
+        setTasks(tasksRes.value);
+      }
+      if (medsRes.status === 'fulfilled' && Array.isArray(medsRes.value)) {
+        setMeds(medsRes.value);
+      }
+      if (patientsRes.status === 'fulfilled' && patientsRes.value?.data) {
+        const mapped = patientsRes.value.data.map(mapPatientDtoToNursePatient);
+        setPatients(mapped);
+        setPatientTotal(patientsRes.value.total);
+        if (mapped.length > 0 && !selectedPatient) {
+          setSelectedPatient(mapped[0]!);
+        }
+      }
+      if (queueRes.status === 'fulfilled' && Array.isArray(queueRes.value)) {
+        setQueue(queueRes.value);
+      }
+    } catch (err) {
+      console.error('Failed to load nurse desktop dashboard data:', err);
+    }
+  }, [accessToken, selectedPatient]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const handleOpenPatientDetails = (patient: NursePatient) => {
     setSelectedPatient(patient);
     setDetailsModalOpen(true);
   };
+
+  const nurseName = user?.displayName || 'Staff Nurse';
+  const nurseDepartment = user?.staffProfile?.department || 'General Nursing & Triage';
 
   /* ── 1. Top Banner Section ── */
   const bannerContent = (
@@ -79,14 +131,14 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight">Good morning, {user?.displayName || CURRENT_NURSE.name}</h1>
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight">Good day, {nurseName}</h1>
             <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-400/20 text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               On Duty
             </span>
           </div>
           <p className="text-xs text-blue-100/80 mt-0.5">
-            {CURRENT_NURSE.ward} · Live electronic telemetry and nursing shift dashboard
+            {nurseDepartment} · Real-time clinical telemetry & triage station
           </p>
         </div>
       </div>
@@ -112,37 +164,37 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
   const kpisContent = (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
       <NurseStatCard
-        title="Total In Ward"
-        value={livePatientCount ?? 18}
+        title="Total Patients"
+        value={patientTotal || patients.length}
         iconName="users"
-        trendText="active patients"
+        trendText="registered records"
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="blue"
       />
       <NurseStatCard
         title="Nursing Tasks"
-        value={liveTaskCount ?? 14}
+        value={tasks.length}
         iconName="activity"
-        trendText="live shift tasks"
+        trendText={`${tasks.filter((t) => t.status === 'COMPLETED').length} completed`}
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="green"
       />
       <NurseStatCard
         title="Meds Due"
-        value={liveMedCount ?? 8}
+        value={meds.length}
         iconName="syringe"
-        trendText="scheduled doses"
+        trendText="active administrations"
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="purple"
       />
       <NurseStatCard
-        title="Vitals Observation"
-        value={6}
+        title="Waiting in Queue"
+        value={queue.filter((q) => q.status === 'WAITING').length}
         iconName="heart"
-        trendText="priority queue"
+        trendText="triage queue"
         trendDirection="down"
         trendIsPositive={false}
         colorTheme="orange"
@@ -158,15 +210,15 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         <div className="flex items-center gap-3">
           <div className="relative shrink-0">
             <img
-              src={CURRENT_NURSE.avatar}
-              alt={CURRENT_NURSE.name}
+              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(nurseName)}`}
+              alt={nurseName}
               className="w-11 h-11 rounded-full object-cover ring-2 ring-blue-500/30"
             />
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="font-bold text-sm text-slate-800 leading-tight">{CURRENT_NURSE.name}</h3>
-            <p className="text-[11px] text-slate-400">{CURRENT_NURSE.role} · {CURRENT_NURSE.department}</p>
+            <h3 className="font-bold text-sm text-slate-800 leading-tight">{nurseName}</h3>
+            <p className="text-[11px] text-slate-400">{user?.role || 'Nurse'} · {nurseDepartment}</p>
             <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold mt-1">
               Station Ready
             </span>
@@ -174,7 +226,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         </div>
         <p className="text-xs text-slate-500 italic mt-2.5 pt-2 border-t border-slate-100 flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-          &ldquo;{CURRENT_NURSE.quote}&rdquo;
+          &ldquo;Caring for patients is a work of heart.&rdquo;
         </p>
       </div>
 
@@ -231,17 +283,17 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         <div className="flex items-center justify-between mb-2.5">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 text-blue-600" />
-            <span>Shift A Schedule</span>
+            <span>Shift Schedule</span>
           </h4>
           <span className="text-[10px] text-blue-600 font-semibold">07:00 – 15:30</span>
         </div>
         <div className="space-y-2 text-xs">
           {[
-            { time: '07:30 AM', task: 'Shift handover briefing & vitals audit', status: 'Completed', dot: 'bg-emerald-500' },
-            { time: '09:00 AM', task: 'Cardiology Dr. Fitsum rounds & orders', status: 'Completed', dot: 'bg-emerald-500' },
-            { time: '10:00 AM', task: 'Morning medication administration pass', status: 'In Progress', dot: 'bg-blue-500' },
-            { time: '12:30 PM', task: 'Pre-lunch capillary glucose testing', status: 'Upcoming', dot: 'bg-amber-400' },
-            { time: '02:00 PM', task: 'Wound dressing change (Room 304)', status: 'Upcoming', dot: 'bg-slate-300' },
+            { time: '07:30 AM', task: 'Shift handover briefing & vitals audit', dot: 'bg-emerald-500' },
+            { time: '09:00 AM', task: 'Physician rounds & medication reconciliation', dot: 'bg-emerald-500' },
+            { time: '10:00 AM', task: 'eMAR medication administration pass', dot: 'bg-blue-500' },
+            { time: '12:30 PM', task: 'Capillary glucose testing & vitals re-check', dot: 'bg-amber-400' },
+            { time: '02:00 PM', task: 'Shift handover documentation', dot: 'bg-slate-300' },
           ].map((item, idx) => (
             <div key={idx} className="flex items-start gap-2.5">
               <span className={`w-2 h-2 rounded-full mt-1 shrink-0 ${item.dot}`} />
@@ -253,26 +305,6 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
               </div>
             </div>
           ))}
-        </div>
-      </div>
-
-      {/* Shift Handover Clinical Notes */}
-      <div className="bg-white rounded-xl p-3.5 border border-slate-200/80 shadow-2xs">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">Handover Notes</h4>
-          <button
-            onClick={() => setNoteModalOpen(true)}
-            className="text-[11px] text-blue-600 font-bold hover:underline cursor-pointer"
-          >
-            + Add Note
-          </button>
-        </div>
-        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs">
-          <p className="text-slate-700">Bed 02 Aster Mulu: BP responding well to IV fluid adjustment. Stable.</p>
-          <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
-            <span>By: Aster Mulu (RN)</span>
-            <span>08:45 AM</span>
-          </div>
         </div>
       </div>
     </div>
@@ -287,48 +319,53 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="font-bold text-sm text-slate-800">Nursing Tasks & Care Plan</h3>
-              <p className="text-xs text-slate-400">Scheduled treatments and vital checks for today</p>
+              <p className="text-xs text-slate-400">Scheduled clinical orders and shift tasks</p>
             </div>
             <button
               onClick={() => onNavigateTab?.('tasks')}
               className="text-xs text-blue-600 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
             >
-              <span>View All ({NURSE_TASKS.length})</span>
+              <span>View All ({tasks.length})</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <div className="space-y-2 flex-1">
-            {NURSE_TASKS.slice(0, 4).map((task) => (
-              <div
-                key={task.id}
-                onClick={() => onNavigateTab?.('tasks')}
-                className="p-2.5 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50/40 transition-colors flex items-center justify-between gap-3 cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                    {task.type === 'Medication' && <Pill className="w-4 h-4" />}
-                    {task.type === 'Vital Signs' && <Activity className="w-4 h-4" />}
-                    {task.type === 'Wound Care' && <Heart className="w-4 h-4" />}
-                    {task.type !== 'Medication' && task.type !== 'Vital Signs' && task.type !== 'Wound Care' && (
-                      <Clock className="w-4 h-4" />
-                    )}
+            {tasks.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">No scheduled nursing tasks</p>
+            ) : (
+              tasks.slice(0, 4).map((task) => (
+                <div
+                  key={task.id}
+                  onClick={() => onNavigateTab?.('tasks')}
+                  className="p-2.5 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50/40 transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      {task.taskType?.toLowerCase().includes('med') ? (
+                        <Pill className="w-4 h-4" />
+                      ) : task.taskType?.toLowerCase().includes('vital') ? (
+                        <Activity className="w-4 h-4" />
+                      ) : (
+                        <Clock className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-xs text-slate-800 truncate">{task.title}</p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {task.patientName || 'Assigned Patient'} · {task.taskType}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-bold text-xs text-slate-800 truncate">{task.title}</p>
-                    <p className="text-[11px] text-slate-400 truncate">
-                      {task.patientName} · {task.room}
-                    </p>
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                      {task.status}
+                    </span>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{task.priority} Priority</p>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                    {task.dueTime}
-                  </span>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{task.priority} Priority</p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -337,7 +374,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="font-bold text-sm text-slate-800">Latest Vital Observations</h3>
-              <p className="text-xs text-slate-400">Ward patients with recent biometric recordings</p>
+              <p className="text-xs text-slate-400">Patients under active telemetry and observation</p>
             </div>
             <button
               onClick={() => onNavigateTab?.('vitals')}
@@ -349,33 +386,37 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
           </div>
 
           <div className="grid grid-cols-2 gap-2 flex-1">
-            {NURSE_PATIENTS.slice(0, 4).map((p) => (
-              <div
-                key={p.id}
-                onClick={() => handleOpenPatientDetails(p)}
-                className="p-2.5 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50/40 transition-colors flex flex-col justify-between cursor-pointer"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <img src={p.avatar} alt={p.name} className="w-6 h-6 rounded-full object-cover shrink-0" />
-                    <span className="font-bold text-xs text-slate-800 truncate">{p.name}</span>
+            {patients.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6 col-span-2">No active observations</p>
+            ) : (
+              patients.slice(0, 4).map((p) => (
+                <div
+                  key={p.id}
+                  onClick={() => handleOpenPatientDetails(p)}
+                  className="p-2.5 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50/40 transition-colors flex flex-col justify-between cursor-pointer"
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <img src={p.avatar} alt={p.name} className="w-6 h-6 rounded-full object-cover shrink-0" />
+                      <span className="font-bold text-xs text-slate-800 truncate">{p.name}</span>
+                    </div>
+                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
+                      {p.pid}
+                    </span>
                   </div>
-                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
-                    Rm {p.room}
-                  </span>
+                  <div className="grid grid-cols-2 gap-1 text-[11px] bg-slate-50/80 p-1.5 rounded-md">
+                    <div>
+                      <span className="text-[9px] text-slate-400 block">BP</span>
+                      <span className="font-bold text-slate-800">{p.vitals.bp}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 block">Pulse</span>
+                      <span className="font-bold text-slate-800">{p.vitals.hr} bpm</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-1 text-[11px] bg-slate-50/80 p-1.5 rounded-md">
-                  <div>
-                    <span className="text-[9px] text-slate-400 block">BP</span>
-                    <span className="font-bold text-slate-800">{p.vitals.bp}</span>
-                  </div>
-                  <div>
-                    <span className="text-[9px] text-slate-400 block">Pulse</span>
-                    <span className="font-bold text-slate-800">{p.vitals.hr} bpm</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -385,7 +426,7 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
         <div className="p-3 sm:p-3.5 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-sm text-slate-800">Assigned Ward Patients</h3>
-            <p className="text-xs text-slate-400">Current patients in Ward 3A under active nursing observation</p>
+            <p className="text-xs text-slate-400">Current patients under active nursing care and observation</p>
           </div>
           <button
             onClick={() => onNavigateTab?.('patients')}
@@ -410,41 +451,49 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {NURSE_PATIENTS.slice(0, 5).map((p) => (
-                <tr
-                  key={p.id}
-                  onClick={() => handleOpenPatientDetails(p)}
-                  className="hover:bg-blue-50/40 transition-colors cursor-pointer"
-                >
-                  <td className="py-2 px-3">
-                    <div className="flex items-center gap-2">
-                      <img src={p.avatar} alt={p.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
-                      <div>
-                        <span className="font-bold text-slate-800 block leading-tight">{p.name}</span>
-                        <span className="text-[10px] text-slate-400">{p.age}y · {p.gender}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{p.pid}</td>
-                  <td className="py-2 px-3 font-medium text-slate-700">Room {p.room} · Bed {p.bed}</td>
-                  <td className="py-2 px-3 text-slate-600 truncate max-w-[140px]">{p.visitReason}</td>
-                  <td className="py-2 px-3">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
-                      {p.status}
-                    </span>
-                  </td>
-                  <td className="py-2 px-3 text-slate-600">{p.doctor}</td>
-                  <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => handleOpenPatientDetails(p)}
-                      className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                      title="View Patient Details"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
+              {patients.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-6 text-center text-slate-400">
+                    No registered patients found
                   </td>
                 </tr>
-              ))}
+              ) : (
+                patients.slice(0, 5).map((p) => (
+                  <tr
+                    key={p.id}
+                    onClick={() => handleOpenPatientDetails(p)}
+                    className="hover:bg-blue-50/40 transition-colors cursor-pointer"
+                  >
+                    <td className="py-2 px-3">
+                      <div className="flex items-center gap-2">
+                        <img src={p.avatar} alt={p.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                        <div>
+                          <span className="font-bold text-slate-800 block leading-tight">{p.name}</span>
+                          <span className="text-[10px] text-slate-400">{p.age}y · {p.gender}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{p.pid}</td>
+                    <td className="py-2 px-3 font-medium text-slate-700">{p.room} · {p.bed}</td>
+                    <td className="py-2 px-3 text-slate-600 truncate max-w-[140px]">{p.visitReason}</td>
+                    <td className="py-2 px-3">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                        {p.status}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-slate-600">{p.doctor}</td>
+                    <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => handleOpenPatientDetails(p)}
+                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                        title="View Patient Details"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -461,23 +510,32 @@ export function DashboardPage({ onNavigateTab }: DashboardPageProps) {
       />
       <RecordVitalsModal
         isOpen={vitalsModalOpen}
-        onClose={() => setVitalsModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        onClose={() => {
+          setVitalsModalOpen(false);
+          void loadData();
+        }}
+        selectedPatientId={selectedPatient?.id}
       />
       <AdministerMedModal
         isOpen={administerModalOpen}
-        onClose={() => setAdministerModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        onClose={() => {
+          setAdministerModalOpen(false);
+          void loadData();
+        }}
+        selectedPatientId={selectedPatient?.id}
       />
       <CollectLabModal
         isOpen={labModalOpen}
-        onClose={() => setLabModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        onClose={() => {
+          setLabModalOpen(false);
+          void loadData();
+        }}
+        selectedPatientId={selectedPatient?.id}
       />
       <AddNoteModal
         isOpen={noteModalOpen}
         onClose={() => setNoteModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
       />
     </NursePageShell>
   );

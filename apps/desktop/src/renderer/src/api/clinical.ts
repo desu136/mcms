@@ -283,3 +283,10 @@ export async function dischargePatient(
   });
 }
 
+export {
+  fetchMedications as fetchMedAdmins,
+  createMedication as createMedAdmin,
+  collectSample as collectLabSample,
+};
+
+

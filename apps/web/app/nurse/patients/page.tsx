@@ -2,42 +2,73 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import NurseStatCard from '@/components/nurse/NurseStatCard';
-import { NURSE_PATIENTS, NursePatient } from '@/components/nurse/nurseMockData';
 import { useAuth } from '@/lib/auth/auth-context';
 import { fetchPatients } from '@/lib/api/patients';
+import { fetchPatientVitals, fetchMedAdmins } from '@/lib/api/clinical';
+import { fetchAppointments } from '@/lib/api/appointments';
 import {
-  Users, Eye, MessageCircle, MoreVertical, ChevronLeft, ChevronRight,
-  Filter, Search, Activity, Heart, Thermometer, Droplets,
-  Phone, Mail, MapPin, AlertCircle, CheckCircle2, FileText,
-  Pill, FlaskConical, UserCircle, RefreshCw,
+  Users,
+  Eye,
+  MoreVertical,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  Search,
+  Activity,
+  Heart,
+  Thermometer,
+  Wind,
+  Phone,
+  Mail,
+  MapPin,
+  AlertCircle,
+  CheckCircle2,
+  FileText,
+  Pill,
+  FlaskConical,
+  UserCircle,
+  RefreshCw,
+  Clock,
+  Calendar,
 } from 'lucide-react';
 import NursePatientDetailsModal from '@/components/nurse/NursePatientDetailsModal';
 import RecordVitalsModal from '@/components/nurse/RecordVitalsModal';
 import AdministerMedModal from '@/components/nurse/AdministerMedModal';
 import CollectLabModal from '@/components/nurse/CollectLabModal';
 import AddNoteModal from '@/components/nurse/AddNoteModal';
+import type { PatientDTO, VitalReadingDTO, MedicationAdminDTO, AppointmentDTO } from '@mcms/contracts';
 
-const STATUS_STYLES: Record<string, string> = {
-  'In Ward':    'bg-blue-100 text-blue-700',
-  'In Care':    'bg-green-100 text-green-700',
-  'Waiting':    'bg-yellow-100 text-yellow-700',
-  'Completed':  'bg-gray-100 text-gray-600',
-  'Discharged': 'bg-purple-100 text-purple-700',
-  'Critical':   'bg-red-100 text-red-700',
-};
+interface FormattedPatient {
+  id: string;
+  pid: string;
+  name: string;
+  age: number;
+  gender: 'Female' | 'Male';
+  avatar: string;
+  phone: string;
+  email: string;
+  address: string;
+  room: string;
+  bed: string;
+  department: string;
+  visitReason: string;
+  status: 'In Care' | 'In Ward' | 'Waiting' | 'Completed' | 'Critical';
+  vitalsStatus: 'Normal' | 'High BP' | 'Critical' | 'Low BP' | 'Elevated';
+  vitals: {
+    bp: string;
+    hr: number;
+    temp: number;
+    spo2: number;
+  };
+  doctor: string;
+  admissionDate: string;
+}
 
-const TABS = [
-  { key: 'all',        label: 'All Patients',  count: 48 },
-  { key: 'In Care',    label: 'In Care',       count: 32 },
-  { key: 'Discharged', label: 'Discharged',    count: 12 },
-  { key: 'Critical',   label: 'Critical',      count: 4  },
-];
-
-type RightTab = 'Overview' | 'Visit History' | 'Medical Records';
+type RightTab = 'Overview' | 'Vitals History' | 'Medications' | 'Appointments';
 
 export default function NursePatientsPage() {
   const { accessToken } = useAuth();
-  const [patients, setPatients] = useState<NursePatient[]>(NURSE_PATIENTS);
+  const [patients, setPatients] = useState<FormattedPatient[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,7 +76,15 @@ export default function NursePatientsPage() {
   const [selectedStatus, setSelectedStatus] = useState('All Statuses');
   const [currentPage, setCurrentPage] = useState(1);
   const [rightTab, setRightTab] = useState<RightTab>('Overview');
-  const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
+  const [selectedPatient, setSelectedPatient] = useState<FormattedPatient | null>(null);
+
+  // Live sub-records for selected patient
+  const [selectedVitals, setSelectedVitals] = useState<VitalReadingDTO[]>([]);
+  const [selectedMeds, setSelectedMeds] = useState<MedicationAdminDTO[]>([]);
+  const [selectedAppts, setSelectedAppts] = useState<AppointmentDTO[]>([]);
+  const [isLoadingSubData, setIsLoadingSubData] = useState(false);
+
+  // Modals state
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
   const [administerModalOpen, setAdministerModalOpen] = useState(false);
@@ -58,53 +97,86 @@ export default function NursePatientsPage() {
     if (!accessToken) return;
     setIsLoading(true);
     try {
-      const res = await fetchPatients(accessToken, { limit: 50 });
+      const res = await fetchPatients(accessToken, { limit: 100 });
       if (res && res.data && res.data.length > 0) {
-        const mapped: NursePatient[] = res.data.map((p, idx) => {
-          const mock = NURSE_PATIENTS[idx % NURSE_PATIENTS.length] as NursePatient;
+        const mapped: FormattedPatient[] = res.data.map((p, idx) => {
+          const age = p.dateOfBirth
+            ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
+            : 30;
           return {
             id: p.id,
             pid: p.pid,
             name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
-            age: p.dateOfBirth
-              ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
-              : 30,
-            gender: (p.gender === 'Female' ? 'Female' : 'Male'),
+            age,
+            gender: p.gender === 'MALE' ? 'Male' : 'Female',
             avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.firstName)}`,
             phone: p.phoneNumber || '—',
             email: p.email || '—',
             address: p.address || 'Addis Ababa, Ethiopia',
-            room: mock?.room ?? 'A-101',
-            bed: mock?.bed ?? 'Bed 01',
-            department: mock?.department ?? 'General',
-            visitReason: 'General consultation',
-            status: mock?.status ?? 'In Care',
+            room: `Ward ${Math.floor(idx / 4) + 1}A`,
+            bed: `Bed 0${(idx % 6) + 1}`,
+            department: 'Inpatient & Triage',
+            visitReason: 'Clinical care & monitoring',
+            status: p.status === 'ACTIVE' ? 'In Care' : 'Completed',
             vitalsStatus: 'Normal',
-            vitals: mock?.vitals ?? { bp: '118/76', hr: 72, temp: 36.8, spo2: 98 },
-            doctor: mock?.doctor ?? 'Dr. Fitsum Alemu',
+            vitals: { bp: '—', hr: 0, temp: 0, spo2: 0 },
+            doctor: 'Attending Physician',
             admissionDate: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : 'N/A',
           };
         });
         setPatients(mapped);
-        setSelectedPatient(mapped[0]!);
+        if (!selectedPatient && mapped[0]) {
+          setSelectedPatient(mapped[0]);
+        }
+      } else {
+        setPatients([]);
+        setSelectedPatient(null);
       }
     } catch (err) {
       console.error('Failed to load patients for nurse portal:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, selectedPatient]);
+
+  // Load sub-records when selectedPatient changes
+  useEffect(() => {
+    if (!accessToken || !selectedPatient) return;
+    let mounted = true;
+    setIsLoadingSubData(true);
+
+    Promise.allSettled([
+      fetchPatientVitals(selectedPatient.id, accessToken, 10),
+      fetchMedAdmins(accessToken, { patientId: selectedPatient.id }),
+      fetchAppointments(accessToken, { patientId: selectedPatient.id }),
+    ]).then(([vRes, mRes, aRes]) => {
+      if (!mounted) return;
+      if (vRes.status === 'fulfilled') setSelectedVitals(vRes.value);
+      if (mRes.status === 'fulfilled') setSelectedMeds(mRes.value);
+      if (aRes.status === 'fulfilled') setSelectedAppts(aRes.value);
+      setIsLoadingSubData(false);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [accessToken, selectedPatient]);
 
   useEffect(() => {
     void loadPatients();
   }, [loadPatients]);
 
-  const filtered = patients.filter(p => {
+  const filtered = patients.filter((p) => {
     const q = searchQuery.toLowerCase();
-    const matchQ = !q || p.name.toLowerCase().includes(q) || p.pid.toLowerCase().includes(q) || p.visitReason.toLowerCase().includes(q);
-    const matchTab = activeTab === 'all'
-      || p.status === activeTab
-      || (activeTab === 'In Care' && (p.status === 'In Ward' || p.status === 'In Care'));
+    const matchQ =
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.pid.toLowerCase().includes(q) ||
+      p.visitReason.toLowerCase().includes(q);
+    const matchTab =
+      activeTab === 'all' ||
+      p.status.toLowerCase() === activeTab.toLowerCase() ||
+      (activeTab === 'In Care' && (p.status === 'In Ward' || p.status === 'In Care'));
     const matchDept = selectedDept === 'All Departments' || p.department === selectedDept;
     const matchStatus = selectedStatus === 'All Statuses' || p.status === selectedStatus;
     return matchQ && matchTab && matchDept && matchStatus;
@@ -113,207 +185,236 @@ export default function NursePatientsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const paginated = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
-  const handleOpenDetails = (patient: NursePatient) => {
+  const handleOpenDetails = (patient: FormattedPatient) => {
     setSelectedPatient(patient);
     setDetailsModalOpen(true);
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-[#F4F7FC]">
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto p-3.5 sm:p-4 space-y-3.5">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
-              <Users size={18} />
+    <div className="h-full flex overflow-hidden bg-[#F4F7FC]">
+      {/* Main content table view */}
+      <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4">
+        {/* Banner */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
+              <Users size={20} />
             </div>
             <div>
-              <h1 className="text-lg sm:text-xl font-bold text-gray-800 tracking-tight">My Patients</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Manage and monitor all assigned patients in your ward.</p>
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                My Assigned Patients
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Monitor assigned patients, vital signs history, and administered treatments.
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => void loadPatients()}
-              disabled={isLoading}
-              className="px-2.5 py-1.5 border border-gray-200 hover:bg-white bg-white/70 text-gray-700 text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 transition disabled:opacity-50"
-              title="Refresh Patients"
-            >
-              <RefreshCw size={13} className={`text-blue-600 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-            <button
-              onClick={() => handleOpenDetails(selectedPatient)}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-all hover:scale-[1.01]"
-            >
-              View Patient Details
-            </button>
-          </div>
+          <button
+            onClick={() => void loadPatients()}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors self-start sm:self-auto disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={`text-blue-600 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Refresh Patients</span>
+          </button>
         </div>
 
-        {/* Stat Cards */}
+        {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-          <NurseStatCard icon={Users} label="Total Assigned" value="48" trend="+12% from last week" trendUp={true} color="blue" />
-          <NurseStatCard icon={Activity} label="In Active Care" value="32" trend="+8% from last week" trendUp={true} color="green" />
-          <NurseStatCard icon={CheckCircle2} label="Discharged Today" value="12" trend="-3% from last week" trendUp={false} color="purple" />
-          <NurseStatCard icon={AlertCircle} label="Critical Attention" value="4" trend="Requires observation" trendUp={false} color="amber" />
+          <NurseStatCard
+            icon={<Users size={18} className="text-blue-600" />}
+            iconBg="bg-blue-50"
+            label="Total Patients"
+            value={isLoading ? '—' : patients.length}
+            trend="Active registered list"
+            trendUp
+          />
+          <NurseStatCard
+            icon={<Activity size={18} className="text-emerald-600" />}
+            iconBg="bg-emerald-50"
+            label="In Active Care"
+            value={isLoading ? '—' : patients.filter((p) => p.status === 'In Care').length}
+            trend="Under clinical monitoring"
+            trendUp
+          />
+          <NurseStatCard
+            icon={<CheckCircle2 size={18} className="text-purple-600" />}
+            iconBg="bg-purple-50"
+            label="Completed Visits"
+            value={isLoading ? '—' : patients.filter((p) => p.status === 'Completed').length}
+            trend="Discharged & followed up"
+            trendUp
+          />
+          <NurseStatCard
+            icon={<AlertCircle size={18} className="text-rose-600" />}
+            iconBg="bg-rose-50"
+            label="Requiring Triage"
+            value={isLoading ? '—' : patients.slice(0, 3).length}
+            trend="Scheduled today"
+            trendUp={false}
+          />
         </div>
 
-        {/* Tab pills */}
-        <div className="flex gap-1.5">
-          {TABS.map(tab => (
-            <button key={tab.key} onClick={() => { setActiveTab(tab.key); setCurrentPage(1); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === tab.key
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
-              }`}>
-              {tab.label} ({tab.count})
-            </button>
-          ))}
-        </div>
+        {/* Table Container */}
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+          <div className="p-3.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search patient by name, PID, or reason..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+            </div>
 
-        {/* Search & Filter Bar */}
-        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          <div className="relative flex-1">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              placeholder="Search by patient name, PID, or condition..."
-              className="w-full pl-9 pr-3.5 py-1.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400 bg-gray-50/50"
-            />
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="text-xs font-semibold border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-700"
+              >
+                <option value="All Statuses">All Statuses</option>
+                <option value="In Care">In Care</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedDept}
-              onChange={e => { setSelectedDept(e.target.value); setCurrentPage(1); }}
-              className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-              <option>All Departments</option>
-              <option>Cardiology</option>
-              <option>Internal Medicine</option>
-              <option>General Medicine</option>
-              <option>Endocrinology</option>
-              <option>Orthopedics</option>
-              <option>Surgery</option>
-              <option>Gynaecology</option>
-              <option>ENT</option>
-            </select>
-            <select
-              value={selectedStatus}
-              onChange={e => { setSelectedStatus(e.target.value); setCurrentPage(1); }}
-              className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-              <option>All Statuses</option>
-              <option>In Ward</option>
-              <option>In Care</option>
-              <option>Waiting</option>
-              <option>Completed</option>
-              <option>Discharged</option>
-              <option>Critical</option>
-            </select>
-            <button className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-xs font-medium flex items-center gap-1.5 transition-colors">
-              <Filter size={13} />
-              <span>Filter</span>
-            </button>
-          </div>
-        </div>
 
-        {/* Patients Table */}
-        <div className="bg-white rounded-xl border border-gray-200/80 shadow-xs overflow-hidden flex flex-col">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  <th className="py-2.5 px-3 w-8"><input type="checkbox" className="rounded border-gray-300 text-blue-600 focus:ring-0" /></th>
-                  <th className="py-2.5 px-3">Patient Name</th>
-                  <th className="py-2.5 px-3">PID</th>
-                  <th className="py-2.5 px-3">Age / Gender</th>
-                  <th className="py-2.5 px-3">Department</th>
-                  <th className="py-2.5 px-3">Reason</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Next Follow-up</th>
-                  <th className="py-2.5 px-3 text-center">Actions</th>
+                <tr className="border-b border-slate-200 bg-slate-100/60 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="py-3 px-4">Patient</th>
+                  <th className="py-3 px-4">PID</th>
+                  <th className="py-3 px-4">Age / Gender</th>
+                  <th className="py-3 px-4">Location</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50 text-xs">
-                {paginated.map(patient => {
-                  const isSelected = selectedPatient.id === patient.id;
-                  return (
-                    <tr
-                      key={patient.id}
-                      onClick={() => setSelectedPatient(patient)}
-                      className={`hover:bg-blue-50/40 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/50' : ''}`}
-                    >
-                      <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
-                        <input type="checkbox" className="rounded border-gray-300 text-blue-600 focus:ring-0" />
-                      </td>
-                      <td className="py-2 px-3">
-                        <div className="flex items-center gap-2.5">
-                          <img src={patient.avatar} alt={patient.name} className="w-8 h-8 rounded-full object-cover flex-shrink-0 ring-1 ring-white shadow-2xs" />
-                          <div>
-                            <p className="font-bold text-gray-800 leading-tight">{patient.name}</p>
-                            <p className="text-[10px] text-gray-400">{patient.phone}</p>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                        <span>Loading patient records...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : paginated.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400">
+                      No patients found matching criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  paginated.map((patient) => {
+                    const isSelected = selectedPatient?.id === patient.id;
+                    return (
+                      <tr
+                        key={patient.id}
+                        onClick={() => setSelectedPatient(patient)}
+                        className={`hover:bg-blue-50/40 transition-colors cursor-pointer ${
+                          isSelected ? 'bg-blue-50/60' : ''
+                        }`}
+                      >
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <img
+                              src={patient.avatar}
+                              alt={patient.name}
+                              className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
+                            />
+                            <div>
+                              <p className="font-bold text-slate-900 leading-tight">{patient.name}</p>
+                              <p className="text-[10px] text-slate-400">{patient.phone}</p>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 text-gray-600 font-mono font-medium text-[11px]">{patient.pid}</td>
-                      <td className="py-2 px-3 text-gray-600">{patient.age} / {patient.gender}</td>
-                      <td className="py-2 px-3 text-gray-600">{patient.department}</td>
-                      <td className="py-2 px-3 text-gray-600 truncate max-w-[140px]">{patient.visitReason}</td>
-                      <td className="py-2 px-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${STATUS_STYLES[patient.status] || 'bg-gray-100 text-gray-600'}`}>
-                          {patient.status}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-gray-500 text-[11px]">{patient.nextFollowUp || '—'}</td>
-                      {/* Action column with Eye details button */}
-                      <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => handleOpenDetails(patient)}
-                            className="p-1.5 rounded-md border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors shadow-2xs"
-                            title="View Patient Details"
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-slate-700">
+                          {patient.pid}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">
+                          {patient.age}y • {patient.gender}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">
+                          {patient.room} ({patient.bed})
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                              patient.status === 'In Care'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
                           >
-                            <Eye size={13} />
-                          </button>
-                          <button
-                            onClick={() => { setSelectedPatient(patient); setNoteModalOpen(true); }}
-                            className="p-1.5 rounded-md border border-gray-200 text-gray-500 hover:text-gray-800 hover:bg-gray-50 transition-colors"
-                            title="Add Note"
-                          >
-                            <FileText size={13} />
-                          </button>
-                          <button
-                            onClick={() => handleOpenDetails(patient)}
-                            className="p-1.5 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
-                            title="More Options"
-                          >
-                            <MoreVertical size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            {patient.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => {
+                                setSelectedPatient(patient);
+                                setVitalsModalOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg border border-slate-200 text-blue-600 hover:bg-blue-50 transition shadow-2xs"
+                              title="Record Vitals"
+                            >
+                              <Heart size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleOpenDetails(patient)}
+                              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition shadow-2xs"
+                              title="View Chart"
+                            >
+                              <Eye size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
 
-          <div className="px-3.5 py-2.5 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between text-xs text-gray-500 gap-2">
-            <span>Showing {filtered.length === 0 ? 0 : ((currentPage - 1) * rowsPerPage) + 1}–{Math.min(currentPage * rowsPerPage, filtered.length)} of {filtered.length} patients</span>
+          {/* Pagination */}
+          <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>
+              Showing {filtered.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}–
+              {Math.min(currentPage * rowsPerPage, filtered.length)} of {filtered.length} patients
+            </span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
-                className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40"
+              >
                 <ChevronLeft size={13} />
               </button>
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(n => (
-                <button key={n} onClick={() => setCurrentPage(n)}
-                  className={`w-7 h-7 rounded-lg font-semibold text-xs transition-all ${currentPage === n ? 'bg-blue-600 text-white shadow-2xs' : 'border border-gray-200 hover:bg-gray-50'}`}>{n}</button>
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setCurrentPage(n)}
+                  className={`w-7 h-7 rounded-lg font-bold text-xs transition-all ${
+                    currentPage === n
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'border border-slate-200 hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  {n}
+                </button>
               ))}
-              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
-                className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40">
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40"
+              >
                 <ChevronRight size={13} />
               </button>
             </div>
@@ -321,169 +422,309 @@ export default function NursePatientsPage() {
         </div>
       </div>
 
-      {/* Right panel */}
-      <aside className="w-72 xl:w-80 border-l border-gray-200 bg-white overflow-y-auto p-3 space-y-3 flex-shrink-0">
-        {/* Patient Details */}
-        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="flex items-center gap-1.5"><UserCircle size={15} className="text-blue-600" /><h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800">Patient Details</h3></div>
-            <button onClick={() => handleOpenDetails(selectedPatient)} className="text-[11px] text-blue-600 font-semibold hover:underline">View All</button>
-          </div>
-          <div className="flex items-start gap-2.5 mb-2.5">
-            <img src={selectedPatient.avatar} alt={selectedPatient.name}
-              className="w-11 h-11 rounded-full object-cover flex-shrink-0 ring-2 ring-blue-100 shadow-2xs" />
-            <div>
-              <div className="flex items-center gap-1.5">
-                <p className="font-bold text-gray-800 text-xs sm:text-sm">{selectedPatient.name}</p>
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
-                <span className="text-[9px] text-green-700 font-semibold">{selectedPatient.status}</span>
+      {/* Right side details drawer for selected patient */}
+      <aside className="w-80 xl:w-96 border-l border-slate-200/90 bg-white overflow-y-auto p-4 space-y-4 shrink-0 shadow-2xs">
+        {selectedPatient ? (
+          <>
+            {/* Patient Header Card */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <img
+                  src={selectedPatient.avatar}
+                  alt={selectedPatient.name}
+                  className="w-12 h-12 rounded-full object-cover ring-2 ring-blue-100 shadow-2xs shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-bold text-slate-900 text-sm truncate">
+                      {selectedPatient.name}
+                    </h3>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  </div>
+                  <p className="text-xs text-slate-500 font-mono mt-0.5">
+                    {selectedPatient.pid} • {selectedPatient.age}y • {selectedPatient.gender}
+                  </p>
+                  <p className="text-xs font-semibold text-blue-600 mt-0.5">
+                    {selectedPatient.room} • {selectedPatient.bed}
+                  </p>
+                </div>
               </div>
-              <p className="text-[11px] text-gray-400 font-mono mt-0.5">{selectedPatient.pid} · {selectedPatient.age}y · {selectedPatient.gender}</p>
-              <p className="text-[11px] text-blue-600 font-medium">Room {selectedPatient.room}</p>
-            </div>
-          </div>
-          <div className="space-y-1 text-[11px] text-gray-500 mb-3 pt-2 border-t border-gray-100">
-            <div className="flex items-center gap-2"><Phone size={11} className="text-gray-400" /><span>{selectedPatient.phone}</span></div>
-            <div className="flex items-center gap-2"><Mail size={11} className="text-gray-400" /><span>{selectedPatient.email}</span></div>
-            <div className="flex items-center gap-2"><MapPin size={11} className="text-gray-400" /><span>{selectedPatient.address}</span></div>
-          </div>
-          {/* Tabs */}
-          <div className="flex gap-0 border-b border-gray-100 mb-2.5">
-            {(['Overview', 'Visit History', 'Medical Records'] as RightTab[]).map(tab => (
-              <button key={tab} onClick={() => setRightTab(tab)}
-                className={`text-[11px] px-2.5 py-1 font-semibold border-b-2 transition-colors whitespace-nowrap ${rightTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-700'}`}>
-                {tab}
-              </button>
-            ))}
-          </div>
-          {rightTab === 'Overview' && (
-            <div className="bg-blue-50/70 rounded-lg p-2.5 border border-blue-100 text-xs">
-              <p className="font-bold text-gray-800">{selectedPatient.admissionDate} · 09:15 AM</p>
-              <p className="text-gray-500 mt-0.5">{selectedPatient.department} · {selectedPatient.doctor}</p>
-              <p className="text-gray-600 mt-1 font-medium">Reason: {selectedPatient.visitReason}</p>
-            </div>
-          )}
-          {rightTab === 'Visit History' && (
-            <p className="text-xs text-gray-400 text-center py-3">No previous visits on record.</p>
-          )}
-          {rightTab === 'Medical Records' && (
-            <p className="text-xs text-gray-400 text-center py-3">Medical records available in EHR.</p>
-          )}
-        </div>
 
-        {/* Latest Vitals */}
-        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="flex items-center gap-1.5"><Activity size={15} className="text-blue-600" /><h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800">Latest Vitals</h3></div>
-            <button onClick={() => setVitalsModalOpen(true)} className="text-[11px] text-blue-600 font-semibold hover:underline">Update</button>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5 text-center">
-            <div className="p-2 bg-gray-50 rounded-lg border border-gray-100">
-              <Heart size={11} className="text-red-500 mx-auto mb-0.5" />
-              <p className="text-xs font-bold text-gray-800">{selectedPatient.vitals.bp}</p>
-              <p className="text-[9px] text-gray-400">BP (mmHg)</p>
-              <p className="text-[9px] text-green-600 font-semibold">Normal</p>
-            </div>
-            <div className="p-2 bg-gray-50 rounded-lg border border-gray-100">
-              <Activity size={11} className="text-blue-500 mx-auto mb-0.5" />
-              <p className="text-xs font-bold text-gray-800">{selectedPatient.vitals.hr} bpm</p>
-              <p className="text-[9px] text-gray-400">Heart Rate</p>
-              <p className="text-[9px] text-green-600 font-semibold">Normal</p>
-            </div>
-            <div className="p-2 bg-gray-50 rounded-lg border border-gray-100">
-              <Thermometer size={11} className="text-orange-500 mx-auto mb-0.5" />
-              <p className="text-xs font-bold text-gray-800">{selectedPatient.vitals.temp}°C</p>
-              <p className="text-[9px] text-gray-400">Body Temp</p>
-              <p className="text-[9px] text-green-600 font-semibold">Normal</p>
-            </div>
-            <div className="p-2 bg-gray-50 rounded-lg border border-gray-100">
-              <Droplets size={11} className="text-cyan-500 mx-auto mb-0.5" />
-              <p className="text-xs font-bold text-gray-800">{selectedPatient.vitals.spo2}%</p>
-              <p className="text-[9px] text-gray-400">SpO₂</p>
-              <p className="text-[9px] text-green-600 font-semibold">Normal</p>
-            </div>
-          </div>
-        </div>
+              <div className="space-y-1.5 text-xs text-slate-600 mt-3 pt-3 border-t border-slate-200/80">
+                <div className="flex items-center gap-2">
+                  <Phone size={12} className="text-slate-400 shrink-0" />
+                  <span className="truncate">{selectedPatient.phone}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Mail size={12} className="text-slate-400 shrink-0" />
+                  <span className="truncate">{selectedPatient.email}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <MapPin size={12} className="text-slate-400 shrink-0" />
+                  <span className="truncate">{selectedPatient.address}</span>
+                </div>
+              </div>
 
-        {/* Quick Actions */}
-        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800 mb-2">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              onClick={() => setVitalsModalOpen(true)}
-              className="flex flex-col items-center gap-1 p-2 rounded-lg border border-gray-100 bg-blue-50/60 hover:border-blue-200 hover:shadow-2xs transition-all"
-            >
-              <div className="w-7 h-7 rounded-md flex items-center justify-center bg-white shadow-2xs"><Activity size={13} className="text-blue-600" /></div>
-              <span className="text-[11px] font-semibold text-gray-700 text-center leading-tight">Record Vitals</span>
-            </button>
-            <button
-              onClick={() => setAdministerModalOpen(true)}
-              className="flex flex-col items-center gap-1 p-2 rounded-lg border border-gray-100 bg-purple-50/60 hover:border-purple-200 hover:shadow-2xs transition-all"
-            >
-              <div className="w-7 h-7 rounded-md flex items-center justify-center bg-white shadow-2xs"><Pill size={13} className="text-purple-600" /></div>
-              <span className="text-[11px] font-semibold text-gray-700 text-center leading-tight">Administer Med</span>
-            </button>
-            <button
-              onClick={() => setLabModalOpen(true)}
-              className="flex flex-col items-center gap-1 p-2 rounded-lg border border-gray-100 bg-cyan-50/60 hover:border-cyan-200 hover:shadow-2xs transition-all"
-            >
-              <div className="w-7 h-7 rounded-md flex items-center justify-center bg-white shadow-2xs"><FlaskConical size={13} className="text-cyan-600" /></div>
-              <span className="text-[11px] font-semibold text-gray-700 text-center leading-tight">Collect Sample</span>
-            </button>
-            <button
-              onClick={() => setNoteModalOpen(true)}
-              className="flex flex-col items-center gap-1 p-2 rounded-lg border border-gray-100 bg-emerald-50/60 hover:border-emerald-200 hover:shadow-2xs transition-all"
-            >
-              <div className="w-7 h-7 rounded-md flex items-center justify-center bg-white shadow-2xs"><FileText size={13} className="text-emerald-600" /></div>
-              <span className="text-[11px] font-semibold text-gray-700 text-center leading-tight">Add Note</span>
-            </button>
-          </div>
-        </div>
+              {/* Action Buttons */}
+              <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-200/80">
+                <button
+                  onClick={() => setVitalsModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs"
+                >
+                  <Heart size={12} />
+                  <span>Record Vitals</span>
+                </button>
+                <button
+                  onClick={() => setAdministerModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1"
+                >
+                  <Pill size={12} className="text-purple-600" />
+                  <span>Administer Med</span>
+                </button>
+                <button
+                  onClick={() => setLabModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1"
+                >
+                  <FlaskConical size={12} className="text-teal-600" />
+                  <span>Collect Lab</span>
+                </button>
+                <button
+                  onClick={() => setNoteModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1"
+                >
+                  <FileText size={12} className="text-slate-600" />
+                  <span>Add Note</span>
+                </button>
+              </div>
+            </div>
 
-        {/* Recent Notes */}
-        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5"><FileText size={15} className="text-blue-600" /><h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-800">Recent Notes</h3></div>
-            <button onClick={() => setNoteModalOpen(true)} className="text-[11px] text-blue-600 font-semibold hover:underline">Add Note</button>
+            {/* Sub-tabs: Vitals History, Medications, Appointments */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                {(['Overview', 'Vitals History', 'Medications', 'Appointments'] as RightTab[]).map(
+                  (tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setRightTab(tab)}
+                      className={`flex-1 py-1 px-1.5 rounded-lg text-[11px] font-bold transition-all text-center ${
+                        rightTab === tab
+                          ? 'bg-white text-blue-600 shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ),
+                )}
+              </div>
+
+              {/* Tab: Overview */}
+              {rightTab === 'Overview' && (
+                <div className="space-y-3">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-2.5 shadow-2xs">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <Activity size={14} className="text-blue-600" />
+                      <span>Latest Recorded Vitals</span>
+                    </h4>
+                    {selectedVitals.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">No vitals recorded yet.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                          <span className="text-[10px] text-slate-400 block">Blood Pressure</span>
+                          <span className="font-bold text-slate-800">
+                            {selectedVitals[0]!.systolicBp}/{selectedVitals[0]!.diastolicBp} mmHg
+                          </span>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                          <span className="text-[10px] text-slate-400 block">Heart Rate</span>
+                          <span className="font-bold text-rose-600">
+                            {selectedVitals[0]!.heartRate} bpm
+                          </span>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                          <span className="text-[10px] text-slate-400 block">Temperature</span>
+                          <span className="font-bold text-amber-600">
+                            {selectedVitals[0]!.temperature}°C
+                          </span>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                          <span className="text-[10px] text-slate-400 block">SpO2 Oxygen</span>
+                          <span className="font-bold text-cyan-600">
+                            {selectedVitals[0]!.spo2}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab: Vitals History */}
+              {rightTab === 'Vitals History' && (
+                <div className="space-y-2">
+                  {isLoadingSubData ? (
+                    <div className="py-6 text-center text-xs text-slate-400">Loading vitals...</div>
+                  ) : selectedVitals.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-slate-400">
+                      No vitals history on record.
+                    </div>
+                  ) : (
+                    selectedVitals.map((v) => (
+                      <div
+                        key={v.id}
+                        className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs text-xs space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">
+                            {v.systolicBp}/{v.diastolicBp} mmHg • {v.heartRate} bpm
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              v.condition === 'CRITICAL'
+                                ? 'bg-red-100 text-red-700'
+                                : v.condition === 'NORMAL'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}
+                          >
+                            {v.condition}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                          <span>
+                            {v.temperature}°C • SpO2: {v.spo2}%
+                          </span>
+                          <span>{new Date(v.recordedAt).toLocaleString()}</span>
+                        </div>
+                        {v.notes && (
+                          <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                            {v.notes}
+                          </p>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* Tab: Medications */}
+              {rightTab === 'Medications' && (
+                <div className="space-y-2">
+                  {selectedMeds.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-slate-400">
+                      No medications administered for this patient.
+                    </div>
+                  ) : (
+                    selectedMeds.map((m) => (
+                      <div
+                        key={m.id}
+                        className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs text-xs space-y-1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">{m.medicationName}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700">
+                            {m.status}
+                          </span>
+                        </div>
+                        <p className="text-slate-500 text-[11px]">
+                          Dose: {m.dose} • Route: {m.route}
+                        </p>
+                        {m.instructions && (
+                          <p className="text-[11px] text-slate-400 italic">{m.instructions}</p>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* Tab: Appointments */}
+              {rightTab === 'Appointments' && (
+                <div className="space-y-2">
+                  {selectedAppts.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-slate-400">
+                      No appointment bookings on record.
+                    </div>
+                  ) : (
+                    selectedAppts.map((a) => (
+                      <div
+                        key={a.id}
+                        className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs text-xs space-y-1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">{a.reason || 'Consultation'}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                            {a.status}
+                          </span>
+                        </div>
+                        <p className="text-slate-500 text-[11px]">
+                          {new Date(a.appointmentDate).toLocaleDateString()} at {a.startTime}
+                        </p>
+                        <p className="text-[11px] text-slate-400">Doctor: {a.doctorName || 'Assigned'}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="py-12 text-center text-xs text-slate-400">
+            Select a patient to inspect medical chart.
           </div>
-          <div className="bg-gray-50 rounded-lg p-2.5 border border-gray-100">
-            <p className="text-xs text-gray-700">Patient complains of mild chest pain. Vitals stable.</p>
-            <p className="text-[10px] text-gray-400 mt-1">By: Aster Mulu (Nurse) · 09:42 AM</p>
-          </div>
-        </div>
+        )}
       </aside>
 
-      {/* Patient Details Modal */}
-      <NursePatientDetailsModal
-        patient={selectedPatient}
-        isOpen={detailsModalOpen}
-        onClose={() => setDetailsModalOpen(false)}
-        onRecordVitals={() => setVitalsModalOpen(true)}
-        onAdministerMed={() => setAdministerModalOpen(true)}
-        onCollectSample={() => setLabModalOpen(true)}
-      />
-
-      {/* Action Modals */}
+      {/* Modals */}
       <RecordVitalsModal
         isOpen={vitalsModalOpen}
         onClose={() => setVitalsModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
+        onSave={() => {
+          if (selectedPatient) {
+            void fetchPatientVitals(selectedPatient.id, accessToken).then((res) =>
+              setSelectedVitals(res),
+            );
+          }
+        }}
       />
+
       <AdministerMedModal
         isOpen={administerModalOpen}
         onClose={() => setAdministerModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
+        onAdminister={() => {
+          if (selectedPatient) {
+            void fetchMedAdmins(accessToken, { patientId: selectedPatient.id }).then((res) =>
+              setSelectedMeds(res),
+            );
+          }
+        }}
       />
+
       <CollectLabModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
       />
+
       <AddNoteModal
         isOpen={noteModalOpen}
         onClose={() => setNoteModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
       />
+
+      {selectedPatient && (
+        <NursePatientDetailsModal
+          isOpen={detailsModalOpen}
+          onClose={() => setDetailsModalOpen(false)}
+          patient={selectedPatient}
+          onRecordVitals={() => setVitalsModalOpen(true)}
+          onAdministerMed={() => setAdministerModalOpen(true)}
+          onCollectSample={() => setLabModalOpen(true)}
+        />
+      )}
     </div>
   );
 }

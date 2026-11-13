@@ -166,7 +166,17 @@ class NurseProfileScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ...activities.take(5).map((act) => _activityItem(act)),
+                  if (activities.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        'No shift activity logged yet today.',
+                        style:
+                            TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                      ),
+                    )
+                  else
+                    ...activities.take(5).map((act) => _activityItem(act)),
                 ],
               ),
             ),

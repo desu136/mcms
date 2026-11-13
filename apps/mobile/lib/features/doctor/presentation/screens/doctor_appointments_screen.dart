@@ -6,6 +6,8 @@ import '../../data/doctor_models.dart';
 import '../../data/doctor_repository.dart';
 import '../widgets/schedule_item_card.dart';
 import '../widgets/patient_detail_sheet.dart';
+import '../widgets/doctor_modals.dart';
+import 'doctor_medical_records_screen.dart';
 
 class DoctorAppointmentsScreen extends ConsumerStatefulWidget {
   final void Function(int)? onNavigateTab;
@@ -186,8 +188,29 @@ class _DoctorAppointmentsScreenState
                           showDivider: false,
                           onTap: () {
                             final p = patients.firstWhere(
-                              (item) => item.pid == apt.patientId,
-                              orElse: () => patients.first,
+                              (item) =>
+                                  item.pid == apt.patientId ||
+                                  item.id == apt.patientId,
+                              orElse: () => patients.isNotEmpty
+                                  ? patients.first
+                                  : PatientItem(
+                                      id: apt.patientId,
+                                      name: apt.patientName,
+                                      pid: apt.patientId.isNotEmpty
+                                          ? apt.patientId
+                                          : 'PID-000000',
+                                      age: apt.age,
+                                      gender: apt.gender,
+                                      phone: '—',
+                                      email: '—',
+                                      address: 'Addis Ababa, Ethiopia',
+                                      department: apt.department,
+                                      lastVisit: apt.date,
+                                      lastVisitReason: apt.reason,
+                                      status: 'Active',
+                                      avatar: apt.avatar,
+                                      totalVisits: 1,
+                                    ),
                             );
                             showModalBottomSheet<void>(
                               context: context,
@@ -195,8 +218,53 @@ class _DoctorAppointmentsScreenState
                               backgroundColor: Colors.transparent,
                               builder: (_) => PatientDetailSheet(
                                 patient: p,
+                                onPrescribe: () {
+                                  showModalBottomSheet<void>(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (_) => AddPrescriptionSheet(
+                                      patients: patients,
+                                      initialPatient: p,
+                                      onAdd: (item) => ref
+                                          .read(doctorProvider.notifier)
+                                          .addPrescription(item),
+                                    ),
+                                  );
+                                },
+                                onOrderLab: () {
+                                  showModalBottomSheet<void>(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (_) => OrderLabSheet(
+                                      patients: patients,
+                                      initialPatient: p,
+                                      onAdd: (item) => ref
+                                          .read(doctorProvider.notifier)
+                                          .addLabOrder(item),
+                                    ),
+                                  );
+                                },
+                                onRefer: () {
+                                  showModalBottomSheet<void>(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (_) => ReferPatientSheet(
+                                      patients: patients,
+                                      initialPatient: p,
+                                    ),
+                                  );
+                                },
                                 onViewRecords: () {
-                                  widget.onNavigateTab?.call(3); // More -> Records
+                                  Navigator.push<void>(
+                                    context,
+                                    MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          const DoctorMedicalRecordsScreen(),
+                                    ),
+                                  );
                                 },
                               ),
                             );

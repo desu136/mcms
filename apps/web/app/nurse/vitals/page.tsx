@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -21,6 +21,11 @@ import {
   FileText,
   AlertTriangle,
   Check,
+  Scale,
+  Ruler,
+  Clock,
+  RefreshCw,
+  Users,
 } from 'lucide-react';
 import {
   LineChart,
@@ -37,31 +42,39 @@ import RecordVitalsModal from '../../../components/nurse/RecordVitalsModal';
 import AdministerMedModal from '../../../components/nurse/AdministerMedModal';
 import CollectLabModal from '../../../components/nurse/CollectLabModal';
 import AddNoteModal from '../../../components/nurse/AddNoteModal';
-import {
-  NURSE_PATIENTS,
-  VITALS_HISTORY_DATA,
-  RECENT_VITALS_READINGS,
-  RECENT_NURSE_ALERTS,
-  NursePatient,
-} from '../../../components/nurse/nurseMockData';
 import { useAuth } from '../../../lib/auth/auth-context';
 import { fetchPatients } from '../../../lib/api/patients';
 import { fetchPatientVitals, recordVitals } from '../../../lib/api/clinical';
-import type { VitalReadingDTO } from '@mcms/contracts';
+import type { VitalReadingDTO, PatientDTO } from '@mcms/contracts';
 
+interface FormattedPatientItem {
+  id: string;
+  pid: string;
+  name: string;
+  age: number;
+  gender: 'Female' | 'Male';
+  avatar: string;
+  phone: string;
+  email: string;
+  address: string;
+  room: string;
+  bed: string;
+  department: string;
+  status: string;
+  vitalsStatus: string;
+}
 
 export default function NurseVitalsPage() {
   const { accessToken } = useAuth();
 
   // Patient state - live from API
-  const [livePatients, setLivePatients] = useState<NursePatient[]>(NURSE_PATIENTS);
-  const [selectedPatient, setSelectedPatient] = useState<NursePatient>(NURSE_PATIENTS[0]!);
+  const [patients, setPatients] = useState<FormattedPatientItem[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<FormattedPatientItem | null>(null);
   const [liveVitals, setLiveVitals] = useState<VitalReadingDTO[]>([]);
   const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+  const [isLoadingVitals, setIsLoadingVitals] = useState(false);
 
   const [activeMetricTab, setActiveMetricTab] = useState<'temp' | 'bp' | 'hr' | 'spo2'>('temp');
-  const [departmentFilter, setDepartmentFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Form state
@@ -71,10 +84,15 @@ export default function NurseVitalsPage() {
   const [diastolicInput, setDiastolicInput] = useState('76');
   const [hrInput, setHrInput] = useState('72');
   const [spo2Input, setSpo2Input] = useState('98');
+  const [rrInput, setRrInput] = useState('16');
+  const [weightInput, setWeightInput] = useState('70');
+  const [heightInput, setHeightInput] = useState('175');
+  const [complaintsInput, setComplaintsInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
+
   const [isSavedForm, setIsSavedForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [entryMode, setEntryMode] = useState<'manual' | 'quick'>('manual');
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Modals state
   const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
@@ -82,104 +100,180 @@ export default function NurseVitalsPage() {
   const [labModalOpen, setLabModalOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
 
-  // Load live patients and vitals
+  // Auto-calculated BMI
+  const calculatedBmi = useMemo(() => {
+    const w = parseFloat(weightInput);
+    const h = parseFloat(heightInput) / 100;
+    if (w > 0 && h > 0) return (w / (h * h)).toFixed(1);
+    return null;
+  }, [weightInput, heightInput]);
+
+  // Load live patients
   const loadPatients = useCallback(async () => {
     if (!accessToken) return;
     setIsLoadingPatients(true);
     try {
-      const res = await fetchPatients(accessToken, { limit: 50 });
+      const res = await fetchPatients(accessToken, { limit: 100 });
       if (res.data.length > 0) {
-        // Map API patients to NursePatient shape (keep mock data shape for UI compatibility)
-        const mapped: NursePatient[] = res.data.map((p, idx) => {
-          const mock = NURSE_PATIENTS[idx % NURSE_PATIENTS.length] as NursePatient;
-          return {
-            id: p.id,
-            pid: p.pid,
-            name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
-            age: p.dateOfBirth
-              ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
-              : 30,
-            gender: (p.gender === 'Female' ? 'Female' : 'Male'),
-            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.firstName)}`,
-            phone: p.phoneNumber || '—',
-            email: p.email || '—',
-            address: p.address || 'Addis Ababa, Ethiopia',
-            room: mock?.room ?? 'A-101',
-            bed: mock?.bed ?? 'Bed 01',
-            department: mock?.department ?? 'General',
-            visitReason: 'General consultation',
-            status: mock?.status ?? 'In Care',
-            vitalsStatus: 'Normal',
-            vitals: mock?.vitals ?? { bp: '118/76', hr: 72, temp: 36.8, spo2: 98 },
-            doctor: mock?.doctor ?? 'Dr. Fitsum Alemu',
-            admissionDate: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : 'N/A',
-          };
-        });
-        setLivePatients(mapped);
-        setSelectedPatient(mapped[0]!);
+        const mapped: FormattedPatientItem[] = res.data.map((p, idx) => ({
+          id: p.id,
+          pid: p.pid,
+          name: p.fullName || `${p.firstName} ${p.lastName}`.trim(),
+          age: p.dateOfBirth
+            ? Math.max(0, new Date().getFullYear() - new Date(p.dateOfBirth).getFullYear())
+            : 30,
+          gender: p.gender === 'MALE' ? 'Male' : 'Female',
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.firstName)}`,
+          phone: p.phoneNumber || '—',
+          email: p.email || '—',
+          address: p.address || 'Addis Ababa, Ethiopia',
+          room: `Room ${Math.floor(idx / 3) + 1}A`,
+          bed: `Bed ${(idx % 4) + 1}`,
+          department: 'Outpatient Triage',
+          status: p.status === 'ACTIVE' ? 'In Care' : 'Completed',
+          vitalsStatus: 'Normal',
+        }));
+        setPatients(mapped);
+        if (!selectedPatient && mapped[0]) {
+          setSelectedPatient(mapped[0]);
+        }
       }
     } catch (err) {
       console.error('Failed to load patients for vitals:', err);
     } finally {
       setIsLoadingPatients(false);
     }
-  }, [accessToken]);
+  }, [accessToken, selectedPatient]);
 
-  const loadVitals = useCallback(async (patientId: string) => {
-    if (!accessToken || !patientId) return;
-    try {
-      const v = await fetchPatientVitals(patientId, accessToken);
-      setLiveVitals(v);
-    } catch (err) {
-      console.error('Failed to load vitals:', err);
-    }
-  }, [accessToken]);
+  // Load vitals for selected patient
+  const loadVitals = useCallback(
+    async (patientId: string) => {
+      if (!accessToken || !patientId) return;
+      setIsLoadingVitals(true);
+      try {
+        const v = await fetchPatientVitals(patientId, accessToken, 30);
+        setLiveVitals(v);
+      } catch (err) {
+        console.error('Failed to load vitals:', err);
+      } finally {
+        setIsLoadingVitals(false);
+      }
+    },
+    [accessToken],
+  );
 
-  useEffect(() => { void loadPatients(); }, [loadPatients]);
   useEffect(() => {
-    if (selectedPatient?.id) void loadVitals(selectedPatient.id);
+    void loadPatients();
+  }, [loadPatients]);
+
+  useEffect(() => {
+    if (selectedPatient?.id) {
+      void loadVitals(selectedPatient.id);
+    }
   }, [selectedPatient, loadVitals]);
 
   // Filter patients
-  const filteredPatients = livePatients.filter((p) => {
-    const matchesSearch =
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.pid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.room.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDept = departmentFilter === 'All' || p.department === departmentFilter;
-    const matchesStatus = statusFilter === 'All' || p.vitalsStatus === statusFilter;
-    return matchesSearch && matchesDept && matchesStatus;
+  const filteredPatients = patients.filter((p) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.pid.toLowerCase().includes(q) ||
+      p.room.toLowerCase().includes(q)
+    );
   });
+
+  // Chart data from real vitals
+  const chartData = useMemo(() => {
+    if (liveVitals.length === 0) return [];
+    // Sort chronological
+    const sorted = [...liveVitals].sort(
+      (a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime(),
+    );
+    return sorted.map((v) => {
+      const d = new Date(v.recordedAt);
+      const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`;
+      return {
+        time: timeStr,
+        temp: v.temperature,
+        systolic: v.systolicBp,
+        diastolic: v.diastolicBp,
+        hr: v.heartRate,
+        spo2: v.spo2,
+      };
+    });
+  }, [liveVitals]);
 
   const handleSaveVitals = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!accessToken || !selectedPatient) return;
+
+    const sys = parseInt(systolicInput, 10);
+    const dia = parseInt(diastolicInput, 10);
+    const hr = parseInt(hrInput, 10);
+    const ox = parseFloat(spo2Input);
+    const parsedTemp = parseFloat(tempInput);
+    const tempCelsius =
+      tempUnit === 'F' ? Math.round((parsedTemp - 32) * (5 / 9) * 10) / 10 : parsedTemp;
+
+    if (isNaN(sys) || sys < 50 || sys > 260 || isNaN(dia) || dia < 30 || dia > 160) {
+      setFormError('Please enter valid blood pressure readings.');
+      return;
+    }
+    if (isNaN(hr) || hr < 30 || hr > 240) {
+      setFormError('Please enter a valid pulse / heart rate (30-240 bpm).');
+      return;
+    }
+    if (isNaN(tempCelsius) || tempCelsius < 30 || tempCelsius > 45) {
+      setFormError('Please enter a valid body temperature.');
+      return;
+    }
+    if (isNaN(ox) || ox < 50 || ox > 100) {
+      setFormError('Please enter a valid oxygen saturation (50-100%).');
+      return;
+    }
+
+    setFormError(null);
     setIsSaving(true);
+
     try {
-      const parsedTemp = parseFloat(tempInput);
-      const tempCelsius = tempUnit === 'F' ? Math.round(((parsedTemp - 32) * (5 / 9)) * 10) / 10 : parsedTemp;
+      const combinedNotes = [
+        complaintsInput.trim() ? `Complaints: ${complaintsInput.trim()}` : '',
+        weightInput ? `Weight: ${weightInput} kg` : '',
+        heightInput ? `Height: ${heightInput} cm` : '',
+        calculatedBmi ? `BMI: ${calculatedBmi}` : '',
+        noteInput.trim() ? `Notes: ${noteInput.trim()}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | ');
+
       await recordVitals(
         {
           patientId: selectedPatient.id,
           temperature: tempCelsius,
-          systolicBp: parseInt(systolicInput, 10),
-          diastolicBp: parseInt(diastolicInput, 10),
-          heartRate: parseInt(hrInput, 10),
-          spo2: parseFloat(spo2Input),
-          ...(noteInput.trim() ? { notes: noteInput.trim() } : {}),
+          systolicBp: sys,
+          diastolicBp: dia,
+          heartRate: hr,
+          spo2: ox,
+          respiratoryRate: parseInt(rrInput, 10) || 16,
+          ...(combinedNotes ? { notes: combinedNotes } : {}),
         },
         accessToken,
       );
+
       setIsSavedForm(true);
-      // Reload vitals for selected patient
       void loadVitals(selectedPatient.id);
+
       setTimeout(() => {
         setIsSavedForm(false);
+        setComplaintsInput('');
         setNoteInput('');
       }, 1500);
-    } catch (err) {
-      console.error('Failed to save vitals:', err);
-      alert('Failed to save vitals. Please try again.');
+    } catch (err: any) {
+      setFormError(err?.message || 'Failed to save vital signs.');
     } finally {
       setIsSaving(false);
     }
@@ -194,29 +288,25 @@ export default function NurseVitalsPage() {
         </div>
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-            Vital Signs
+            Patient Triage & Vital Signs
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 font-medium">
-            Monitor and record patient vital signs. Track trends and identify abnormal readings early.
+            Monitor and record patient vital signs. Track trends, anthropometric measurements, and detect abnormal readings.
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 self-start sm:self-auto bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
-        <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
-        <div className="text-left text-xs font-semibold text-slate-800">
-          <div>Oct 19, 2026</div>
-          <div className="text-[10px] text-slate-400 font-normal">Monday</div>
-        </div>
-        <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-200">
-          <button className="p-1 rounded hover:bg-slate-200 text-slate-500">
-            <ChevronLeft className="w-3.5 h-3.5" />
-          </button>
-          <button className="p-1 rounded hover:bg-slate-200 text-slate-500">
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
+      <button
+        onClick={() => {
+          void loadPatients();
+          if (selectedPatient) void loadVitals(selectedPatient.id);
+        }}
+        disabled={isLoadingPatients || isLoadingVitals}
+        className="flex items-center gap-1.5 px-3.5 py-2 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-700 shadow-2xs transition self-start sm:self-auto disabled:opacity-50"
+      >
+        <RefreshCw size={14} className={`text-blue-600 ${isLoadingPatients || isLoadingVitals ? 'animate-spin' : ''}`} />
+        <span>Refresh Vitals</span>
+      </button>
     </div>
   );
 
@@ -224,681 +314,578 @@ export default function NurseVitalsPage() {
   const kpis = (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
       <NurseStatCard
-        title="Total Patients"
-        value={48}
+        title="Patients Monitored"
+        value={isLoadingPatients ? '—' : patients.length}
         iconName="users"
-        trendText="↑ 12% vs. yesterday"
+        trendText="Registered Patients"
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="blue"
       />
       <NurseStatCard
-        title="Vitals Recorded"
-        value={42}
+        title="Total Readings"
+        value={isLoadingVitals ? '—' : liveVitals.length}
         iconName="check"
-        trendText="↑ 18% vs. yesterday"
+        trendText={selectedPatient ? `For ${selectedPatient.name.split(' ')[0]}` : 'Recorded'}
         trendDirection="up"
         trendIsPositive={true}
         colorTheme="green"
       />
       <NurseStatCard
         title="Abnormal Readings"
-        value={6}
+        value={liveVitals.filter((v) => v.condition === 'CRITICAL' || v.condition === 'HIGH_BP').length}
         iconName="alert"
-        trendText="↓ 33% vs. yesterday"
+        trendText="Clinical Alerts"
         trendDirection="down"
         trendIsPositive={false}
         colorTheme="orange"
       />
       <NurseStatCard
-        title="Pending"
-        value={6}
+        title="Normal Range"
+        value={liveVitals.filter((v) => v.condition === 'NORMAL').length}
         iconName="clock"
-        trendText="↑ 20% vs. yesterday"
+        trendText="Within Standard Limits"
         trendDirection="up"
-        trendIsPositive={false}
+        trendIsPositive={true}
         colorTheme="purple"
       />
     </div>
   );
 
   // ── Right Side Panel ────────────────────────────────────────────────────────
-  const rightPanel = (
+  const rightPanel = selectedPatient ? (
     <div className="space-y-4">
       {/* 1. Current Patient Card */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs">
-        <div className="flex items-center justify-between mb-3.5">
-          <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
             <Activity className="w-4 h-4 text-blue-600" /> Current Patient
           </h3>
-          <Link
-            href={`/nurse/patients?pid=${selectedPatient.pid}`}
-            className="text-xs font-bold text-blue-600 hover:text-blue-700 transition"
-          >
-            View Patient Profile
-          </Link>
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+            {selectedPatient.status}
+          </span>
         </div>
 
         <div className="flex items-center gap-3 mb-3">
           <img
             src={selectedPatient.avatar}
             alt={selectedPatient.name}
-            className="w-14 h-14 rounded-full object-cover ring-2 ring-blue-500/20"
+            className="w-12 h-12 rounded-full object-cover ring-2 ring-blue-500/20"
           />
           <div>
-            <div className="text-base font-extrabold text-slate-900 leading-tight">
+            <div className="text-sm font-bold text-slate-900 leading-tight">
               {selectedPatient.name}
             </div>
-            <div className="text-xs text-slate-500 font-medium mt-0.5">
-              {selectedPatient.pid} • {selectedPatient.age} years • {selectedPatient.gender}
+            <div className="text-xs text-slate-500 font-medium mt-0.5 font-mono">
+              {selectedPatient.pid} • {selectedPatient.age}y • {selectedPatient.gender}
             </div>
-            <div className="inline-block mt-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-100">
-              Room {selectedPatient.room}
+            <div className="text-[11px] font-semibold text-blue-600 mt-0.5">
+              {selectedPatient.room} • {selectedPatient.bed}
             </div>
           </div>
         </div>
 
-        <div className="pt-3 border-t border-slate-100 space-y-2 text-xs text-slate-600">
+        <div className="space-y-1.5 text-xs text-slate-600 pt-2.5 border-t border-slate-100">
           <div className="flex items-center gap-2">
-            <Phone className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-            <span>{selectedPatient.phone}</span>
+            <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="truncate">{selectedPatient.phone}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-            <span>{selectedPatient.email}</span>
+            <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="truncate">{selectedPatient.email}</span>
           </div>
           <div className="flex items-center gap-2">
-            <MapPin className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <span className="truncate">{selectedPatient.address}</span>
           </div>
         </div>
-      </div>
 
-      {/* 2. Record Vital Signs Card */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs">
-        <div className="flex items-center justify-between mb-3.5">
-          <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-            <Heart className="w-4 h-4 text-blue-600" /> Record Vital Signs
-          </h3>
-        </div>
-
-        {/* Manual vs Quick tabs */}
-        <div className="flex gap-1.5 p-1 bg-slate-100 rounded-xl mb-3.5">
-          <button
-            type="button"
-            onClick={() => setEntryMode('manual')}
-            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
-              entryMode === 'manual'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Manual Entry
-          </button>
-          <button
-            type="button"
-            onClick={() => setEntryMode('quick')}
-            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
-              entryMode === 'quick'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Quick Entry
-          </button>
-        </div>
-
-        <form onSubmit={handleSaveVitals} className="space-y-3.5">
-          {/* Temperature */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-              <Thermometer className="w-3.5 h-3.5 text-blue-500" />
-              Temperature ({tempUnit === 'C' ? '°C' : '°F'}) *
-            </label>
-            <div className="flex gap-1.5">
-              <input
-                type="number"
-                step="0.1"
-                required
-                value={tempInput}
-                onChange={(e) => setTempInput(e.target.value)}
-                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              />
-              <button
-                type="button"
-                onClick={() => setTempUnit((u) => (u === 'C' ? 'F' : 'C'))}
-                className="px-2.5 py-2 rounded-xl bg-slate-100 text-xs font-bold text-slate-600 hover:bg-slate-200"
-              >
-                °{tempUnit}
-              </button>
-            </div>
-          </div>
-
-          {/* Blood Pressure */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-              <Activity className="w-3.5 h-3.5 text-blue-500" />
-              Blood Pressure (mmHg) *
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <input
-                  type="number"
-                  required
-                  value={systolicInput}
-                  onChange={(e) => setSystolicInput(e.target.value)}
-                  placeholder="118"
-                  className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
-                <span className="text-[10px] text-slate-400 font-medium mt-0.5 block">Systolic</span>
-              </div>
-              <div>
-                <input
-                  type="number"
-                  required
-                  value={diastolicInput}
-                  onChange={(e) => setDiastolicInput(e.target.value)}
-                  placeholder="76"
-                  className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
-                <span className="text-[10px] text-slate-400 font-medium mt-0.5 block">Diastolic</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Heart Rate */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-              <Heart className="w-3.5 h-3.5 text-rose-500" />
-              Heart Rate (bpm) *
-            </label>
-            <input
-              type="number"
-              required
-              value={hrInput}
-              onChange={(e) => setHrInput(e.target.value)}
-              placeholder="72"
-              className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-            />
-          </div>
-
-          {/* Oxygen Saturation */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-              <Wind className="w-3.5 h-3.5 text-teal-500" />
-              Oxygen Saturation (%) *
-            </label>
-            <input
-              type="number"
-              required
-              min="50"
-              max="100"
-              value={spo2Input}
-              onChange={(e) => setSpo2Input(e.target.value)}
-              placeholder="98"
-              className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-            />
-          </div>
-
-          {/* Note */}
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-bold text-slate-700">Note (optional)</label>
-              <span className="text-[10px] text-slate-400">{noteInput.length}/200</span>
-            </div>
-            <textarea
-              maxLength={200}
-              rows={2}
-              value={noteInput}
-              onChange={(e) => setNoteInput(e.target.value)}
-              placeholder="Any additional notes..."
-              className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isSavedForm}
-            className={`w-full py-2.5 rounded-xl text-xs font-bold text-white transition flex items-center justify-center gap-2 shadow-md ${
-              isSavedForm
-                ? 'bg-emerald-600 shadow-emerald-500/30'
-                : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'
-            }`}
-          >
-            {isSavedForm ? (
-              <>
-                <Check className="w-4 h-4" />
-                Reading Saved!
-              </>
-            ) : (
-              'Save Reading'
-            )}
-          </button>
-        </form>
-      </div>
-
-      {/* 3. Quick Actions */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs">
-        <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2 mb-3.5">
-          <span className="text-blue-600">⚡</span> Quick Actions
-        </h3>
-        <div className="grid grid-cols-2 gap-2">
+        {/* Action Buttons */}
+        <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-100">
           <button
             onClick={() => setVitalsModalOpen(true)}
-            className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-blue-50 hover:border-blue-200 transition text-left flex items-center gap-2"
+            className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center justify-center gap-1"
           >
-            <Heart className="w-4 h-4 text-blue-600" />
-            <span className="text-xs font-bold text-slate-800">Record Vitals</span>
+            <Heart size={12} />
+            <span>Triage Modal</span>
           </button>
           <button
             onClick={() => setMedModalOpen(true)}
-            className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-purple-50 hover:border-purple-200 transition text-left flex items-center gap-2"
+            className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1"
           >
-            <Pill className="w-4 h-4 text-purple-600" />
-            <span className="text-xs font-bold text-slate-800">Administer Med</span>
-          </button>
-          <button
-            onClick={() => setLabModalOpen(true)}
-            className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-teal-50 hover:border-teal-200 transition text-left flex items-center gap-2"
-          >
-            <FlaskConical className="w-4 h-4 text-teal-600" />
-            <span className="text-xs font-bold text-slate-800">Collect Lab Sample</span>
-          </button>
-          <button
-            onClick={() => setNoteModalOpen(true)}
-            className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-blue-50 hover:border-blue-200 transition text-left flex items-center gap-2"
-          >
-            <FileText className="w-4 h-4 text-blue-600" />
-            <span className="text-xs font-bold text-slate-800">Add Patient Note</span>
+            <Pill size={12} className="text-purple-600" />
+            <span>Give Med</span>
           </button>
         </div>
       </div>
+
+      {/* 2. Recent Clinical Readings List */}
+      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center justify-between">
+          <span>Recent Readings</span>
+          <span className="text-[10px] text-slate-400 font-normal">{liveVitals.length} total</span>
+        </h3>
+
+        {liveVitals.length === 0 ? (
+          <p className="text-xs text-slate-400 italic py-4 text-center">
+            No readings recorded for this patient yet. Use the form to record initial vitals.
+          </p>
+        ) : (
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {liveVitals.slice(0, 5).map((v) => (
+              <div
+                key={v.id}
+                className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs space-y-1"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800">
+                    {v.systolicBp}/{v.diastolicBp} mmHg • {v.heartRate} bpm
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      v.condition === 'CRITICAL'
+                        ? 'bg-red-100 text-red-700'
+                        : v.condition === 'HIGH_BP'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {v.condition}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>
+                    {v.temperature}°C • SpO2: {v.spo2}%
+                  </span>
+                  <span>{new Date(v.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                {v.notes && (
+                  <p className="text-[10px] text-slate-600 italic bg-white p-1 rounded border border-slate-100">
+                    {v.notes}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  ) : (
+    <div className="bg-white rounded-2xl p-6 text-center text-xs text-slate-400 border border-slate-200">
+      Select a patient to inspect triage records.
     </div>
   );
 
   return (
-    <NursePageShell banner={banner} kpis={kpis} rightPanel={rightPanel}>
-      <div className="space-y-4">
-        {/* Left & Middle Area */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-          {/* Patients List Table (6 cols) */}
-          <div className="xl:col-span-6 bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-3.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                  <Activity className="w-4 h-4" />
-                </div>
-                <h3 className="text-base font-extrabold text-slate-900">Patients</h3>
-              </div>
-
-              {/* Filters Row */}
-              <div className="space-y-2 mb-3.5">
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search patients..."
-                    className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <select
-                    value={departmentFilter}
-                    onChange={(e) => setDepartmentFilter(e.target.value)}
-                    className="flex-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50/60 text-slate-600 focus:outline-none"
-                  >
-                    <option value="All">All Departments</option>
-                    <option value="Cardiology">Cardiology</option>
-                    <option value="Internal Medicine">Internal Medicine</option>
-                    <option value="Wound Care">Wound Care</option>
-                    <option value="Pediatrics">Pediatrics</option>
-                  </select>
-
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="flex-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50/60 text-slate-600 focus:outline-none"
-                  >
-                    <option value="All">All Statuses</option>
-                    <option value="Normal">Normal</option>
-                    <option value="High BP">High BP</option>
-                    <option value="Critical">Critical</option>
-                    <option value="Low BP">Low BP</option>
-                    <option value="Elevated">Elevated</option>
-                  </select>
-
-                  <button className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs">
-                    <Filter className="w-3.5 h-3.5 text-blue-600" />
-                    Filter
-                  </button>
-                </div>
-              </div>
-
-              {/* Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200/80 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
-                      <th className="py-2.5 px-2.5 w-6">
-                        <input type="checkbox" className="rounded border-slate-300" />
-                      </th>
-                      <th className="py-2.5 px-2.5">Patient</th>
-                      <th className="py-2.5 px-2.5">Room</th>
-                      <th className="py-2.5 px-2.5">Last Vitals</th>
-                      <th className="py-2.5 px-2.5">Status</th>
-                      <th className="py-2.5 px-2 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredPatients.map((p) => {
-                      const isSelected = selectedPatient.id === p.id;
-                      const statusColor =
-                        p.vitalsStatus === 'Normal'
-                          ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                          : p.vitalsStatus === 'High BP'
-                          ? 'bg-amber-50 text-amber-600 border-amber-100'
-                          : p.vitalsStatus === 'Critical'
-                          ? 'bg-rose-50 text-rose-600 border-rose-100'
-                          : p.vitalsStatus === 'Low BP'
-                          ? 'bg-blue-50 text-blue-600 border-blue-100'
-                          : 'bg-orange-50 text-orange-600 border-orange-100';
-
-                      return (
-                        <tr
-                          key={p.id}
-                          onClick={() => setSelectedPatient(p)}
-                          className={`hover:bg-slate-50/80 transition cursor-pointer ${
-                            isSelected ? 'bg-blue-50/40 ring-1 ring-blue-500/20' : ''
-                          }`}
-                        >
-                          <td className="py-2.5 px-2.5" onClick={(e) => e.stopPropagation()}>
-                            <input type="checkbox" className="rounded border-slate-300" />
-                          </td>
-                          <td className="py-2.5 px-2.5">
-                            <div className="flex items-center gap-2">
-                              <img
-                                src={p.avatar}
-                                alt={p.name}
-                                className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
-                              />
-                              <div>
-                                <div className="font-bold text-slate-800 text-xs">
-                                  {p.name}
-                                </div>
-                                <div className="text-[10px] text-slate-400">
-                                  {p.pid} • {p.age}y • {p.gender}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-2.5 font-bold text-slate-700 text-xs">
-                            {p.room}
-                          </td>
-                          <td className="py-2.5 px-2.5">
-                            <div className="text-[11px] font-bold text-slate-800">
-                              BP {p.vitals.bp} • HR {p.vitals.hr}
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              Temp {p.vitals.temp}°C • SpO₂ {p.vitals.spo2}%
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-2.5">
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}
-                            >
-                              {p.vitalsStatus}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-2 text-center" onClick={(e) => e.stopPropagation()}>
-                            <button className="p-1 rounded text-slate-400 hover:text-slate-600">
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+    <>
+      <NursePageShell banner={banner} kpis={kpis} rightPanel={rightPanel}>
+        <div className="space-y-5">
+          {/* Patient Selector Row */}
+          <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+              <Search size={14} className="text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search patient to triage..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-xs border-none focus:outline-none bg-transparent"
+              />
             </div>
-
-            {/* Pagination footer */}
-            <div className="flex items-center justify-between pt-3 mt-2 border-t border-slate-100 text-[11px] text-slate-500">
-              <span>Showing 1-10 of 48 patients</span>
-              <div className="flex items-center gap-1">
-                <button className="p-1 rounded hover:bg-slate-100 text-slate-400">
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <button className="w-6 h-6 rounded bg-blue-600 text-white font-bold text-xs flex items-center justify-center">
-                  1
-                </button>
-                <button className="w-6 h-6 rounded hover:bg-slate-100 font-medium text-xs flex items-center justify-center">
-                  2
-                </button>
-                <button className="w-6 h-6 rounded hover:bg-slate-100 font-medium text-xs flex items-center justify-center">
-                  3
-                </button>
-                <button className="w-6 h-6 rounded hover:bg-slate-100 font-medium text-xs flex items-center justify-center">
-                  4
-                </button>
-                <button className="w-6 h-6 rounded hover:bg-slate-100 font-medium text-xs flex items-center justify-center">
-                  5
-                </button>
-                <button className="p-1 rounded hover:bg-slate-100 text-slate-400">
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-semibold">Active Patient:</span>
+              <select
+                value={selectedPatient?.id || ''}
+                onChange={(e) => {
+                  const p = patients.find((item) => item.id === e.target.value);
+                  if (p) setSelectedPatient(p);
+                }}
+                className="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5 focus:outline-none"
+              >
+                {filteredPatients.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.pid})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Middle Column: Vital Signs History, Recent Readings, Recent Alerts (6 cols) */}
-          <div className="xl:col-span-6 space-y-4">
-            {/* 1. Vital Signs History Chart */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs">
-              <div className="flex items-center justify-between mb-3.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                    <Activity className="w-4 h-4" />
-                  </div>
-                  <h3 className="text-base font-extrabold text-slate-900">
-                    Vital Signs History
-                  </h3>
-                </div>
-                <Link
-                  href="/nurse/vitals"
-                  className="text-xs font-bold text-blue-600 hover:text-blue-700 transition"
+          {/* Vitals Trend Chart */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                  Vital Signs Historical Trends
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {selectedPatient ? `Monitoring chart for ${selectedPatient.name}` : 'Select a patient'}
+                </p>
+              </div>
+
+              {/* Metric Selector Tabs */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                <button
+                  onClick={() => setActiveMetricTab('temp')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    activeMetricTab === 'temp'
+                      ? 'bg-white text-blue-600 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
                 >
-                  View Full History
-                </Link>
+                  Temperature
+                </button>
+                <button
+                  onClick={() => setActiveMetricTab('bp')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    activeMetricTab === 'bp'
+                      ? 'bg-white text-blue-600 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  Blood Pressure
+                </button>
+                <button
+                  onClick={() => setActiveMetricTab('hr')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    activeMetricTab === 'hr'
+                      ? 'bg-white text-blue-600 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  Heart Rate
+                </button>
+                <button
+                  onClick={() => setActiveMetricTab('spo2')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    activeMetricTab === 'spo2'
+                      ? 'bg-white text-blue-600 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  SpO2
+                </button>
               </div>
+            </div>
 
-              {/* Metric Tabs */}
-              <div className="flex gap-2 mb-3.5">
-                {[
-                  { key: 'temp', label: 'Temperature' },
-                  { key: 'bp', label: 'Blood Pressure' },
-                  { key: 'hr', label: 'Heart Rate' },
-                  { key: 'spo2', label: 'SpO₂' },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveMetricTab(tab.key as any)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                      activeMetricTab === tab.key
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Line Chart */}
-              <div className="h-52 w-full pt-1">
+            {/* Recharts Canvas */}
+            <div className="h-64 w-full">
+              {chartData.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-xs text-slate-400 gap-2 border border-dashed border-slate-200 rounded-xl">
+                  <Activity className="w-8 h-8 text-slate-300" />
+                  <span>No vital readings on record for this patient yet.</span>
+                </div>
+              ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={VITALS_HISTORY_DATA}
-                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 10, fill: '#94A3B8' }}
-                      axisLine={{ stroke: '#E2E8F0' }}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      domain={activeMetricTab === 'temp' ? [34, 40] : ['auto', 'auto']}
-                      tick={{ fontSize: 10, fill: '#94A3B8' }}
-                      axisLine={{ stroke: '#E2E8F0' }}
-                      tickLine={false}
-                    />
+                  <LineChart data={chartData} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                    <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748B' }} />
+                    <YAxis tick={{ fontSize: 10, fill: '#64748B' }} />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: '#0F172A',
-                        borderRadius: '10px',
-                        border: 'none',
-                        color: '#FFF',
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '12px',
+                        border: '1px solid #E2E8F0',
                         fontSize: '11px',
                         fontWeight: 'bold',
                       }}
                     />
-                    <Line
-                      type="monotone"
-                      dataKey={
-                        activeMetricTab === 'temp'
-                          ? 'temperature'
-                          : activeMetricTab === 'bp'
-                          ? 'bpSystolic'
-                          : activeMetricTab === 'hr'
-                          ? 'heartRate'
-                          : 'spo2'
-                      }
-                      stroke="#2563EB"
-                      strokeWidth={2.5}
-                      dot={{ r: 4, fill: '#2563EB', strokeWidth: 2, stroke: '#FFFFFF' }}
-                      activeDot={{ r: 6, fill: '#1D4ED8' }}
-                    />
+                    {activeMetricTab === 'temp' && (
+                      <Line
+                        type="monotone"
+                        dataKey="temp"
+                        stroke="#F59E0B"
+                        strokeWidth={2.5}
+                        dot={{ r: 4, fill: '#F59E0B' }}
+                        name="Temp (°C)"
+                      />
+                    )}
+                    {activeMetricTab === 'bp' && (
+                      <>
+                        <Line
+                          type="monotone"
+                          dataKey="systolic"
+                          stroke="#1E40AF"
+                          strokeWidth={2.5}
+                          dot={{ r: 4, fill: '#1E40AF' }}
+                          name="Systolic (mmHg)"
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="diastolic"
+                          stroke="#3B82F6"
+                          strokeWidth={2}
+                          dot={{ r: 3, fill: '#3B82F6' }}
+                          name="Diastolic (mmHg)"
+                        />
+                      </>
+                    )}
+                    {activeMetricTab === 'hr' && (
+                      <Line
+                        type="monotone"
+                        dataKey="hr"
+                        stroke="#EF4444"
+                        strokeWidth={2.5}
+                        dot={{ r: 4, fill: '#EF4444' }}
+                        name="Heart Rate (bpm)"
+                      />
+                    )}
+                    {activeMetricTab === 'spo2' && (
+                      <Line
+                        type="monotone"
+                        dataKey="spo2"
+                        stroke="#06B6D4"
+                        strokeWidth={2.5}
+                        dot={{ r: 4, fill: '#06B6D4' }}
+                        name="SpO2 (%)"
+                      />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* 2. Recent Readings Table */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs">
-              <h3 className="text-base font-extrabold text-slate-900 mb-3.5">
-                Recent Readings
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200/80 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
-                      <th className="py-2 px-2.5">Date & Time</th>
-                      <th className="py-2 px-2.5">BP (mmHg)</th>
-                      <th className="py-2 px-2.5">HR (bpm)</th>
-                      <th className="py-2 px-2.5">Temp (°C)</th>
-                      <th className="py-2 px-2.5">SpO₂ (%)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {RECENT_VITALS_READINGS.map((r) => (
-                      <tr key={r.id} className="hover:bg-slate-50/70 transition">
-                        <td className="py-2.5 px-2.5 font-semibold text-slate-700">
-                          {r.dateTime}
-                        </td>
-                        <td className="py-2.5 px-2.5 font-bold text-slate-900">{r.bp}</td>
-                        <td className="py-2.5 px-2.5 font-bold text-slate-900">{r.hr}</td>
-                        <td className="py-2.5 px-2.5 font-bold text-slate-900">{r.temp}</td>
-                        <td className="py-2.5 px-2.5 font-bold text-slate-900">{r.spo2}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* 3. Recent Alerts */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs">
-              <div className="flex items-center justify-between mb-3.5">
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-rose-500" /> Recent Alerts
-                </h3>
-                <Link
-                  href="/nurse/vitals"
-                  className="text-xs font-bold text-blue-600 hover:text-blue-700 transition"
-                >
-                  View All
-                </Link>
-              </div>
-
-              <div className="space-y-2.5">
-                {RECENT_NURSE_ALERTS.map((a) => (
-                  <div
-                    key={a.id}
-                    className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3 hover:bg-slate-50 transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                          a.severity === 'High'
-                            ? 'bg-rose-50 text-rose-600'
-                            : 'bg-amber-50 text-amber-600'
-                        }`}
-                      >
-                        <AlertTriangle className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-800">
-                          {a.title}
-                        </div>
-                        <div className="text-[11px] text-slate-500">
-                          {a.patientName} • {a.details}
-                        </div>
-                      </div>
-                    </div>
-
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                        a.severity === 'High'
-                          ? 'bg-rose-50 text-rose-600 border-rose-100'
-                          : 'bg-amber-50 text-amber-600 border-amber-100'
-                      }`}
-                    >
-                      {a.severity}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              )}
             </div>
           </div>
+
+          {/* Quick Vital Entry & Triage Form */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+                  <Activity size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Record New Triage & Vitals
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {selectedPatient ? `Submitting for ${selectedPatient.name}` : 'Select a patient'}
+                  </p>
+                </div>
+              </div>
+
+              {calculatedBmi && (
+                <div className="text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-lg">
+                  Calculated BMI: {calculatedBmi} kg/m²
+                </div>
+              )}
+            </div>
+
+            {formError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
+                <AlertTriangle size={15} className="text-red-600 shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveVitals} className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* Systolic BP */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Systolic BP (mmHg) *
+                  </label>
+                  <input
+                    type="number"
+                    value={systolicInput}
+                    onChange={(e) => setSystolicInput(e.target.value)}
+                    placeholder="120"
+                    required
+                    className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Diastolic BP */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Diastolic BP (mmHg) *
+                  </label>
+                  <input
+                    type="number"
+                    value={diastolicInput}
+                    onChange={(e) => setDiastolicInput(e.target.value)}
+                    placeholder="80"
+                    required
+                    className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Pulse / HR */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Heart Rate (bpm) *
+                  </label>
+                  <input
+                    type="number"
+                    value={hrInput}
+                    onChange={(e) => setHrInput(e.target.value)}
+                    placeholder="72"
+                    required
+                    className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Temperature */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Temperature (°C) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={tempInput}
+                    onChange={(e) => setTempInput(e.target.value)}
+                    placeholder="36.8"
+                    required
+                    className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* SpO2 */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    SpO2 Saturation (%) *
+                  </label>
+                  <input
+                    type="number"
+                    value={spo2Input}
+                    onChange={(e) => setSpo2Input(e.target.value)}
+                    placeholder="98"
+                    required
+                    className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Respiratory Rate */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Respiratory Rate (bpm) *
+                  </label>
+                  <input
+                    type="number"
+                    value={rrInput}
+                    onChange={(e) => setRrInput(e.target.value)}
+                    placeholder="16"
+                    required
+                    className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Weight */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Weight (kg)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={weightInput}
+                    onChange={(e) => setWeightInput(e.target.value)}
+                    placeholder="70"
+                    className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Height */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Height (cm)
+                  </label>
+                  <input
+                    type="number"
+                    value={heightInput}
+                    onChange={(e) => setHeightInput(e.target.value)}
+                    placeholder="175"
+                    className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Complaints & Observations */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Chief Complaints
+                  </label>
+                  <input
+                    type="text"
+                    value={complaintsInput}
+                    onChange={(e) => setComplaintsInput(e.target.value)}
+                    placeholder="e.g. Mild headache, chest tightness..."
+                    className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Nurse Notes & Observations
+                  </label>
+                  <input
+                    type="text"
+                    value={noteInput}
+                    onChange={(e) => setNoteInput(e.target.value)}
+                    placeholder="e.g. Alert, oriented x3, resting comfortably..."
+                    className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={isSaving || isSavedForm}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-bold text-white transition flex items-center gap-2 shadow-md shadow-blue-500/20 ${
+                    isSavedForm
+                      ? 'bg-emerald-600'
+                      : 'bg-blue-600 hover:bg-blue-700 active:scale-98'
+                  }`}
+                >
+                  {isSaving ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Recording Vitals...</span>
+                    </>
+                  ) : isSavedForm ? (
+                    <>
+                      <Check className="w-4 h-4 stroke-[2.5]" />
+                      <span>Vitals Recorded Successfully!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Heart className="w-4 h-4" />
+                      <span>Save Patient Vitals</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
+      </NursePageShell>
 
       {/* Modals */}
       <RecordVitalsModal
         isOpen={vitalsModalOpen}
         onClose={() => setVitalsModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
+        onSave={() => {
+          if (selectedPatient) void loadVitals(selectedPatient.id);
+        }}
       />
       <AdministerMedModal
         isOpen={medModalOpen}
         onClose={() => setMedModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
       />
       <CollectLabModal
         isOpen={labModalOpen}
         onClose={() => setLabModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
       />
       <AddNoteModal
         isOpen={noteModalOpen}
         onClose={() => setNoteModalOpen(false)}
-        selectedPatientId={selectedPatient.id}
+        selectedPatientId={selectedPatient?.id}
       />
-    </NursePageShell>
+    </>
   );
 }

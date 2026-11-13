@@ -24,6 +24,11 @@ class NurseMoreScreen extends ConsumerWidget {
         .watch(nurseTasksProvider)
         .where((t) => t.status != TaskStatus.completed)
         .length;
+    final waitingTriage = ref
+        .watch(nurseTriageQueueProvider)
+        .where((q) =>
+            q.status == 'WAITING_FOR_TRIAGE' || q.status == 'TRIAGE_IN_PROGRESS')
+        .length;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -163,15 +168,17 @@ class NurseMoreScreen extends ConsumerWidget {
                   ),
                   _divider(),
                   _menuItem(
-                    icon: Icons.calendar_month_rounded,
+                    icon: Icons.people_alt_rounded,
                     iconColor: const Color(0xFF059669),
                     iconBg: const Color(0xFFECFDF5),
-                    title: 'Ward Rounds & Consults',
-                    subtitle: 'Physician rounds and admissions',
+                    title: 'Patient Flow & Triage Queue',
+                    subtitle: 'Reception queue, triage vitals & physician rounds',
+                    badge: waitingTriage > 0 ? '$waitingTriage' : null,
+                    badgeColor: const Color(0xFFD97706),
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) => const NurseAppointmentsScreen(),
+                          builder: (_) => const NurseAppointmentsScreen(initialTab: 0),
                         ),
                       );
                     },
