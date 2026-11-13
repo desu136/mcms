@@ -261,6 +261,33 @@ class AuthService {
       );
     }
 
+    if ((cleanEmail == 'clinic.admin@mcms.local' && password == 'ClinicAdmin@123456') ||
+        (cleanEmail == 'admin@mcms.local' && password == 'Admin@123456')) {
+      final offlineUser = AuthUser(
+        id: 'user-clinic-admin-001',
+        email: cleanEmail,
+        displayName: 'Abebe Kebede',
+        firstName: 'Abebe',
+        lastName: 'Kebede',
+        role: 'CLINIC_ADMIN',
+        roles: const ['CLINIC_ADMIN', 'ADMIN'],
+      );
+
+      _currentUser = offlineUser;
+      _accessToken = 'offline_token_clinic_admin';
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kUser, jsonEncode(offlineUser.toJson()));
+      await prefs.setString(_kAccess, _accessToken!);
+      await prefs.setString(_kRefresh, 'offline_refresh_clinic_admin');
+
+      return AuthResult(
+        user: offlineUser,
+        accessToken: _accessToken!,
+        refreshToken: 'offline_refresh_clinic_admin',
+      );
+    }
+
     if (cleanEmail == 'lab@mcms.local' && password == 'Lab@123456') {
       const offlineUser = AuthUser(
         id: 'user-lab-001',

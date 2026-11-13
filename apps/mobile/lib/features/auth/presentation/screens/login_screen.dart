@@ -6,6 +6,7 @@ import '../../../../core/storage/sqlite_database.dart';
 import '../../../doctor/presentation/screens/doctor_dashboard_screen.dart';
 import '../../../receptionist/presentation/screens/receptionist_dashboard_screen.dart';
 import '../../../nurse/presentation/screens/nurse_dashboard_screen.dart';
+import '../../../clinic_admin/presentation/screens/clinic_admin_dashboard_screen.dart';
 import '../../../lab/presentation/screens/lab_dashboard_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -85,7 +86,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final role = ref.read(authProvider).user?.role.toUpperCase() ?? '';
 
     // If there is an active navigator route, pushAndRemoveUntil ensures transition
-    if (role == 'NURSE' || role == 'HEAD_NURSE') {
+    if (role == 'CLINIC_ADMIN' || role == 'ADMIN') {
+      Navigator.of(context).pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => ClinicAdminDashboardScreen(
+            dbService: widget.dbService ?? MobileDatabaseService(),
+          ),
+        ),
+        (route) => false,
+      );
+    } else if (role == 'NURSE' || role == 'HEAD_NURSE') {
       Navigator.of(context).pushAndRemoveUntil<void>(
         MaterialPageRoute<void>(
           builder: (_) => NurseDashboardScreen(
@@ -359,6 +369,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ],
                         ),
                         const SizedBox(height: 14),
+
+                        // Quick access to Clinic Admin Dashboard
+                        SizedBox(
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            onPressed: _isLoading
+                                ? null
+                                : () => _handleQuickLogin(
+                                      'clinic.admin@mcms.local',
+                                      'ClinicAdmin@123456',
+                                    ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF8B5CF6), width: 1.5),
+                              backgroundColor: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(Icons.domain_rounded,
+                                color: Color(0xFFA78BFA), size: 19),
+                            label: const Text(
+                              'Clinic Admin (Abebe Kebede)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFA78BFA),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
 
                         // Quick access to Receptionist Dashboard
                         SizedBox(
